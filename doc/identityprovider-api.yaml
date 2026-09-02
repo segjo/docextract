@@ -1,0 +1,620 @@
+openapi: 3.0.4
+info:
+  title: Identityprovider API
+  description: Session Management API
+  contact:
+    url: https://help.d-velop.de/dev/documentation/identityprovider-app
+  version: v1
+servers:
+  - url: '{systemBaseUri}/identityprovider'
+paths:
+  /appsession:
+    post:
+      tags:
+        - Authentication
+      summary: Inter-app communication with app sessions
+      description: "Apps may require an **AuthSessionId** that they can use to authenticate themselves with other apps.\r\nTo do so, an app sends a JSON object with an **HTTP-POST** request to the end point **/identityprovider/appsession**. The JSON object contains the following values:\r\n\r\n> warning: All three parameters must be sent and the callback URI must begin with a forward slash, followed by the app name.\r\n\r\n**Example**\r\n\r\n```\r\nPOST /identityprovider/appsession\r\nHost: example.com\r\nContent-Type: application/json\r\n\r\n{\r\n    \"appname\": \"exampleapp\",\r\n    \"callback\": \"/exampleapp/appsessioncallback\",\r\n    \"requestid\": \"UbWN...\"\r\n}\r\n```\r\n\r\nBefore the identityprovider-app responds to the request, it calls the specified callback URI.\r\nThis callback is an **HTTP-POST** request with a JSON object with the following values:\r\n\r\n| Parameter | Description |\r\n| ----------- | ------------ |\r\n| **authSessionId** | **AuthSessionId** for the app. |\r\n| **expire** | Expiry date of the **AuthSessionId** in ISO 8601 format. |\r\n| **sign** | Signature with the parameters **appname**, **authSessionId**, **expire** and **requestid**.  <br/> Format: **Hex(Sha256(\\<appname\\>\\<authSessionId\\>\\<expire\\>\\<requestid\\>**)). |\r\n\r\n> info: The parameter **requestid** should be a 256-bit random number. You should use a cryptographically secure random number generator to generate the number.\r\n\r\n\r\n> When calling the callback URI, the same HTTP status code is returned which is returned in the response of the app session request. This does not include status codes that indicate server errors (HTTP 5xx). If a status code for a server error is received, the identityprovider-app sends a **400 Bad Request** resonse.\r\n\r\n\r\n> The callback URI call by the identityprovider-app does not contain any authentication in the headers. The validation of the data takes place exclusively on the basis of the signature.\r\n\r\nSample JSON object:\r\n\r\n```\r\n{\r\n    \"authSessionId\": \"KC5r...\",\r\n    \"expire\": \"1970-01-01T00:00:00Z\",\r\n    \"sign\": \"FDED...\"\r\n}\r\n```\r\n\r\n> info: The parameter **authSessionId** can be used only for the app that issued the **authSessionId**.\r\n\r\nTo check whether the request belongs to your request when calling the callback URI, the app must calculate the signature (**sign** value from the JSON object) based on the specified pattern and compare it to the received signature.\r\n\r\nWhen the **validate** end point is called, **id** and **userName**=**\\<appname\\>@app.idp.d-velop.local** are returned, which allows you to identify which app is sending the request. In addition, a group with the name **App** and the ID **6F3DEBD0-DB38-4061-A085-AD81D6ACF316** is specified."
+      requestBody:
+        content:
+          application/json-patch+json:
+            schema:
+              $ref: '#/components/schemas/AppSessionReqDto'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppSessionReqDto'
+          text/json:
+            schema:
+              $ref: '#/components/schemas/AppSessionReqDto'
+          application/*+json:
+            schema:
+              $ref: '#/components/schemas/AppSessionReqDto'
+      responses:
+        '200':
+          description: OK
+        XXX:
+          description: The success status code of the callback URI is returned.
+        '204':
+          description: The success status code of the callback URI is returned.
+        '400':
+          description: The request is incorrect
+  /impersonatesession:
+    get:
+      tags:
+        - Authentication
+      summary: Authenticating an app with requests in the user context without a user login
+      description: Apps can also be authenticated if requests are required that do not take place in the context of a logged-in user (e.g. processing in the background). The administrator must enable this function for the applicable app in the IdentityProvider app (Manage app trusts). Apps authorized in this way can then use an app session created earlier to request a temporarily valid impersonation session for a specific user. The session is valid for 30 minutes.
+      parameters:
+        - name: userId
+          in: query
+          description: The id of the user to obtain a session for.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/ImpersonateSessionDto'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImpersonateSessionDto'
+            text/json:
+              schema:
+                $ref: '#/components/schemas/ImpersonateSessionDto'
+        '400':
+          description: The request is incorrect
+        '403':
+          description: The given session is invalid
+  /login:
+    get:
+      tags:
+        - Authentication
+      summary: This function performs a login from an app.
+      description: "This function performs a login from an app.\r\n\r\nExecute a redirect to the URI **/identityprovider/login**. Enter the URI in lowercase characters.\r\n\r\nThis resource has a valid **Query** parameter:\r\n\r\n| Parameter | Description |\r\n| --------- | ------------ |\r\n| **redirect**  | Mandatory parameter that contains the path and the query parameters of the custom URI. If the login was successful, the IdentityProvider app performs a redirect back to this URI. |\r\n\r\n> warning: When the URI **/identityprovider/login** is called, the IdentityProvider app chooses an authentication method, depending on the configuration. Apps are therefore not permitted to call this URI themselves. Instead, the URI should be called by the browser. Client applications that want to log in must use a browser control and define a redirect URI that they can use in the browser control.\r\n>\r\n> If only an API key is used for the login, the URI **/identityprovider/login?basic=true** can be used. In this case, the API key is submitted as the password."
+      parameters:
+        - name: redirect
+          in: query
+          description: 'Mandatory parameter that contains the path and the query parameters of the custom URI. If the login was successful, the IdentityProvider app performs a redirect back to this URI.'
+          schema:
+            type: string
+        - name: basic
+          in: query
+          description: 'If only an API key is used for the login, the URI **/identityprovider/login?basic=true** can be used. In this case, the API key is submitted as the password.'
+          schema:
+            type: string
+      responses:
+        '200':
+          description: "Apps can also be authenticated if requests are required that do not take place in the context of a logged-in user (e.g. processing in the background). In this case, you generate an API key in the IdentityProvider app and use it to generate an **AuthSessionId** with the aid of the IdentityProvider app.\r\n            Authentication using the API key initially takes place using a **Bearer** token. Use the API key in the **Authorization** header with the **Bearer** schema and set the **Accept** header to **application/json**. The **Login** route of the IdentityProvider app then returns a data transfer object with the values **AuthSessionId** and **Expire**. You can use the ID **AuthSessionId** for further authentication until the expiry date specified in the **Expire** value. For this purpose, fill the **Authorization** header with the **Bearer** schema with the ID returned earlier for the **AuthSessionId** value and call the desired resource."
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/AuthSessionInfoDto'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSessionInfoDto'
+            text/json:
+              schema:
+                $ref: '#/components/schemas/AuthSessionInfoDto'
+        '204':
+          description: 'The login was successful and the response include Set-Cookie, with a session cookie **AuthSessionId**. This is returned, if **redirect** is not given.'
+        '302':
+          description: May redirect to an external Identityprovider or to the given **redirect** URI including the session cookie **AuthSessionId**
+        '400':
+          description: The request is incorrect
+        '401':
+          description: The given credentials are not allowed to login or the authentication method is not allowed.
+  /validate:
+    get:
+      tags:
+        - Authentication
+      summary: Validate a user session
+      description: "You can use the **validate** function to check whether a request contains the correct login.\r\n\r\n**Validating the required information**\r\n\r\n- Check whether the **Authorization** header is defined.\r\n- Check whether the header contains a **Bearer** token.\r\n- If no **Bearer** token is available, also check whether the cookie **AuthSessionId** is available.\r\n- If neither the token nor the cookie are available, perform a redirect to the login resource from the app.\r\n\r\nWith this **HTTP GET** request, the contents of the token or cookie are sent to the IdentityProvider app as either a token or a cookie. You can specify whether the contents are forwarded as a **Bearer** token or a cookie in the code.\r\n\r\nTo ensure that you do not have to call the **Validate** end point for each request, you should store the response temporarily. Use the **SCIM user** object for caching. The IdentityProvider app sends a **CacheControl** header and defines the validity period in it with **MaxAge**.\r\n\r\nYou should use the validity period specification to save the response for the specified number of seconds. Within this time, you do not need to call the **Validate** end point again if the **AuthSessionId** for a request is identical to the stored **AuthSessionId**.\r\n\r\n> info: A user can use an account in multiple sessions in which the **AuthSessionId** is different. If the **SCIM user** object is stored for the respective **AuthSessionId**, the object may exist multiple times in the memory. To optimize storage, you can use the part of the session ID before the ampersand (&) as the key for the **SCIM user** objects.\r\n\r\n> info: If a user has administrator authorizations, the user is added to the group **Built-In-Admin-Group**. This administrator group has the fixed ID **DC4885EF-A72C-4489-95A1-F37269D6E48D**.\r\n\r\n> info: If a user is member of a technical user group, the user is added to the group **Technical-User-Group**. This technical group has the fixed ID **C2CA9C2F-6D27-4E8C-9E91-0EBBB6F33919**. This group cannot be listed separately.\r\n"
+      parameters:
+        - name: allowExternalValidation
+          in: query
+          description: 'By specifying **allowExternalValidation=true** as a query parameter, you instruct the IdentityProvider app to also validate external users that are not known through the IdentityProvider app providers, but that have logged in via OpenID Connect (alternative login). For external users, the returned **SCIM user** object contains only an e-mail address and the special group membership to the **External User** group with the ID **3E093BE5-CCCE-435D-99F8-544656B98681**.'
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Valid token. Information of the user and a **CacheControl** Header with **MaxAge** is returned. The **MaxAge** value indicates how long the client should cache the results in non-persistent memory.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDto'
+        '401':
+          description: Invalid token or no token transferred
+        '403':
+          description: 'Valid token for an external user: **allowExternalValidation=false**.'
+        '404':
+          description: Valid token for a deleted user.
+  /develop-mode: { }
+  /openidcallback:
+    get:
+      tags:
+        - OpenIdCallBack
+      summary: "This is the callback address for the OpenID Connect flow. It implements the needed functionality for\r\nOpenID-Connect flow (OIDC) / OAUTH2."
+      description: "In addition to the OIDC/OAUTH2 standard, the following functionality has been added:\r\n\r\nCreating an IDP-Session with a validity of 30 minutes by passing a valid OAUTH2 access token \r\n\r\n\r\n\r\n\\*\\* Prerequisites \\*\\*\r\n\r\nThe IDP OIDC configuration \"introspection endpoint\" is well configured \r\n\r\nThe OIDC Client has the new scope \"dvsession\"\r\n\r\n\r\n\r\n\\*\\* Process description \\*\\*\r\n\r\nIf the callback-address is called without state and code parameter IDP responds with HTTP statuscode 401 and \"WWW-Authenticate\"-header set to: \"bearer realm=”\\*\\*openid config description text\\*\\*”\" and \"scope=”dvsession openid email”\".\r\n\r\nThis indicates, that the callback accepts an access\\_token from the OIDC Provider as an authorization bearer token.\r\n\r\n\r\n\r\nIf the callback-address is called without state and code parameter and an access\\_token is passed as a bearer token in the \"Authorization\"-header, the access\\_token is passed to the introspection\\_endpoint. \r\n\r\n\r\n\r\nIf the answer of the introspection\\_endpoint is ok the IDP calls the userinfo\\_endpoint in order to receive information about the user.\r\n\r\n\r\n\r\nIf the user is identified (by email or upn claim) a new IDP session is returned along with he expire-date as a JSON-answer (see AuthSessionInfoDto).\r\n\r\n\r\n\r\nIf the answer of the introspection\\_endpoint is not ok a HTTP Statuscode 401 is returned and the \"WWW-Authenticate\"-header is set to \"error=”\\*\\*error hint\\*\\*”\".\r\n\r\n\r\n\r\n\r\n\r\n"
+      parameters:
+        - name: id
+          in: query
+          description: Mandatory parameter that contains the unique id of the IDP OpenID Connect configuration
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request was successful and a JSON response with an expire-date an authSessionId is returned
+        '401':
+          description: "This could have several reasons:\r\n            Not all required scopes have been provided - or - \r\n            The user is not allowed to log-in due to login restrictions - or -\r\n            You did not provide a valid bearer token\r\n            In some cases the WWW-Authenticate response header is filled with additional error information."
+  /scim/groups:
+    get:
+      tags:
+        - SCIM
+      summary: SCIM 1.1 group list endpoint
+      description: 'You can find more information about the SCIM protocol in the Internet Engineering Task Force documentation: https://tools.ietf.org/html/rfc7643 or https://tools.ietf.org/html/rfc7644.'
+      parameters:
+        - name: filter
+          in: query
+          description: "A filter string as defined in the SCIM specification to filter the group list.\r\n\r\nThe following SCIM operators are supported for filtering:\r\n            \r\n**Attribute operators**\r\n\r\n- **equals** (**eq**)\r\n- **not equal** (**ne**)\r\n- **contains** (**co**)\r\n- **starts with** (**sw**)\r\n- **ends with** (**ew**)\r\n- **present** (**pr**)\r\n- **greater than** (**gt**)\r\n- **greater than or equal to** (**ge**)\r\n- **less than** (**lt**)\r\n- **less than or equal to** (**le**)\r\n            \r\n**Logical operators**\r\n            \r\n- **and**\r\n- **or**\r\n- **not**\r\n            \r\n**Grouping operators**\r\n            \r\n- **( )**\r\n- **[ ]**"
+          schema:
+            type: string
+        - name: startIndex
+          in: query
+          description: Specifies the starting index of the first group to return.
+          schema:
+            type: integer
+            format: int32
+            default: 1
+        - name: count
+          in: query
+          description: Specifies the maximum number of groups to return.
+          schema:
+            type: integer
+            format: int32
+            default: 2147483647
+        - name: attributes
+          in: query
+          description: A comma-separated list of attributes to include in the response.
+          schema:
+            type: string
+        - name: excludedAttributes
+          in: query
+          description: A comma-separated list of attributes to exclude from the response.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupListDto'
+  '/scim/groups/{id}':
+    get:
+      tags:
+        - SCIM
+      summary: SCIM 1.1 group by id endpoint
+      description: "You can find more information about the SCIM protocol in the Internet Engineering Task Force documentation: https://tools.ietf.org/html/rfc7643 or https://tools.ietf.org/html/rfc7644.\r\n\r\nNote: Only recommended if certain attributes that cannot be retrieved with **/scim/groups** are needed, since this endpoint is less optimized for performance."
+      parameters:
+        - name: id
+          in: path
+          description: stands for the ID of the specific group.
+          required: true
+          schema:
+            type: string
+        - name: attributes
+          in: query
+          description: A comma-separated list of attributes to include in the response.
+          schema:
+            type: string
+        - name: excludedAttributes
+          in: query
+          description: A comma-separated list of attributes to exclude from the response.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupDto'
+  '/scim/users/{id}':
+    get:
+      tags:
+        - SCIM
+      summary: SCIM 1.1 user by id endpoint
+      description: "You can find more information about the SCIM protocol in the Internet Engineering Task Force documentation: https://tools.ietf.org/html/rfc7643 or https://tools.ietf.org/html/rfc7644.\r\n\r\nNote: Only recommended if certain attributes that cannot be retrieved with **/scim/users** are needed, since this endpoint is less optimized for performance."
+      parameters:
+        - name: id
+          in: path
+          description: stands for the ID of the specific user.
+          required: true
+          schema:
+            type: string
+        - name: attributes
+          in: query
+          description: A comma-separated list of attributes to include in the response.
+          schema:
+            type: string
+        - name: excludedAttributes
+          in: query
+          description: A comma-separated list of attributes to exclude from the response.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDto'
+  /scim/users:
+    get:
+      tags:
+        - SCIM
+      summary: SCIM 1.1 user list endpoint
+      description: 'You can find more information about the SCIM protocol in the Internet Engineering Task Force documentation: https://tools.ietf.org/html/rfc7643 or https://tools.ietf.org/html/rfc7644.'
+      parameters:
+        - name: filter
+          in: query
+          description: "A filter string as defined in the SCIM specification to filter the user list.\r\n            \r\nThe following SCIM operators are supported for filtering:\r\n            \r\n**Attribute operators**\r\n\r\n- **equals** (**eq**)\r\n- **not equal** (**ne**)\r\n- **contains** (**co**)\r\n- **starts with** (**sw**)\r\n- **ends with** (**ew**)\r\n- **present** (**pr**)\r\n- **greater than** (**gt**)\r\n- **greater than or equal to** (**ge**)\r\n- **less than** (**lt**)\r\n- **less than or equal to** (**le**)\r\n            \r\n**Logical operators**\r\n            \r\n- **and**\r\n- **or**\r\n- **not**\r\n            \r\n**Grouping operators**\r\n            \r\n- **( )**\r\n- **[ ]**"
+          schema:
+            type: string
+        - name: startIndex
+          in: query
+          description: Specifies the starting index of the first user to return.
+          schema:
+            type: integer
+            format: int32
+            default: 1
+        - name: count
+          in: query
+          description: Specifies the maximum number of users to return.
+          schema:
+            type: integer
+            format: int32
+            default: 2147483647
+        - name: attributes
+          in: query
+          description: A comma-separated list of attributes to include in the response.
+          schema:
+            type: string
+        - name: excludedAttributes
+          in: query
+          description: A comma-separated list of attributes to exclude from the response.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserListDto'
+  /transfercode:
+    get:
+      tags:
+        - Transfer AuthSessionIds between clients
+      summary: "Apps maybe want to open a resource in another client. If this client can not perform a normal login, the app can request a transfer code. With this code the current User-AuthSessionId can be transferred to the other client.\r\nTo do so, an app sends the token object with an **HTTP-GET** request to the end point **/identityprovider/transfercode/{token]**. The given AuthSessionId is set as a cookie in the client and the user is redirected to the URL given when the transfer token was requested."
+      description: ''
+      parameters:
+        - name: token
+          in: query
+          description: Mandatory parameter that contains the token requested previously.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+        '302':
+          description: The success status code with the redirect to the given location.
+        '400':
+          description: The request is incorrect
+  /logintransfer:
+    post:
+      tags:
+        - Transfer AuthSessionIds between clients
+      summary: "Apps maybe want to open a resource in another client. If this client can not perform a normal login, the app can request a transfer code. With this code the current User-AuthSessionId can be transferred to the other client.\r\nTo do so, an app sends a JSON object with an **HTTP-POST** request to the end point **/identityprovider/logintransfer**.\r\nTo prevent misuse, the app must be on the whitelist of the impersonate apps.\r\nThe JSON object contains the following values"
+      description: ''
+      requestBody:
+        content:
+          application/json-patch+json:
+            schema:
+              $ref: '#/components/schemas/LoginTransferReqDto'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginTransferReqDto'
+          text/json:
+            schema:
+              $ref: '#/components/schemas/LoginTransferReqDto'
+          application/*+json:
+            schema:
+              $ref: '#/components/schemas/LoginTransferReqDto'
+      responses:
+        '200':
+          description: The success status code of the callback URI is returned.
+        '204':
+          description: The success status code of the callback URI is returned.
+        '400':
+          description: The request is incorrect
+components:
+  schemas:
+    AppSessionReqDto:
+      type: object
+      properties:
+        appName:
+          type: string
+          description: The name of the app.
+          nullable: true
+        requestId:
+          type: string
+          description: Request ID for checking whether the **HTTP-POST** request originates from this request.
+          nullable: true
+        callback:
+          type: string
+          description: Path of the URI to which the **AuthSessionId** is to be sent (relative URI).
+          nullable: true
+      additionalProperties: false
+      description: 'warning: All three parameters must be sent and the callback URI must begin with a forward slash, followed by the app name.'
+    AuthSessionInfoDto:
+      type: object
+      properties:
+        authSessionId:
+          type: string
+          nullable: true
+        expire:
+          type: string
+          format: date-time
+      additionalProperties: false
+    DetailDto:
+      type: object
+      properties:
+        key:
+          type: string
+          nullable: true
+        values:
+          type: array
+          items:
+            type: string
+          nullable: true
+      additionalProperties: false
+    EnterpriseExtensionDto:
+      type: object
+      properties:
+        employeeNumber:
+          type: string
+          nullable: true
+        costCenter:
+          type: string
+          nullable: true
+        organization:
+          type: string
+          nullable: true
+        division:
+          type: string
+          nullable: true
+        department:
+          type: string
+          nullable: true
+        manager:
+          $ref: '#/components/schemas/ManagerDto'
+      additionalProperties: false
+    GroupDto:
+      type: object
+      properties:
+        etag:
+          type: string
+          nullable: true
+        schemas:
+          type: array
+          items:
+            type: string
+          nullable: true
+          readOnly: true
+        id:
+          type: string
+          nullable: true
+        displayName:
+          type: string
+          nullable: true
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValueDto'
+          nullable: true
+        groupExtension:
+          $ref: '#/components/schemas/GroupExtensionDto'
+      additionalProperties: false
+    GroupExtensionDto:
+      type: object
+      properties:
+        groupTypes:
+          type: array
+          items:
+            type: string
+          nullable: true
+      additionalProperties: false
+    GroupListDto:
+      type: object
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+          nullable: true
+          readOnly: true
+        totalResults:
+          type: integer
+          format: int32
+        itemsPerPage:
+          type: integer
+          format: int32
+          readOnly: true
+        startIndex:
+          type: integer
+          format: int32
+        resources:
+          type: array
+          items:
+            $ref: '#/components/schemas/GroupDto'
+          nullable: true
+      additionalProperties: false
+    ImpersonateSessionDto:
+      type: object
+      properties:
+        authSessionId:
+          type: string
+          nullable: true
+        expire:
+          type: string
+          nullable: true
+      additionalProperties: false
+    LoginTransferReqDto:
+      type: object
+      properties:
+        appName:
+          type: string
+          description: The name of the app.
+          nullable: true
+        requestId:
+          type: string
+          description: Request ID for checking whether the **HTTP-POST** request originates from this request.
+          nullable: true
+        callback:
+          type: string
+          description: Path of the URI to which the **AuthSessionId** is to be sent (relative URI).
+          nullable: true
+        redirectUrl:
+          type: string
+          description: The url to the resource the client should open. It will be accessed after the session is successfully transfered.
+          nullable: true
+      additionalProperties: false
+    ManagerDto:
+      type: object
+      properties:
+        managerId:
+          type: string
+          nullable: true
+        displayName:
+          type: string
+          nullable: true
+      additionalProperties: false
+    NameDto:
+      type: object
+      properties:
+        familyName:
+          type: string
+          nullable: true
+        givenName:
+          type: string
+          nullable: true
+      additionalProperties: false
+    UserDto:
+      type: object
+      properties:
+        etag:
+          type: string
+          nullable: true
+        schemas:
+          type: array
+          items:
+            type: string
+          nullable: true
+          readOnly: true
+        id:
+          type: string
+          nullable: true
+        userName:
+          type: string
+          nullable: true
+        name:
+          $ref: '#/components/schemas/NameDto'
+        displayName:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        locale:
+          type: string
+          nullable: true
+        preferredLanguage:
+          type: string
+          nullable: true
+        timezone:
+          type: string
+          nullable: true
+        emails:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValueDto'
+          nullable: true
+        phoneNumbers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValueDto'
+          nullable: true
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValueDto'
+          nullable: true
+        photos:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValueDto'
+          nullable: true
+        enterpriseExtension:
+          $ref: '#/components/schemas/EnterpriseExtensionDto'
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/DetailDto'
+          nullable: true
+      additionalProperties: false
+    UserListDto:
+      type: object
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+          nullable: true
+          readOnly: true
+        totalResults:
+          type: integer
+          format: int32
+        itemsPerPage:
+          type: integer
+          format: int32
+          readOnly: true
+        startIndex:
+          type: integer
+          format: int32
+        resources:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserDto'
+          nullable: true
+      additionalProperties: false
+    ValueDto:
+      type: object
+      properties:
+        value:
+          type: string
+          nullable: true
+        display:
+          type: string
+          nullable: true
+        type:
+          type: string
+          nullable: true
+      additionalProperties: false
+  securitySchemes:
+    Bearer:
+      type: http
+      description: 'The user session token, api key or app session token'
+      scheme: bearer

@@ -1,0 +1,8 @@
+{
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "github.copilot.chat.commitMessageGeneration.instructions": [
+    {
+      "text": "Generate only Conventional Commit messages."
+    }
+  ]
+}
