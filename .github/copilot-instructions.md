@@ -58,7 +58,7 @@ Beide Pfade teilen **denselben Application-Service** und **dieselben Guardrails*
 
 ## 4. Modul- & Paketstruktur
 
-Basis-Package: `com.adeon.docextract`
+Basis-Package: `ch.adeon.apps.docextract`
 
 | Modul          | Verantwortung                                                                                | Inbound-Port          |
 | -------------- | -------------------------------------------------------------------------------------------- | --------------------- |

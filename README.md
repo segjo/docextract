@@ -4,7 +4,7 @@ KI-gestützte Dokumenterfassung & -verschlagwortung für das Dokumentenmanagemen
 
 ## Architektur-Baseline
 
-Dieses Repository enthält eine minimale Java-21/Spring-Boot-4-Baseline als modularen Monolithen mit hexagonaler Struktur unter `com.adeon.docextract`:
+Dieses Repository enthält eine minimale Java-21/Spring-Boot-4-Baseline als modularen Monolithen mit hexagonaler Struktur unter `ch.adeon.apps.docextract`:
 
 - `ingest`, `structuring`, `retrieval`, `extraction`, `validation`, `agentgateway`, `audit`, `security`
 - Paketkonvention je Modul: `domain`, `application`, `adapter/*`

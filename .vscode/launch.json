@@ -4,7 +4,7 @@
     {
       "name": "Run docextract",
       "type": "java",
-      "mainClass": "com.adeon.docextract.DocextractApplication",
+      "mainClass": "ch.adeon.apps.docextract.DocextractApplication",
       "request": "launch",
       "cwd": "${workspaceFolder}",
       "console": "internalConsole"

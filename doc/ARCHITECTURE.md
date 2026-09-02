@@ -172,7 +172,7 @@ C4Container
 
 ```
 
-com.adeon.docextract
+ch.adeon.apps.docextract
 ├─ ingest
 │ ├─ domain # DocumentUpload, Limits, ValidationResult, DmsLocation
 │ ├─ application # IngestDocumentService (Inbound-Port-Impl, ruft DmsChunkUploadPort)
