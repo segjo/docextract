@@ -1,0 +1,4 @@
+com/adeon/docextract/architecture/HexagonalArchitectureTest.class
+com/adeon/docextract/agentgateway/adapter/in/mcp/DocExtractMcpToolTest.class
+com/adeon/docextract/retrieval/adapter/out/postgres/PgvectorSimilaritySearchAdapterTest.class
+com/adeon/docextract/validation/application/ConfirmAndWriteBackServiceTest.class

@@ -1,0 +1,4 @@
+/home/runner/work/docextract-3/docextract-3/src/test/java/com/adeon/docextract/agentgateway/adapter/in/mcp/DocExtractMcpToolTest.java
+/home/runner/work/docextract-3/docextract-3/src/test/java/com/adeon/docextract/architecture/HexagonalArchitectureTest.java
+/home/runner/work/docextract-3/docextract-3/src/test/java/com/adeon/docextract/retrieval/adapter/out/postgres/PgvectorSimilaritySearchAdapterTest.java
+/home/runner/work/docextract-3/docextract-3/src/test/java/com/adeon/docextract/validation/application/ConfirmAndWriteBackServiceTest.java
