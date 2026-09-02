@@ -55,7 +55,8 @@
     </build>
 
     <profiles>
-        <!-- Activates once frontend/package.json exists, so the Java-only build keeps working until the Angular app is scaffolded -->
+        <!-- Activates once frontend/package.json exists, so the Java-only build keeps working until
+        the Angular app is scaffolded -->
         <profile>
             <id>frontend-build</id>
             <activation>
@@ -120,7 +121,8 @@
                                     <outputDirectory>${project.build.outputDirectory}/static/ui</outputDirectory>
                                     <resources>
                                         <resource>
-                                            <directory>frontend/dist/${frontend.project.name}/browser</directory>
+                                            <directory>
+                                                frontend/dist/${frontend.project.name}/browser</directory>
                                         </resource>
                                     </resources>
                                 </configuration>
