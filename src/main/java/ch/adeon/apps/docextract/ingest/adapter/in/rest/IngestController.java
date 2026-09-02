@@ -9,15 +9,22 @@ import org.springframework.web.bind.annotation.RestController;
 import ch.adeon.apps.docextract.ingest.application.IngestDocument;
 import ch.adeon.apps.docextract.ingest.domain.IngestCommand;
 import ch.adeon.apps.docextract.ingest.domain.IngestedDocument;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @RestController
-@RequestMapping("/api/ingest")
+@RequestMapping("/api/v1/ingest")
 public class IngestController {
 
     private final IngestDocument ingestDocument;
 
     public IngestController(IngestDocument ingestDocument) {
         this.ingestDocument = ingestDocument;
+    }
+
+    @GetMapping("")
+    public ResponseEntity<Void> getMethodName(@RequestParam String param) {
+        return ResponseEntity.ok().build();
     }
 
     @PostMapping

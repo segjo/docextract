@@ -13,7 +13,7 @@ import ch.adeon.apps.docextract.validation.domain.ConfirmationCommand;
 import ch.adeon.apps.docextract.validation.domain.ConfirmationResult;
 
 @RestController
-@RequestMapping("/api/validation")
+@RequestMapping("/api/v1/validation")
 public class ValidationController {
 
     private final ConfirmAndWriteBack confirmAndWriteBack;

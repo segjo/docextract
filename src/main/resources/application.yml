@@ -1,6 +1,12 @@
 spring:
   application:
     name: docextract
+  mvc:
+    static-path-pattern: /ui/**
+
+server:
+  servlet:
+    context-path: /adeon-docextract
 
 ---
 spring:
