@@ -88,7 +88,7 @@ Sieben Ziele, je eine eigenständige Qualitätsdimension (Genauigkeit · Retriev
 
 - **FR-1 — Dokument-Upload, PDF-Vorschau & Eingangsvalidierung (Scope § 2).** Upload per Frontend/REST; klassische Konvertierung (Gotenberg/LibreOffice) für die visuelle Kontrolle. Harte **Limits** (Dateigröße, Seitenzahl, Timeouts) mit kontrolliertem Abbruch. _Kein KI-Nutzen._
 - **FR-2 — Strukturierte Aufbereitung Dokument → Markdown (Scope § 2).** docling rekonstruiert Lesereihenfolge, Tabellen und Struktur, damit der Extraktionsschritt sauberen Kontext erhält. _KI als Werkzeug._
-- **FR-3 — Ähnlichkeitssuche / Kategorisierung (Scope § 2).** Embedding + Vektor-DB findet fachlich verwandte Dokumente als Vorlage. **Berechtigungsfilter (Pre-Filter auf Mandant/ACL) vor** der Ähnlichkeitssuche. Kennzahl: Precision@3 (→ NfA-6). _KI als Teil der Lösung._
+- **FR-3 — Ähnlichkeitssuche / Kategorisierung (Scope § 2).** Embedding + Vektor-DB findet fachlich verwandte Dokumente als Vorlage. Die beim Extraktionslauf erzeugten Dokument-Embeddings werden einmalig erzeugt und temporär mit `status = PENDING`, `process_id` und `expires_at` in pgvector gespeichert. `PENDING`-Embeddings sind nicht Bestandteil des aktiven Korpus. Jede Ähnlichkeitssuche erzwingt als Pre-Filter sowohl Mandant/ACL als auch `status = APPROVED`. Nach expliziter Freigabe werden dieselben Embeddings ohne Neuberechnung atomar zu `APPROVED` hochgestuft. Kennzahl: Precision@3 (→ NfA-6). _KI als Teil der Lösung._
 - **FR-4 — KI-Attributvorschläge (Scope § 2).** LLM extrahiert Betrag, Empfänger, Datum etc. anhand der Vorlage und nutzt bei Eigenschaften mit Wertelisten, falls vorhanden, die gültigen Werte — bzw. gibt eigenständig „unbekannt" zurück, wenn keine passt. Ausgabe **gegen JSON-Schema validierbar**. _Substanzieller KI-Teil._
 - **FR-5 — Validierung & Rückschreiben ins DMS (Scope § 2).** Mensch bestätigt/korrigiert im Validierungs-UI (Konfidenz- & Quellenanzeige). Bestätigtes Ergebnis kann optional als **neue, herkunftsmarkierte Vorlage** zurückfliessen. _KI mittelbar._
 - **FR-6 — MCP-Tool für Agenten-Konsum (Scope § 2, Modulanforderung Block 3).** Der Extraktions-/Retrieval-Service wird als **MCP-Tool** exponiert, sodass ein Agent (z. B. Redmine-/CI-Assistent) Dokumente extrahieren/klassifizieren lassen kann. Es gelten dieselben Guardrails wie im UI-Pfad: Berechtigungs-Pre-Filter (NfA-4), Least Privilege (C-3), **Consent vor kritischen Aktionen** und Audit-Log (C-2/C-4). _KI-Werkzeug-Schnittstelle._
@@ -97,17 +97,18 @@ Sieben Ziele, je eine eigenständige Qualitätsdimension (Genauigkeit · Retriev
 
 - **C-1 — Betriebsgrenze / Datensouveränität:** Dokumentinhalte und Embeddings verlassen die lokale Betriebsgrenze nicht. Durchsetzung _technisch_ per **Netzwerk-Policy** (Egress unterbunden), in CI durch **Egress-Test** verifiziert.
 - **C-2 — Kein automatischer Schreibzugriff:** Rückschreiben ins DMS nur nach **expliziter Benutzerbestätigung**. Keine LLM-Ausgabe löst selbsttätig einen Schreib-/Tool-Call aus — gilt auch für den MCP-Pfad (FR-6).
-- **C-3 — Least Privilege:** Der LLM-/Inferenz-Service hat ausschliesslich **Lesezugriff** auf die Vektor-DB; Schreiboperationen laufen über einen separaten, authentifizierten Service. Das MCP-Tool erhält nur die minimal nötigen Scopes.
+- **C-3 — Least Privilege:** Der LLM-/Inferenz-Service besitzt keinen direkten Zugriff auf PostgreSQL/pgvector oder die DMS-API. Der Retrieval-Adapter darf Embeddings ausschliesslich als `PENDING` mit Ablaufzeit speichern. Nur der Consent-geschützte Validierungspfad darf Embeddings von `PENDING` auf `APPROVED` setzen. Das MCP-Tool erhält nur die minimal nötigen Scopes.
 - **C-4 — Unveränderlicher Audit-Pfad:** Jeder LLM-Call wird **append-only** mit Modellversion, Prompt-Hash, **Token-Verbrauch** und Konfidenz protokolliert — **ohne roh-PII** (Hashes/Referenzen), damit Löschpflicht (NfA-5) und Unveränderlichkeit koexistieren. Der Token-Verbrauch ist zugleich Datenquelle für NfA-7.
 - **C-5 — Modell-Integrität (Supply-Chain):** Modelle per **Hash/Digest gepinnt**; nur verifizierte Artefakte gelangen in den Betrieb.
 - **C-6 — Reproduzierbarer Betrieb:** Start nach dokumentiertem Bootstrapping per docker compose up auf Linux und Windows/WSL2; Smoke-Test in CI (LLM als Mock; echtes Modell im Nightly).
+- **C-7 — Quarantäne temporärer Embeddings:** Vor der Freigabe gespeicherte Embeddings tragen `status = PENDING`, `tenant_id`, ACL-Scope, `process_id` und `expires_at`. Retrieval berücksichtigt ausschliesslich `status = APPROVED`. Die Freigabe aktiviert die vorhandenen Vektoren ohne Neuberechnung. Ablehnung, endgültiger Prozessfehler oder TTL-Ablauf löschen die `PENDING`-Embeddings. Ein Cleanup-Job entfernt überfällige Einträge; Einträge im Recovery-Zustand `FINALIZED_INDEX_PENDING` sind bis zum Abschluss der Promotion geschützt.
 
 #### 5.3 Realisierung von Qualitätszielen durch Verhalten (Referenzen, nicht dupliziert)
 
 - Retrieval-Berechtigungsfilter (NfA-4 / T-3) → FR-3, FR-6
 - Retrieval-Güte / Precision@3 (NfA-6) → FR-3
 - Schema-Validierung der LLM-Ausgabe (T-1) → FR-4
-- Vorlagen-Freigabe mit Herkunftsmarkierung (T-2) → FR-5
+- Vorlagen-Freigabe mit atomarer Embedding-Promotion `PENDING → APPROVED` und Herkunftsmarkierung (T-2/C-7) → FR-5
 - Eingangsvalidierung / Limits (T-4 / NfA-3) → FR-1
 - Konfidenz- & Quellenanzeige im Validierungs-UI (C-2) → FR-5
 - Token-/Kosten-Protokollierung (NfA-7) → C-4 (Audit-Log)
@@ -131,7 +132,7 @@ Guardrails sind die unverhandelbaren Leitplanken für den KI-Anteil. Jede adress
 | # | Bedrohung | Warum naive Abwehr nicht reicht | Guardrail / Mitigation | Umsetzung |
 | --- | --- | --- | --- | --- |
 | **T-1** | **Direkte Prompt Injection** (Anweisungen im Dokumentinhalt) | Längenbegrenzung/Free-Text-Bereinigung wirken kaum — der Angriff steckt im Inhalt | Dokument strikt als _untrusted data_, nie als Instruktion/System-Prompt; **schema-constrained Decoding**; Output-Validierung gegen JSON-Schema; keine aus Inhalt ableitbaren Tool-Calls (→ C-2) | FR-4 |
-| **T-2** | **Indirekte Injection & Datenvergiftung** über den Self-Learning-Loop | Nutzer-Bestätigung prüft aktuelle Felder, nicht die spätere Vorlagenwirkung | Rückfluss nur **nach Freigabe**, mit Herkunfts-/Vertrauensmarkierung; Vorlagen kuratierbar/rückrollbar; optional Quarantäne | FR-5 |
+| **T-2** | **Indirekte Injection & Datenvergiftung** über den Self-Learning-Loop | Nutzer-Bestätigung prüft aktuelle Felder, nicht die spätere Vorlagenwirkung | Vor der Freigabe Embeddings ausschliesslich als nicht retrievalfähige `PENDING`-Einträge mit TTL speichern; Aktivierung derselben Vektoren erst nach Freigabe als `APPROVED`; bei Ablehnung oder Ablauf löschen; Herkunfts-/Vertrauensmarkierung und Rollback unterstützen | FR-5 |
 | **T-3** | **Cross-Tenant-/Cross-ACL-Leak** über die Ähnlichkeitssuche | Reine Vektorähnlichkeit kennt keine Berechtigung; auch _innerhalb_ eines Tenants gelten dokument-/ordnerbezogene ACLs | Berechtigungs-**Pre-Filter** im Retrieval: aus der d.velop-Session abgeleitete **Tenant- und ACL-Prädikate** werden als Filter in die Vektor-Query eingebettet (nicht als Post-Filter); Umsetzung über die AuthN-basierte Kontextauflösung | FR-3 (→ NfA-4) |
 | **T-4** | **Ressourcen-Erschöpfung / DoS** (Riesen-PDF, Zip-Bomb) | Happy-Path-Pipeline hat keine Obergrenzen | Harte Limits (Dateigröße, Seitenzahl, Timeouts je Stufe); kontrollierter Abbruch | FR-1 (→ NfA-3) |
 | **T-5** | **Manipuliertes/kompromittiertes Modell** | Ollama-Pull ohne Verifikation | **Digest-Pinning** & Integritätsprüfung vor Deployment | C-5 (Betriebs-/CI-Kontrolle) |
