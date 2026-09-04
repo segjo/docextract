@@ -9,6 +9,9 @@ import org.springframework.web.bind.annotation.RestController;
 import ch.adeon.apps.docextract.ingest.application.IngestDocument;
 import ch.adeon.apps.docextract.ingest.domain.IngestCommand;
 import ch.adeon.apps.docextract.ingest.domain.IngestedDocument;
+import ch.adeon.apps.docextract.security.application.AuthContextPort;
+import ch.adeon.apps.docextract.security.domain.AuthContext;
+
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
@@ -17,14 +20,17 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class IngestController {
 
     private final IngestDocument ingestDocument;
+    private final AuthContextPort authContextPort;
 
-    public IngestController(IngestDocument ingestDocument) {
+    public IngestController(IngestDocument ingestDocument, AuthContextPort authContextPort) {
         this.ingestDocument = ingestDocument;
+        this.authContextPort = authContextPort;
     }
 
-    @GetMapping("")
-    public ResponseEntity<Void> getMethodName(@RequestParam String param) {
-        return ResponseEntity.ok().build();
+    @GetMapping("/test")
+    public ResponseEntity<String> getMethodName(@RequestParam(required = false) String param) {
+        AuthContext auth = authContextPort.current();
+        return ResponseEntity.ok().body("hello " + auth.displayName());
     }
 
     @PostMapping

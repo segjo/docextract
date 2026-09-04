@@ -8,6 +8,12 @@ server:
   servlet:
     context-path: /adeon-docextract
 
+docextract:
+  dvelop:
+    jstore-uri: http://localhost:6380/store/httpgateway/appconfig
+    # fallback used only when the jstore endpoint above is unreachable, e.g. https://dms.local
+    system-base-uri: https://dms.local
+
 ---
 spring:
   config:
