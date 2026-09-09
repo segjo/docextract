@@ -52,7 +52,7 @@ DocExtract ist als **modularer Monolith mit hexagonaler Architektur** aufgebaut.
 - `audit`: Append-only Audit ohne Roh-PII
 - `security`: Session-, Tenant-, ACL- und Consent-Prüfung
 
-Weitere Details befinden sich in [ARCHITECTURE.md](ARCHITECTURE.md).
+Weitere Details befinden sich in [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md).
 
 ## Technologie-Stack
 
@@ -134,16 +134,16 @@ Die Teststrategie umfasst:
 - ArchUnit-Tests für Modulgrenzen
 - Smoke-, Egress- und Security-Checks in der CI-Pipeline
 
-Die messbaren Qualitätsziele und Evaluationsfälle sind in [SPEC.md](SPEC.md) definiert.
+Die messbaren Qualitätsziele und Evaluationsfälle sind in [doc/SPEC.md](doc/SPEC.md) definiert.
 
 ## Dokumentation
 
-- [SPEC.md](SPEC.md): Ziele, Scope, Anforderungen, Qualitätsziele und Guardrails
-- [ARCHITECTURE.md](ARCHITECTURE.md): Architektur, Laufzeitsichten, Datenmodell und ADRs
-- [copilot-instructions.md](copilot-instructions.md): Verbindliche Arbeitsanweisungen für GitHub Copilot
-- [PROJEKTPLAN.md](PROJEKTPLAN.md): Block- und Meilensteinplanung, sofern im Repository vorhanden
+- [doc/SPEC.md](doc/SPEC.md): Ziele, Scope, Anforderungen, Qualitätsziele und Guardrails
+- [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md): Architektur, Laufzeitsichten, Datenmodell und ADRs
+- [.github/copilot-instructions.md](.github/copilot-instructions.md): Verbindliche Arbeitsanweisungen für GitHub Copilot
+- [doc/PROJEKTPLAN.md](doc/PROJEKTPLAN.md): Block- und Meilensteinplanung, sofern im Repository vorhanden
 
-Bei Widersprüchen gelten `SPEC.md` und `ARCHITECTURE.md` als verbindliche Quellen.
+Bei Widersprüchen gelten `doc/SPEC.md` und `doc/ARCHITECTURE.md` als verbindliche Quellen.
 
 ## Projektstatus
 
