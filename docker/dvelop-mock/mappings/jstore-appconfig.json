@@ -1,0 +1,15 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPath": "/store/httpgateway/appconfig"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": {
+      "AppConfiguration": {
+        "systembaseuri": "http://localhost:6380"
+      }
+    }
+  }
+}

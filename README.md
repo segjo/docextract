@@ -99,6 +99,27 @@ Der Stack ist für einen reproduzierbaren Betrieb mit Docker Compose auf folgend
 
 Die konkrete Compose-Konfiguration und die erforderlichen Umgebungsvariablen werden zusammen mit der Implementierung im Repository bereitgestellt. Verbindliche Betriebs- und Sicherheitsentscheidungen sind in den Architekturentscheidungen dokumentiert.
 
+### Lokale Entwicklung (dev mode)
+
+1. d.velop-Mock (DMS/IdP-Simulation) starten:
+
+   ```bash
+   docker compose up dvelop-mock
+   ```
+
+2. Anwendung bauen und starten (Profil `local`):
+
+   ```bash
+   mvn spring-boot:run -Dspring-boot.run.profiles=local
+   ```
+
+3. Aufruf testen:
+
+   ```bash
+   curl -X GET "http://localhost:8080/adeon-docextract/api/v1/ingest/test" \
+     -H "Authorization: Bearer dummy-token"
+   ```
+
 ## Qualitätssicherung
 
 Die Teststrategie umfasst:

@@ -1,0 +1,11 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPath": "/dash/api/v2/widgets"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": []
+  }
+}

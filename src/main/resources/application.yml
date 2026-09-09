@@ -12,7 +12,7 @@ docextract:
   dvelop:
     jstore-uri: http://localhost:6380/store/httpgateway/appconfig
     # fallback used only when the jstore endpoint above is unreachable, e.g. https://dms.local
-    system-base-uri: https://dms.local
+    system-base-uri: http://localhost:8081
 
 ---
 spring:

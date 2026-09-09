@@ -1,0 +1,13 @@
+{
+  "request": {
+    "method": "POST",
+    "urlPathPattern": "/r/[^/]+/o2m"
+  },
+  "response": {
+    "status": 201,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": {
+      "sourceId": "mock-dms-object-0001"
+    }
+  }
+}
