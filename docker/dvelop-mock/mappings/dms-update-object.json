@@ -1,0 +1,9 @@
+{
+  "request": {
+    "method": "PUT",
+    "urlPathPattern": "/r/[^/]+/o2m/[^/]+"
+  },
+  "response": {
+    "status": 204
+  }
+}

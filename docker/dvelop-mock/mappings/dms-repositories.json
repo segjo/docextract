@@ -1,0 +1,19 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPath": "/r"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": {
+      "repositories": [
+        {
+          "id": "dev-repository",
+          "name": "Dev Repository",
+          "sourceId": "dev-repository"
+        }
+      ]
+    }
+  }
+}

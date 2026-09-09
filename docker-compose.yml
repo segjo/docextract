@@ -1,0 +1,111 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17-bookworm@sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-docextract}
+      POSTGRES_USER: ${POSTGRES_USER:-docextract}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-docextract-local}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    configs:
+      - source: postgres-init
+        target: /docker-entrypoint-initdb.d/001-pgvector.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - docextract
+
+  preview:
+    image: gotenberg/gotenberg:8.21.1@sha256:91486863744f7420ca985ee6cef7c216910e40faffd378f3da7c0fad724d01ba
+    ports:
+      - "127.0.0.1:${GOTENBERG_PORT:-3000}:3000"
+    healthcheck:
+      test:
+        ["CMD", "curl", "--fail", "--silent", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - docextract
+
+  docling:
+    image: quay.io/docling-project/docling-serve:v1.9.0@sha256:678863039821705940f481ad1204b4441d6e717f20aaca0b828a24f5bec7edb1
+    ports:
+      - "127.0.0.1:${DOCLING_PORT:-5001}:5001"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:5001/health', timeout=2)"
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - docextract
+
+  ollama:
+    image: ollama/ollama:latest@sha256:075246f72d4109385b4a01c3ac8e9cbd26a0bcb21cd7aa30edbccd24e1b3180c
+    ports:
+      - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - docextract
+
+  # Mocks identityprovider-api, dvelop-dmsapp and dashboard-app-api for local
+  # development without a real d.velop system. Opt-in only, never used by the
+  # "local"/"ci"/"cluster" application profiles by default:
+  #   docker compose --profile mock up dvelop-mock
+  dvelop-mock:
+    build:
+      context: ./docker/dvelop-mock
+    ports:
+      - "127.0.0.1:${DVELOP_MOCK_PORT:-8081}:8080"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--spider",
+          "-q",
+          "http://localhost:8081/__admin/health",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    profiles:
+      - mock
+
+configs:
+  postgres-init:
+    content: |
+      CREATE EXTENSION IF NOT EXISTS vector;
+
+networks:
+  docextract:
+    internal: true
+
+volumes:
+  postgres-data:
+  ollama-data:

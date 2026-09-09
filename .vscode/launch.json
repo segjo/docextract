@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run docextract",
+      "type": "java",
+      "mainClass": "ch.adeon.apps.docextract.DocextractApplication",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "console": "internalConsole"
+    }
+  ]
+}

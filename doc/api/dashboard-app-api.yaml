@@ -1,0 +1,1259 @@
+openapi: 3.0.0
+info:
+  title: Dashboard-App API
+  version: 1.0.0
+  description: |-
+    For all the interfaces, there are limits on the number of calls within specific time frames. If these limits are exceeded, the HTTP status code 429 (too many requests) is returned.
+
+    Any unknown attributes included in a request body will be ignored and will not affect the processing of the request.
+tags:
+  - name: Widgets
+    description: |
+      A widget must be registered with an app session. The section [Inter-app communication with app sessions](https://help.d-velop.de/dev/documentation/identityprovider-app#IdentityproviderApp-Inter-App-KommunikationmitApp-Sessions) for the identity provider app describes how to issue an app session.
+
+      > Authentication must take place with a bearer token in the authorization header. Authentication via cookie is not possible.
+  - name: JavaScript API
+    description: |
+      ## Integrating the dashboard JavaScript API
+
+      You can integrate the dashboard JavaScript API in your page as follows.
+
+      Create a script tag, add the attribute `type="module"` to it and use the URL `"/dash/api/dashboard_api_v1.js"` as the source.
+
+      ```html
+
+      <script type="module" src="/dash/api/dashboard_api_v1.js"></script>
+      ```
+
+      ## IFrame widget JavaScript API
+
+      ### Available methods
+
+      You can access the IFrame widget API methods under `window.dashboard.WidgetAPI.<Methode>`.
+
+      #### Navigation
+
+      If you want to navigate to a different page, use the method `navigateTo(userEvent, url)`. To ensure that the navigation was triggered by a user, you must specify the appropriate event (e.g. the click event).
+
+      ```javascript
+      window.dashboard.WidgetAPI.navigateTo(userEvent, url)
+      ```
+
+      #### Outer supply
+
+      You can use the method `openOuterSupply(userEvent, url)` to open a resource in the outer supply. To ensure that the opening of the outer supply was triggered by a user, you must specify the appropriate event (e.g. the click event).
+
+      ```javascript
+      window.dashboard.WidgetAPI.openOuterSupply(userEvent, url)
+      ```
+
+      #### Widget settings callback
+
+      You can use the widget settings IFrame to update the widget. To do so, you must register a callback function using the method `setUpdateSettingsCallback(callback)`. The user can retrieve the callback function by clicking on
+      **Save**.
+
+      ```typescript
+      function callback(data: unknown) {
+          console.log(data)
+      }
+
+      window.dashboard.WidgetAPI.setUpdateSettingsCallback(callback)
+      ```
+
+      #### Opening the settings
+
+      **Deprecated**: The `openSettings` function should no longer be used. It leads to inconsistencies where some widgets offer an open settings button and others do not.
+      The settings for all widgets should be accessed through the UI provided by the dashboard app.
+
+      You can open the widget settings using the three-dot icon on the widget. However, you can also open the settings using the method `openSettings(userEvent)`. Here too, the event triggered by the user must be specified.
+
+      ```javascript
+      window.dashboard.WidgetAPI.openSettings(userEvent)
+      ```
+
+      #### Saving the settings
+
+      The method `saveSettings(data)` allows you to save the settings for a widget. These settings are saved via the dashboard app for each widget instance.
+      You must be able to convert the settings to JSON and the JSON object must not be larger than 1 kB.
+
+      ```javascript
+      window.dashboard.WidgetAPI.saveSettings(data)
+      ```
+
+      #### Retrieving the saved settings
+
+      You can retrieve the saved settings of a widget instance using the method `getSettings()`. The method returns a promise for the settings.
+
+      ```javascript
+      const data = await window.dashboard.WidgetAPI.getSettings()
+      ```
+
+      ## Widget settings JavaScript API
+
+      The widget settings are displayed in the navigation drawer in an IFrame. The URL for this IFrame is specified during registration.
+
+      ### Available methods
+
+      You can access the widget settings API methods under `window.dashboard.WidgetSettingsAPI.<Methode>`.
+
+      #### Retrieving the saved settings
+
+      You can also retrieve the saved settings of a widget instance using the widget settings API, as with the [IFrame widget API](#retrieving-the-saved-settings).
+
+      ```javascript
+      const data = await window.dashboard.WidgetAPI.getSettings()
+      ```
+
+      #### Getter function for widget settings
+
+      In order to be able to save the settings of the IFrame widget, you must define a getter function for the settings. To do this, use the method `setSettingsGetter(getter)`.
+      The getter function must return the settings of the widget. You must be able to convert the settings to JSON and the JSON object must not be larger than 1 kB.
+
+      ```typescript
+      function getSettings(): unknown {
+          return {
+              sort: "desc"
+          }
+      }
+
+      window.dashboard.WidgetAPI.setSettingsGetter(getSettings)
+      ```
+
+      #### Updating the settings
+
+      > warning: **Deprecated**:
+      > You may only use the method `updateSettings` if you have used the obsolete property `settings.url` during registration.
+      > If you have used the property `content_settings.url`, the method is automatically executed when you click **Save**.
+
+      You can notify the IFrame widget about updated settings using the method `updateSettings(data)`.
+
+      ```javascript
+      window.dashboard.WidgetSettingsAPI.updateSettings(data)
+      ```
+  - name: widget-registrations
+    description: |
+      > **⚠️ DEPRECATED**: This API is deprecated and will be removed in a future version. Please use the [Widgets API v2](#tag/widgets) instead.
+
+      An app can register widgets only in the app’s own namespace.
+
+      A widget must be registered with an app session. The section [Inter-app communication with app sessions](https://help.d-velop.de/dev/documentation/identityprovider#tag/authentication/post/appsession) for the identity provider app describes how to issue an app session.
+
+      > Authentication must take place with a bearer token in the authorization header. Authentication via cookie is not possible.
+paths:
+  /dash/api/v2/widgets:
+    get:
+      summary: Get all widgets
+      description: Returns all registered widgets for the app on the current tenant.
+      tags:
+        - Widgets
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Paging'
+                  - type: object
+                    properties:
+                      widgets:
+                        type: array
+                        description: All widgets of the app.
+                        items:
+                          $ref: '#/components/schemas/Widget'
+        '403':
+          description: Principal is not an app.
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Error'
+  /dash/api/v2/widgets/{id}:
+    get:
+      summary: Get a widget
+      description: Returns a widget with a given id.
+      tags:
+        - Widgets
+      parameters:
+        - $ref: '#/components/parameters/WidgetID'
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Widget'
+        '400':
+          description: Invalid path parameters.
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Error'
+        '403':
+          description: Principal is not an app.
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Error'
+        '404':
+          description: Widget not found.
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Error'
+    put:
+      summary: Create or update a widget
+      description: Creates or updates a widget with a given id.
+      tags:
+        - Widgets
+      parameters:
+        - $ref: '#/components/parameters/WidgetID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Widget'
+      callbacks:
+        badgeCount:
+          '{$request.body#/badge/url}':
+            get:
+              summary: Badge callback
+              description: When you register a shortcut widget, you can set a badge URL where the badge count will be fetched from.
+              responses:
+                '200':
+                  description: OK.
+                  content:
+                    application/json:
+                      schema:
+                        type: object
+                        required:
+                          - badge
+                        properties:
+                          badge:
+                            type: object
+                            required:
+                              - count
+                            properties:
+                              count:
+                                type: integer
+                                description: If the value is greater than 0, a badge is displayed on the widget. Values greater than 99 are displayed as “99+”.
+                        example:
+                          badge:
+                            count: 10
+        listContent:
+          '{$request.body#/additionalTypes/list/content/url}':
+            get:
+              summary: List content callback
+              description: |
+                When you register a list widget, you must set a query content URL where the list content will be fetched from.
+
+                For better time formatting a request to the url specified in query.content.url will contain a custom header `x-dv-timezone`.
+                The value is the IANA Timezone Identifier, e.g. `Europe/Berlin` for german timezone.
+              responses:
+                '200':
+                  description: OK.
+                  content:
+                    application/json:
+                      schema:
+                        $ref: '#/components/schemas/ListContent'
+      responses:
+        '201':
+          description: Widget created successfully.
+        '204':
+          description: Widget updated successfully.
+        '400':
+          description: Invalid path parameters or widget object.
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Error'
+        '403':
+          description: Principal is not an app.
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Error'
+        '404':
+          description: Widget not found.
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Error'
+    delete:
+      summary: Delete a widget
+      description: Deletes a widget with a given id.
+      tags:
+        - Widgets
+      parameters:
+        - $ref: '#/components/parameters/WidgetID'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplaceWidget'
+      responses:
+        '204':
+          description: Widget deleted successfully.
+        '400':
+          description: Invalid path parameters or replacement widget id.
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Error'
+        '403':
+          description: Principal is not an app.
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Error'
+        '404':
+          description: Widget not found.
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Error'
+  /dash/api/widget-registrations/{app}/{id}:
+    patch:
+      summary: Create or update a widget registration
+      description: Creates or updates a widget registration.
+      deprecated: true
+      tags:
+        - widget-registrations
+      parameters:
+        - $ref: '#/components/parameters/App'
+        - $ref: '#/components/parameters/ID'
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: '#/components/schemas/WidgetRegistration'
+            examples:
+              Shortcut:
+                $ref: '#/components/examples/ShortcutWidget'
+              List:
+                $ref: '#/components/examples/ListWidget'
+              IFrame:
+                $ref: '#/components/examples/IFrameWidget'
+      responses:
+        '200':
+          description: Registration or update of the widget was successful.
+        '400':
+          description: Widget registration object is invalid.
+        '401':
+          description: Authentication via app session is required.
+        '403':
+          description: A widget can be registered only within the internal widget namespace. Please ensure that the first part of the widget registration ID is the same as the app name.
+        '429':
+          description: Rate limit was reached.
+        5XX:
+          description: An unexpected error has occurred.
+      callbacks:
+        badge:
+          '{$request.body#/widget/query/badge/url}':
+            get:
+              summary: Badge callback
+              description: When you register a shortcut widget, you can set a badge URL where the badge count will be fetched from.
+              responses:
+                '200':
+                  description: OK.
+                  content:
+                    application/json:
+                      schema:
+                        type: object
+                        required:
+                          - badge
+                        properties:
+                          badge:
+                            type: object
+                            required:
+                              - count
+                            properties:
+                              count:
+                                type: integer
+                                description: If the value is greater than 0, a badge is displayed on the widget. Values greater than 99 are displayed as “99+”.
+                        example:
+                          badge:
+                            count: 10
+        listContent:
+          '{$request.body#/widget/query/content/url}':
+            get:
+              summary: List content callback
+              description: |
+                When you register a list widget, you must set a query content URL where the list content will be fetched from.
+
+                For better time formatting a request to the url specified in query.content.url will contain a custom header `x-dv-timezone`.
+                The value is the IANA Timezone Identifier, e.g. `Europe/Berlin` for german timezone.
+              responses:
+                '200':
+                  description: OK.
+                  content:
+                    application/json:
+                      schema:
+                        $ref: '#/components/schemas/ListContent'
+    delete:
+      summary: Deletes a widget registration
+      description: Delete a widget registration.
+      deprecated: true
+      tags:
+        - widget-registrations
+      parameters:
+        - $ref: '#/components/parameters/App'
+        - $ref: '#/components/parameters/ID'
+      responses:
+        '204':
+          description: Widget registration deleted successfully.
+        '400':
+          description: Invalid parameters.
+        '401':
+          description: Authentication via app session is required.
+        '403':
+          description: A widget can only be deleted within the internal widget namespace. Please ensure that the first part of the widget registration ID is the same as the app name.
+        5XX:
+          description: An unexpected error has occurred.
+    components:
+      parameters:
+        App:
+          name: app
+          description: The technical app name.
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[^/]+$
+        ID:
+          name: id
+          description: The widget id.
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: ^[a-z]+[a-z0-9-]+$
+            minLength: 2
+            maxLength: 12
+components:
+  schemas:
+    Paging:
+      type: object
+      required:
+        - paging
+      properties:
+        paging:
+          type: object
+          description: The paging information for the list of widgets. If all widgets are returned, this object is empty.
+          properties:
+            next:
+              type: string
+              description: The URL to the next page of widgets. If there are no more pages, this is not present.
+            prev:
+              type: string
+              description: The URL to the previous page of widgets. If there are no previous pages, this is not present.
+            first:
+              type: string
+              description: The URL to the first page of widgets. If this is the first page, this is not present.
+            last:
+              type: string
+              description: The URL to the last page of widgets. If this is the last page, this is not present.
+    Widget:
+      type: object
+      required:
+        - id
+        - title
+        - icon
+        - target
+      properties:
+        id:
+          type: string
+          description: The id of the widget registration. The widget id consists of the technical app name followed by an unique identifier for the widget, separated by a slash ('/').
+          readOnly: true
+          pattern: ^([^/]+)/([a-zA-Z0-9-]+)$
+          example: task/tasks
+        title:
+          type: object
+          description: The title of the widget. This is an object where the key is a language tag and the value is the title for that language.
+          maxProperties: 184
+          additionalProperties:
+            type: string
+            maxLength: 64
+          example:
+            en: My tasks
+            de: Meine Aufgaben
+        subtitle:
+          type: object
+          description: The subtitle of the widget. This is an object where the key is a language tag and the value is the title for that language.
+          maxProperties: 184
+          additionalProperties:
+            maxLength: 128
+            type: string
+          example:
+            en: My open tasks
+            de: Meine offenen Aufgaben
+        icon:
+          type: object
+          description: The icon of the widget.
+          required:
+            - url
+          properties:
+            url:
+              type: string
+              description: URL for an icon. Max 12KB when using a base64 encoded image.
+              example: https://example.com/tasks.svg
+        target:
+          type: object
+          description: The target where the widget should navigate to when clicked.
+          required:
+            - url
+          properties:
+            url:
+              type: string
+              description: URL for the target address (if the target address is to be displayed in the old shell, specify the query parameter oldBehavior=true as well).
+              maxLength: 2048
+              example: /task/tasks
+            navigationTarget:
+              type: string
+              description: |
+                The navigation target for the widget. To open the target in a new browser tab, set this to "_blank".
+                By default, navigation to the target URL occurs within the same tab.
+              enum:
+                - _blank
+              example: _blank
+        badge:
+          type: object
+          description: The badge of the widget.
+          properties:
+            url:
+              type: string
+              description: |-
+                Specifies the URL where the badge object can be fetched. Server should respond with JSON:
+                ```
+                {
+                  "query": {
+                    "count": <BADGE_COUNT>
+                  }
+                }
+                ```
+              maxLength: 2048
+              example: /task/tasks/badge
+        additionalTypes:
+          type: object
+          description: Additional types for the widget. These types can be used to display the widget in different ways.
+          properties:
+            list:
+              type: object
+              description: If set the widget can be displayed as a list widget.
+              required:
+                - content
+              properties:
+                content:
+                  type: object
+                  description: The content of the list widget.
+                  required:
+                    - url
+                  properties:
+                    url:
+                      type: string
+                      description: |-
+                        Specifies the URL where the list entries can be fetched. Server should respond with JSON:
+                        ```
+                        {
+                          "entries": [
+                            {
+                              "title": {
+                                "text": "Sign contract"
+                              },
+                              "subtitle": {
+                                "text": "Due: 24.12.2024",
+                                "color": "#FF0000"
+                              },
+                              "fontMode": "bold",
+                              "lead_element": {
+                                "material_icon": "arrow_forward",
+                                "icon_color": "#FFCB31"
+                              },
+                              "target": {
+                                "url": "/task/task-1"
+                              }
+                            }
+                          ],
+                          "line_variant": "twoline",
+                          "leading_element_type": "icon"
+                        }
+                        ```
+
+                        See ListEntry model for for information.
+                      maxLength: 2048
+                      example: /task/tasks/list
+                    navigationMode:
+                      type: string
+                      description: The navigation mode of the list widget. If set to "navigate", the widget will navigate to the target URL when an entry is clicked. If set to "sideArea", the entry will open in a side area.
+                      enum:
+                        - sideArea
+                        - navigate
+                      default: sideArea
+                      example: navigation
+                footer:
+                  type: object
+                  description: The footer of the list widget. If defined, a footer is displayed at the bottom of the list widget.
+                  properties:
+                    primaryAction:
+                      type: object
+                      description: The primary action of the footer. If defined, a button is displayed in the footer.
+                      properties:
+                        url:
+                          type: string
+                          description: The url will be opened in a side area when the button is clicked.
+                          example: /task/tasks/create
+                        label:
+                          type: object
+                          description: The label of the button. This is an object where the key is a language tag and the value is the label for that language.
+                          maxProperties: 184
+                          additionalProperties:
+                            type: string
+                            maxLength: 64
+                          example:
+                            en: Create task
+                            de: Aufgabe erstellen
+            iframe:
+              type: object
+              description: If set the widget can be displayed as an iframe widget.
+              required:
+                - content
+              properties:
+                content:
+                  type: object
+                  description: The content of the iframe widget.
+                  required:
+                    - url
+                  properties:
+                    url:
+                      type: string
+                      description: The URL that is displayed in the iframe. The URL must be an **absolute path reference** (e.g. “/foobar/resource.html”, not “foobar/resource.html”).
+                      maxLength: 2048
+                      example: /task/tasks/iframe
+                settings:
+                  type: object
+                  description: The settings of the iframe widget.
+                  properties:
+                    url:
+                      type: string
+                      description: |
+                        The URL to a settings page for the iframe widget. The URL must be an **absolute path reference** (e.g. “/foobar/resource.html”, not “foobar/resource.html”).
+
+                        For more information about widget settings, see _Widget settings JavaScript API_.
+                      maxLength: 2048
+                      example: /task/tasks/settings
+        permissions:
+          type: object
+          description: You have the option to specify permissions for the widget. If you do not specify permissions, widgets are visible to all authenticated users.
+          properties:
+            groups:
+              type: array
+              description: An array of IDP group objects. A user must be a member of at least one of the specified groups to view the widget.
+              items:
+                type: object
+                properties:
+                  value:
+                    type: string
+                    description: The IDP group id.
+                    example: f7896752-ff58-4f2e-81ee-3f5a7629da0d
+        overrideHomeAppFeatureId:
+          type: string
+          description: |
+            If there is already a home app feature for the widget, this field can be used to overwrite this feature with the widget. This way, only one widget is displayed in the catalog.
+
+            To do this, specify the ID of the home app feature. If an ID was specified when registering the home app feature, this can be used. Otherwise, the ID is made up of the URL that was specified in `features[].url`.
+            All slashes are replaced by a minus sign. The ID is then composed as follows: `<APP_NAME>-<URL>`.
+            For example, for the app `foobar` with the URL `/target/url`, the ID is `foobar-target-url`.
+          example: task-task-tasks
+    Error:
+      type: object
+      required:
+        - type
+        - title
+        - detail
+        - res
+        - tn
+      properties:
+        type:
+          type: string
+          description: The type identifies the problem type.
+          example: tag:myapp:exampleDeleted
+        title:
+          type: string
+          description: A short summary of the problem.
+          example: Example has already been deleted.
+        detail:
+          type: string
+          description: A specific description of the problem.
+          example: The example has already been deleted and could not be found.
+        supportUri:
+          type: string
+          format: url
+          description: URL to a knowledge base article or any other page with further assistance.
+          example: https://example.com/help/example-deleted
+        devUri:
+          type: string
+          format: url
+          description: URL to the documentation and a description of the error.
+          example: https://example.com/docs/example-deleted
+        res:
+          type: object
+          required:
+            - svc
+          properties:
+            svc:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  description: The name of the app.
+                  example: myapp
+                version:
+                  type: string
+                  format: semver
+                  description: The current version of the app.
+                  example: 1.2.3
+                inst:
+                  type: string
+                  description: The id of the service instance.
+                  example: d47a838fe9fc44ff9be28e0c6c8b94b7
+        trace:
+          type: string
+          description: The trace id of the request.
+          example: f4dbb3edd765f620
+        span:
+          type: string
+          description: The span id of the request.
+          example: 14dbb3edd765f650
+        tn:
+          type: string
+          description: The tenant id of the current tenant.
+          example: abc
+        stackId:
+          type: string
+          format: uuid
+          description: A generated id for the error.
+          example: 202c3053-d525-4e56-b864-3b3b27b6a0a1
+    ListEntry:
+      type: object
+      required:
+        - title
+      properties:
+        title:
+          type: object
+          description: The title of the list entry.
+          required:
+            - text
+          properties:
+            text:
+              type: string
+              description: Contains the title of the entry.
+            color:
+              type: string
+              description: Defines the color of the title. Please specify the color as a hexadecimal value (for example `#112233`).
+        subtitle:
+          type: object
+          description: The subtitle of the list entry.
+          properties:
+            text:
+              type: string
+              description: Contains the subtitle of the entry.
+            color:
+              type: string
+              description: Defines the color of the subtitle. Please specify the color as a hexadecimal value (for example `#112233`).
+        fontMode:
+          type: string
+          description: Defines the font for the text.
+          enum:
+            - bold
+            - crossed-out
+        lead_element:
+          type: object
+          description: The leading element of the list entry.
+          properties:
+            material_icon:
+              type: string
+              description: Defines the leading icon. The value must be a valid material icon. To use a material icon, set leading_element_type to `icon`.
+            icon_color:
+              type: string
+              description: Defines the color of the leading icon. Please specify the color as a hexadecimal value (for example `#112233`).
+            image_url:
+              type: string
+              format: uri
+              description: URL for an image (SVG or PNG). To use an image, set leading_element_type to `image`.
+            image_size:
+              type: string
+              description: Defines the size of the image.
+              enum:
+                - icon
+                - avatar
+                - medium
+                - large
+        trail_element:
+          type: object
+          description: The trailing element of the list entry.
+          properties:
+            material_icon:
+              type: string
+              description: Defines the trailing icon. The value must be a valid material icon. To use a material icon, set trailing_element_type to `icon`.
+            icon_color:
+              type: string
+              description: Defines the color of the trailing icon. Please specify the color as a hexadecimal value (for example `#112233`).
+            caption:
+              type: string
+              description: Contains the text to be displayed at the end of the entry. To use a caption, set trailing_element_type to `caption`.
+            caption_color:
+              type: string
+              description: Defines the color of the caption. Please specify the color as a hexadecimal value (for example `#112233`).
+        target:
+          type: object
+          properties:
+            url:
+              type: string
+              description: URL that the entry forwards you to when clicked.
+    ListContent:
+      type: object
+      required:
+        - entries
+      properties:
+        entries:
+          type: array
+          description: Contains all the list entries.
+          items:
+            $ref: '#/components/schemas/ListEntry'
+        line_variant:
+          type: string
+          description: Defines the number of lines per element. If no value is defined, one line is displayed. For two lines, specify the value `twoline`.
+        leading_element_type:
+          type: string
+          description: Defines the type of the leading element. If no value is specified, no element is displayed.
+          enum:
+            - icon
+            - image
+        trailing_element_type:
+          type: string
+          description: Defines the type of the trailing element. If no value is specified, no element is displayed.
+          enum:
+            - icon
+            - caption
+      example:
+        entries:
+          - title:
+              text: Sign contract
+            subtitle:
+              text: 'Due: 24.12.2024'
+              color: '#FF0000'
+            fontMode: bold
+            lead_element:
+              material_icon: arrow_forward
+              icon_color: '#FFCB31'
+            target:
+              url: /task/task-1
+        line_variant: twoline
+        leading_element_type: icon
+    ReplaceWidget:
+      type: object
+      properties:
+        replacementWidgetId:
+          type: string
+          description: The ID of the widget to replace the current widget with.
+          example: task/mytasks
+    ShortcutWidget:
+      type: object
+      description: Use this widget to enable the user to navigate to your app.
+      required:
+        - type
+        - title
+        - icon
+        - target
+      properties:
+        type:
+          type: string
+          description: The widget type.
+          enum:
+            - shortcut
+        title:
+          type: object
+          description: The title of the widget. This is an object where the key is a language tag and the value is the title for that language.
+          additionalProperties:
+            type: string
+        subtitle:
+          type: object
+          description: The subtitle of the widget. This is an object where the key is a language tag and the value is the subtitle for that language.
+          additionalProperties:
+            type: string
+        icon:
+          type: object
+          description: The icon of the widget.
+          required:
+            - url
+          properties:
+            url:
+              type: string
+              format: uri
+              description: URL for an icon (SVG or PNG).
+        target:
+          type: object
+          description: The target of the widget.
+          required:
+            - url
+          properties:
+            url:
+              type: string
+              description: URL for the target address (if the target address is to be displayed in the old shell, specify the query parameter oldBehavior=true as well).
+        query:
+          type: object
+          properties:
+            badge:
+              type: object
+              properties:
+                url:
+                  type: string
+                  description: |-
+                    Specifies the URL where the badge object can be fetched. Server should respond with JSON:
+                    ```
+                    {
+                      "query": {
+                        "count": <BADGE_COUNT>
+                      }
+                    }```
+        override_home_app_feature_id:
+          type: string
+          description: |
+            If there is already a home app feature for the widget, this field can be used to overwrite this feature with the widget. This way, only one widget is displayed in the catalog.
+
+            To do this, specify the ID of the home app feature. If an ID was specified when registering the home app feature, this can be used. Otherwise, the ID is made up of the URL that was specified in `features[].url`.
+            All slashes are replaced by a minus sign. The ID is then composed as follows: `<APP_NAME>-<URL>`.
+            For example, for the app `foobar` with the URL `/target/url`, the ID is `foobar-target-url`.
+    ListWidget:
+      type: object
+      description: Use this widget to display a list widget.
+      required:
+        - type
+        - title
+        - icon
+        - target
+        - query
+      properties:
+        type:
+          type: string
+          description: The widget type.
+          enum:
+            - list
+        title:
+          type: object
+          description: The title of the widget. This is an object where the key is a language tag and the value is the title for that language.
+          additionalProperties:
+            type: string
+        subtitle:
+          type: object
+          description: The subtitle of the widget. This is an object where the key is a language tag and the value is the subtitle for that language.
+          additionalProperties:
+            type: string
+        icon:
+          type: object
+          description: The icon of the widget.
+          required:
+            - url
+          properties:
+            url:
+              type: string
+              format: uri
+              description: URL for an icon (SVG or PNG).
+        target:
+          type: object
+          description: The target of the widget.
+          required:
+            - url
+          properties:
+            url:
+              type: string
+              description: URL for the target address (if the target address is to be displayed in the old shell, specify the query parameter oldBehavior=true as well).
+        query:
+          type: object
+          required:
+            - content
+          properties:
+            content:
+              type: object
+              required:
+                - url
+              properties:
+                url:
+                  type: string
+                  description: |-
+                    Specifies the URL where the list entries can be fetched. Server should respond with JSON:
+                    ```
+                    {
+                      "entries": [
+                        {
+                          "title": {
+                            "text": "Sign contract"
+                          },
+                          "subtitle": {
+                            "text": "Due: 24.12.2024",
+                            "color": "#FF0000"
+                          },
+                          "fontMode": "bold",
+                          "lead_element": {
+                            "material_icon": "arrow_forward",
+                            "icon_color": "#FFCB31"
+                          },
+                          "target": {
+                            "url": "/task/task-1"
+                          }
+                        }
+                      ],
+                      "line_variant": "twoline",
+                      "leading_element_type": "icon"
+                    }```
+
+                    See ListEntry model for for information.
+                navigation:
+                  type: string
+                  description: Defines the navigation mode when a user clicks on a list item.
+                  enum:
+                    - dapiNavigate
+                    - innerSupply
+                    - outerSupply
+                  default: outerSupply
+        footer:
+          type: object
+          description: If defined, a footer is displayed at the bottom of the list widget.
+          properties:
+            url:
+              type: string
+              description: URL that is opened in the outer supply of the shell.
+            label:
+              type: object
+              description: The label of the footer. This is an object where the key is a language tag and the value is the label for that language.
+              additionalProperties:
+                type: string
+    IFrameWidget:
+      type: object
+      description: Use this widget to display external content via IFrame.
+      required:
+        - type
+        - title
+        - icon
+        - target
+        - source
+      properties:
+        type:
+          type: string
+          description: The widget type.
+          enum:
+            - iframe
+        title:
+          type: object
+          description: The title of the widget. This is an object where the key is a language tag and the value is the title for that language.
+          additionalProperties:
+            type: string
+        subtitle:
+          type: object
+          description: The subtitle of the widget. This is an object where the key is a language tag and the value is the subtitle for that language.
+          additionalProperties:
+            type: string
+        icon:
+          type: object
+          description: The icon of the widget.
+          required:
+            - url
+          properties:
+            url:
+              type: string
+              format: uri
+              description: URL for an icon (SVG or PNG).
+        target:
+          type: object
+          description: The target of the widget.
+          required:
+            - url
+          properties:
+            url:
+              type: string
+              description: URL for the target address (if the target address is to be displayed in the old shell, specify the query parameter oldBehavior=true as well).
+        size:
+          type: object
+          description: The allowed size of the widget.
+          properties:
+            min_w:
+              type: integer
+              description: The minimum width of the widget.
+              minimum: 2
+              maximum: 18
+            min_h:
+              type: integer
+              description: The minimum height of the widget.
+              minimum: 2
+              maximum: 16
+        source:
+          type: object
+          required:
+            - url
+          properties:
+            url:
+              type: string
+              description: URL for the HTML resource to be embedded in the IFrame. The URL must be an **absolute path reference**; that is, it must start with a leading slash `/` (for example, “/foobar/ressource.html” and not “foobar/ressource.html”).
+        content_settings:
+          type: object
+          properties:
+            url:
+              type: string
+              description: |
+                URL for a configuration page for the IFrame content of the widget. The settings are saved for each widget instance.
+                The URL must be an **absolute path preference**; that is, it must start with a leading slash `/` (for example, “/foobar/ressource.html” and not “foobar/ressource.html”).
+
+                For more information about widget settings, see _Widget settings JavaScript API_.
+        settings:
+          type: object
+          deprecated: true
+          properties:
+            url:
+              type: string
+              deprecated: true
+              description: |
+                This property is obsolete. Instead, please use the property `content_settings.url`.
+
+                URL for a configuration page for the widget. The URL must be an **absolute path reference**; that is, it must start with a leading slash `/` (for example, “/foobar/ressource.html” and not “foobar/ressource.html”).
+    Permissions:
+      type: object
+      description: |
+        You also have the option of specifying permissions for the widget. If you do not specify permissions, widgets are visible to all authenticated users.
+        [External users are excluded](https://help.d-velop.de/dev/documentation/identityprovider-app#validating-the-login).
+      properties:
+        groups:
+          type: array
+          description: An array of group objects. An OR link is used to check whether a user is permitted to view the widget; that is, at runtime, the system checks whether the user is in “group A” OR “group B” OR “group C”.
+          items:
+            type: object
+            properties:
+              value:
+                type: string
+                description: The IDP group id.
+    WidgetRegistration:
+      type: object
+      required:
+        - widget
+      properties:
+        widget:
+          oneOf:
+            - $ref: '#/components/schemas/ShortcutWidget'
+            - $ref: '#/components/schemas/ListWidget'
+            - $ref: '#/components/schemas/IFrameWidget'
+        permissions:
+          $ref: '#/components/schemas/Permissions'
+  parameters:
+    WidgetID:
+      name: id
+      description: |
+        The widget id consists of the technical app name followed by an unique identifier for the widget, separated by a slash ('/'). The identifier is a string of up to 36 characters.
+
+        **Note for OnPremises:** The slash in the id must not be URL encoded since "d.3 gateway" does not support URL encoded slashes in the URL path.
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^([^/]+)/([a-zA-Z0-9-]+)$
+    App:
+      name: app
+      description: The technical app name.
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[^/]+$
+    ID:
+      name: id
+      description: The widget id.
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[a-z]+[a-z0-9-]+$
+        minLength: 2
+        maxLength: 12
+  examples:
+    ShortcutWidget:
+      summary: Shortcut widget
+      value:
+        widget:
+          type: shortcut
+          title:
+            en: My tasks
+            de: Meine Aufgaben
+          subtitle:
+            en: My open tasks
+            de: Meine offenen Aufgaben
+          icon:
+            url: https://example.com/tasks.svg
+          target:
+            url: /task/tasks
+          query:
+            badge:
+              url: /task/tasks/badge
+        permissions:
+          groups:
+            - value: f7896752-ff58-4f2e-81ee-3f5a7629da0d
+    ListWidget:
+      summary: List widget
+      value:
+        widget:
+          type: list
+          title:
+            en: My tasks
+            de: Meine Aufgaben
+          subtitle:
+            en: My open tasks
+            de: Meine offenen Aufgaben
+          icon:
+            url: https://example.com/tasks.svg
+          target:
+            url: /task/tasks
+          query:
+            content:
+              url: /task/tasks/list
+              navigation: dapiNavigate
+          footer:
+            url: /task/tasks/create
+            label:
+              en: Create task
+              de: Aufgabe erstellen
+        permissions:
+          groups:
+            - value: f7896752-ff58-4f2e-81ee-3f5a7629da0d
+    IFrameWidget:
+      summary: IFrame widget
+      value:
+        widget:
+          type: iframe
+          title:
+            en: My tasks
+            de: Meine Aufgaben
+          subtitle:
+            en: My open tasks
+            de: Meine offenen Aufgaben
+          icon:
+            url: https://example.com/tasks.svg
+          target:
+            url: /task/tasks
+          source:
+            url: /task/tasks/source
+          content_settings:
+            url: /task/tasks/settings
+        permissions:
+          groups:
+            - value: f7896752-ff58-4f2e-81ee-3f5a7629da0d
