@@ -68,11 +68,11 @@ C4Context
     title C4 L1 — Systemkontext DocExtract
     Person(sb, "Sachbearbeiter:in", "Erfasst & verschlagwortet Dokumente im Browser")
     System_Ext(agent, "Agent (Redmine-/CI-Assistent)", "Konsumiert Extraktion via MCP")
-
     Enterprise_Boundary(dv, "d.velop Plattform") {
-        System_Ext(dvfe, "d.velop Frontend + Reverse Proxy", "Bettet DocExtract als iframe ein, routet HTTP")
         System_Ext(idp, "d.velop Identity Provider", "Cookie-basierte AuthN, Tenant/ACL")
+
         System_Ext(dms, "d.velop DMS-API", "Dokumente hochladen / Metadaten lesen / bestätigte Attribute zurückschreiben")
+                System_Ext(dvfe, "d.velop Frontend + Reverse Proxy", "Bettet DocExtract als iframe ein, routet HTTP")
     }
 
     System_Boundary(tb, "KI-Verarbeitungsgrenze (lokal; Egress-Allowlist)") {
@@ -89,6 +89,10 @@ C4Context
     Rel(docx, idp, "validiert Session, leitet Tenant/ACL ab")
     Rel(docx, dms, "lädt Dokument als Chunk hoch (Location) / liest ähnliche Metadaten / schreibt Attribute nach Freigabe an Location")
     Rel(docx, tpa, "holt Wertelisten (JIT)")
+    UpdateRelStyle(docx, dms, $offsetY="10", $offsetX="-280")
+    UpdateRelStyle(docx, idp, $offsetY="10", $offsetX="-70")
+    UpdateRelStyle(sb, dvfe, $offsetY="-150", $offsetX="-100")
+    UpdateRelStyle(dvfe, docx, $offsetY="90", $offsetX="-150")
 ```
 
 > **KI-Verarbeitungsgrenze (rot):** Parsing, Chunking, Embeddings, LLM-Inferenz und pgvector bleiben lokal. Kontrollierter Ausgang nur zu IdP, DMS-API und Wertelisten-Webhook. Dokument- und Preview-Bytes dürfen ausschliesslich zur DMS-API übertragen werden.
@@ -160,6 +164,8 @@ C4Container
     Rel(app, dms, "Metadaten / Doc- + Preview-Chunk / Rückschreiben nach Consent")
     Rel(app, tpa, "Wertelisten (JIT)")
 
+    UpdateRelStyle(app, tpa, $offsetY="-150", $offsetX="-100")
+
     UpdateElementStyle(tb, $borderColor="red")
 ```
 
@@ -227,7 +233,7 @@ ch.adeon.apps.docextract
 
 ### 6.1 Happy-Path — synchroner Übergabepunkt, danach asynchrone Verarbeitung (UI)
 
-Der HTTP-Request wird erst nach dem erfolgreichen synchronen Upload des Originals in den DMS-Chunk-Store mit `202 Accepted + processId` beantwortet. Die DMS-Location ist der dauerhafte Übergabepunkt. Der Async-Job läuft auf einer Instanz und hält Chunks und Query-Vektoren nur transient. Eine Lease mit Heartbeat ermöglicht die Erkennung verwaister Jobs.
+Der HTTP-Request wird erst nach dem erfolgreichen synchronen Upload des Originals in den DMS-Chunk-Store mit `202 Accepted + processId` beantwortet. Die DMS-Location ist der dauerhafte Übergabepunkt. Der Async-Job läuft auf einer Instanz und hält das `DoclingDocument` und die Chunks nur transient; die daraus erzeugten Dokument-Embeddings werden als `PENDING` mit TTL gespeichert. Eine Lease mit Heartbeat ermöglicht die Erkennung verwaister Jobs.
 
 ```mermaid
 sequenceDiagram
@@ -286,7 +292,7 @@ sequenceDiagram
     OLL-->>EXT: JSON-Vorschlag + Konfidenz (+ knappe Quell-Exzerpte)
     API->>AUD: LLM-Call protokollieren (Token, Hash, ohne PII) [C-4/NfA-7]
     EXT-->>PRC: extracted
-    API->>JOB: Job-Context verwerfen → Chunks + Query-Vektor weg
+    API->>JOB: Job-Context verwerfen → `DoclingDocument` + Chunks weg
     PRC-->>FE: SSE: extracted → Validierungs-UI
     FE-->>SB: Vorschläge anzeigen (Quellprüfung am PDF-Preview)
 ```
@@ -303,8 +309,6 @@ sequenceDiagram
     participant API as Backend
     participant VAL as validation
     participant DMS as d.velop DMS-API
-    participant STR as structuring
-    participant EMB as EmbeddingPort
     participant VDB as pgvector
     participant AUD as audit
 
@@ -392,7 +396,7 @@ flowchart TB
 ```
 
 - **Cluster-fähig:** N Backend-Instanzen hinter dem Proxy, gemeinsame DB; keine Sticky Sessions für HTTP/SSE; laufende Jobs bleiben instanzgebunden. SSE-Fortschritt cluster-weit via Postgres `LISTEN/NOTIFY` + `PROCESS_STEP` (ADR-004); Preview-Bytes im DMS-Chunk-Store (ADR-005).
-- **Job-Affinität:** Die Verarbeitung _eines_ Dokuments läuft als Async-Task auf der annehmenden Instanz (Chunks + Query-Vektor nur in-memory, ADR-006). Bei Instanzausfall erkennt Recovery die abgelaufene Lease; der Job endet definiert oder wird aus der DMS-Location begrenzt wiederholt (NfA-3).
+- **Job-Affinität:** Die Verarbeitung _eines_ Dokuments läuft als Async-Task auf der annehmenden Instanz (`DoclingDocument` und Chunks nur in-memory; Dokument-Embeddings als `PENDING` mit TTL in pgvector, ADR-006). Bei Instanzausfall erkennt Recovery die abgelaufene Lease; der Job endet definiert oder wird aus der DMS-Location begrenzt wiederholt (NfA-3).
 - **Reproduzierbar (C-6):** `docker compose up`, Basis-Images per **Digest** fixiert, Modelle per Digest-Pinning (T-5/C-5).
 - **CI-Gate:** Smoke- + **Egress-Allowlist-Test** (LLM als Mock), Security-Scan (SAST/Dependency/Image) vor Publish.
 
@@ -409,7 +413,7 @@ flowchart TB
 
 ### 8.2 Sicherheit (Überblick, Details § 10.3)
 
-Session-basierte AuthN (d.velop-Cookie) → **Tenant/ACL-Auflösung** → Pre-Filter im Retrieval → Consent-Gate vor irreversiblen Aktionen → append-only Audit ohne roh-PII. Least Privilege: Ollama besitzt keinen direkten Zugriff auf PostgreSQL, pgvector oder die DMS-API; Datenzugriffe erfolgen über getrennte Backend-Ports und Rollen. **Datenminimierung (ADR-006):** Chunks und Query-Vektor werden nie at-rest gehalten — sie existieren nur in-memory während des Jobs; dauerhaft bleiben ausschliesslich Korpus-Embeddings (nach Freigabe), Metadaten und Audit-Hashes. Das reduziert die Rest-PII-Fläche (NfA-5) und ist konsistent mit C-4.
+Session-basierte AuthN (d.velop-Cookie) → **Tenant/ACL-Auflösung** → Pre-Filter im Retrieval → Consent-Gate vor irreversiblen Aktionen → append-only Audit ohne roh-PII. Least Privilege: Ollama besitzt keinen direkten Zugriff auf PostgreSQL, pgvector oder die DMS-API; Datenzugriffe erfolgen über getrennte Backend-Ports und Rollen. **Datenminimierung (ADR-006):** `DoclingDocument` und Chunks werden nie at-rest gehalten; Dokument-Embeddings liegen bis zur Freigabe ausschliesslich als nicht retrievalfähige `PENDING`-Einträge mit TTL vor. Dauerhaft bleiben nur freigegebene Korpus-Embeddings, Metadaten und Audit-Hashes. Das reduziert die Rest-PII-Fläche (NfA-5) und ist konsistent mit C-4.
 
 ### 8.3 Observability
 
@@ -524,7 +528,7 @@ Die KI-Pipeline hat **zwei getrennte Modell-Nutzungen** auf demselben Ollama-Bac
 - **Strukturierung + Chunking (FR-2, ADR-007):** docling parst das Dokument zu einem `DoclingDocument` und erzeugt daraus mit dem **`HybridChunker`** direkt **struktur- und token-basierte Chunks** (respektiert Überschriften/Tabellen/Lesereihenfolge, hält harte Token-Limits ein). `contextualize()` reichert jeden Chunk mit **Überschriften-Metadaten** an — das ist der Text, der eingebettet wird (bessere Retrieval-Qualität als roher Chunk-Text). Chunks sind transient (ADR-006).
 - **Tokenizer-Alignment (Design-Regel):** Der docling-Chunker braucht einen **Tokenizer, der zum Embedding-Modell passt** (`max_tokens` aus dem Tokenizer abgeleitet), sonst passen Chunk-Größen nicht zum Kontextfenster des Ollama-Embedders. Deshalb liefert **`retrieval` die `ChunkingConfig`** (Modellname, Tokenizer, `max_tokens`), die der `structuring`/docling-Adapter konsumiert. Die Chunk-Größe ist damit eine **Eigenschaft des Embedding-Modells**, nicht von docling.
 - **Retrieval (FR-3) — hier entstehen die Vektoren:**
-  1. **Embedding:** Jeder (kontextualisierte) Chunk wird über den `EmbeddingPort` (`OllamaEmbeddingAdapter`) zu einem **Vektor**. Dieser **Query-Vektor ist transient** und dient nur der Suche.
+  1. **Embedding:** Jeder kontextualisierte Chunk wird über den `EmbeddingPort` (`OllamaEmbeddingAdapter`) einmalig zu einem Dokument-Embedding vektorisiert und als `PENDING` mit TTL gespeichert. Für die Ähnlichkeitssuche werden diese Vektoren im selben Lauf verwendet.
   2. **Ähnlichkeitssuche:** `VectorSearchPort` (`PgVectorSearchAdapter`) sucht in pgvector **nach ACL-Pre-Filter** (`tenant_id`/`acl_ref` als Query-Prädikat) → Top-k Vorlagen → Precision@3 (NfA-6).
 - **Korpus-Aufbau (T-2/C-7):** Embeddings werden beim Extraktionslauf als `PENDING` gespeichert und treten erst durch die Consent-geschützte Promotion zu `APPROVED` dem aktiven Korpus bei. Rohtext wird nie abgelegt; gespeichert werden Vektor, Dokument-/Chunk-Referenz, Tenant-/ACL-Scope, Prozessreferenz, Status, TTL und Provenance (ADR-006).
 - **Extraktion (FR-4):** schema-constrained Decoding gegen JSON-Schema; Werteliste als erlaubte Domäne; „unbekannt" statt Halluzination (E-5); knappe Quell-Exzerpte für UI-Highlighting.

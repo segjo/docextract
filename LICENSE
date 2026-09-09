@@ -1,0 +1,62 @@
+DocExtract Source-Available License
+
+Copyright (c) 2026 Jonas Segessemann
+All rights reserved.
+
+1. Purpose
+
+This source code is made publicly available solely for viewing,
+evaluation, review and educational purposes in connection with the
+DocExtract project.
+
+2. Ownership
+
+The software, including its source code, documentation, architecture,
+designs and associated materials, is owned by Jonas Segessemann.
+
+3. Permitted Use
+
+You may view the publicly available source code for evaluation,
+educational and review purposes.
+
+4. Restrictions
+
+Without prior written permission from the copyright holder, you may not:
+
+- use or execute the software;
+- copy or reproduce the software;
+- modify or create derivative works;
+- distribute or sublicense the software;
+- make the software available to third parties;
+- host or operate the software as a service;
+- use the software for commercial purposes;
+- incorporate the software into another product or service.
+
+5. No Open-Source License
+
+This license is not an open-source license. Access to the source code
+does not grant any rights beyond those explicitly stated in this
+license.
+
+6. Third-Party Components
+
+Third-party libraries and components remain subject to their respective
+licenses. This license applies only to the original parts of DocExtract
+owned by the copyright holder.
+
+7. No Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+
+IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES
+OR OTHER LIABILITY ARISING FROM THE SOFTWARE OR ITS USE.
+
+8. Additional Permissions
+
+Additional usage, modification, distribution or commercial rights may
+be granted through a separate written agreement with the copyright
+holder.
+
+For licensing inquiries, contact the copyright holder.
