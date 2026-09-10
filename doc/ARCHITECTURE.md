@@ -66,13 +66,17 @@ Sachbearbeiter:in (UI-Pfad), Agent (MCP-Pfad), Records-/DMS-Owner, IT-Betrieb/Da
 ```mermaid
 C4Context
     title C4 L1 — Systemkontext DocExtract
-    Person(sb, "Sachbearbeiter:in", "Erfasst & verschlagwortet Dokumente im Browser")
-    System_Ext(agent, "Agent (Redmine-/CI-Assistent)", "Konsumiert Extraktion via MCP")
-    Enterprise_Boundary(dv, "d.velop Plattform") {
-        System_Ext(idp, "d.velop Identity Provider", "Cookie-basierte AuthN, Tenant/ACL")
+     UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
+        Person(sb, "Sachbearbeiter:in", "Erfasst & verschlagwortet Dokumente im Browser")
+        System_Ext(agent, "Agent (Redmine-/CI-Assistent)", "Konsumiert Extraktion via MCP")
 
+
+    Enterprise_Boundary(dv, "d.velop Plattform") {
+        System_Ext(dvfe, "d.velop Frontend + Reverse Proxy", "Bettet DocExtract als iframe ein, routet HTTP")
+        System_Ext(idp, "d.velop Identity Provider", "Cookie-basierte AuthN, Tenant/ACL")
         System_Ext(dms, "d.velop DMS-API", "Dokumente hochladen / Metadaten lesen / bestätigte Attribute zurückschreiben")
-                System_Ext(dvfe, "d.velop Frontend + Reverse Proxy", "Bettet DocExtract als iframe ein, routet HTTP")
+
+
     }
 
     System_Boundary(tb, "KI-Verarbeitungsgrenze (lokal; Egress-Allowlist)") {
@@ -84,29 +88,35 @@ C4Context
     UpdateElementStyle(tb, $borderColor="red")
 
     Rel(sb, dvfe, "bedient (HTTPS)")
+    UpdateRelStyle(sb, dvfe, $offsetY="-40", $offsetX="0")
     Rel(dvfe, docx, "routet iframe-Requests + Session-Cookie", "HTTP localhost")
+    UpdateRelStyle(dvfe, docx, $offsetY="-60", $offsetX="-230")
     Rel(agent, docx, "ruft Extraktion/Retrieval", "MCP")
+    UpdateRelStyle(agent, docx, $offsetY="-300", $offsetX="-20")
+
     Rel(docx, idp, "validiert Session, leitet Tenant/ACL ab")
+    UpdateRelStyle(docx, idp, $offsetY="-100", $offsetX="80")
+
     Rel(docx, dms, "lädt Dokument als Chunk hoch (Location) / liest ähnliche Metadaten / schreibt Attribute nach Freigabe an Location")
+    UpdateRelStyle(docx, dms, $offsetY="-30", $offsetX="20")
+
     Rel(docx, tpa, "holt Wertelisten (JIT)")
-    UpdateRelStyle(docx, dms, $offsetY="10", $offsetX="-280")
-    UpdateRelStyle(docx, idp, $offsetY="10", $offsetX="-70")
-    UpdateRelStyle(sb, dvfe, $offsetY="-150", $offsetX="-100")
-    UpdateRelStyle(dvfe, docx, $offsetY="90", $offsetX="-150")
+    UpdateRelStyle(docx, tpa, $offsetY="-240", $offsetX="170")
+
 ```
 
 > **KI-Verarbeitungsgrenze (rot):** Parsing, Chunking, Embeddings, LLM-Inferenz und pgvector bleiben lokal. Kontrollierter Ausgang nur zu IdP, DMS-API und Wertelisten-Webhook. Dokument- und Preview-Bytes dürfen ausschliesslich zur DMS-API übertragen werden.
 
 ### 3.1 Externe Schnittstellen
 
-| Nachbarsystem                        | Richtung   | Protokoll                                      | Zweck                                                                                                                                                                                                                                                                              | Sicherheitsnote                                                                                                                                     |
-| ------------------------------------ | ---------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| d.velop Frontend/Proxy               | in         | HTTP (iframe)                                  | UI-Auslieferung + REST                                                                                                                                                                                                                                                             | Session-Cookie durchgereicht                                                                                                                        |
-| d.velop Frontend/Proxy (Fortschritt) | out (Push) | HTTP/SSE (`GET /processes/{processId}/events`) | Asynchroner Fortschritts-Push je Prozess: `preview_ready`, `structured`, `retrieved`, `extracted`, `failed`                                                                                                                                                                        | **Nur Metadaten** (`processId`, `step`, `status`) — **keine PII**; cluster-weiter Fan-out via Postgres `LISTEN/NOTIFY`, Catch-up aus `PROCESS_STEP` |
-| d.velop IdP                          | out        | HTTP                                           | Session → Tenant/ACL-Prädikate                                                                                                                                                                                                                                                     | Basis für NfA-4                                                                                                                                     |
-| d.velop DMS-API                      | in/out     | HTTP                                           | Zweiphasig: (1) Dokument-Chunk hochladen → `Location` im Response-Header, (2) nach Freigabe Attribute an diese `Location` schreiben (finalisiert Dokument). **Zusätzlich kurzlebiger Objektspeicher:** gerenderte Preview (nur Nicht-PDF) als **separater, unfinalisierter Chunk** | Finaler Write **nur** nach Consent (C-2); `Location`(s) serverseitig vorgehalten; unbestätigte Chunks verfallen DMS-seitig                          |
-| Third-Party-App                      | out        | Webhook (JIT)                                  | Wertelisten                                                                                                                                                                                                                                                                        | Client-only, kein Import                                                                                                                            |
-| Agent                                | in         | MCP                                            | Extraktion/Retrieval                                                                                                                                                                                                                                                               | Minimal-Scopes (C-3), Consent (T-6)                                                                                                                 |
+| Nachbarsystem                        | Richtung   | Protokoll                                      | Zweck                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Sicherheitsnote                                                                                                                                     |
+| ------------------------------------ | ---------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| d.velop Frontend/Proxy               | in         | HTTP (iframe)                                  | UI-Auslieferung + REST                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Session-Cookie durchgereicht                                                                                                                        |
+| d.velop Frontend/Proxy (Fortschritt) | out (Push) | HTTP/SSE (`GET /processes/{processId}/events`) | Asynchroner Fortschritts-Push je Prozess: `preview_ready`, `structured`, `retrieved`, `extracted`, `failed`                                                                                                                                                                                                                                                                                                                                                                    | **Nur Metadaten** (`processId`, `step`, `status`) — **keine PII**; cluster-weiter Fan-out via Postgres `LISTEN/NOTIFY`, Catch-up aus `PROCESS_STEP` |
+| d.velop IdP                          | out        | HTTP                                           | Session → Tenant/ACL-Prädikate                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Basis für NfA-4                                                                                                                                     |
+| d.velop DMS-API                      | in/out     | HTTP                                           | Zweiphasig: (1) Dokument-Chunk hochladen → `Location` im Response-Header, (2) nach Freigabe Attribute an diese `Location` schreiben (finalisiert Dokument, DMS-`document_id` wird bekannt). **Lesen:** Objektdefinitionen (`/r/{repositoryId}/objdef`) und Metadaten ähnlicher Dokumente per `document_id` (`/dms/r/{repositoryId}/o2/{document_id}/`). **Zusätzlich kurzlebiger Objektspeicher:** gerenderte Preview (nur Nicht-PDF) als **separater, unfinalisierter Chunk** | Finaler Write **nur** nach Consent (C-2); `Location`(s) serverseitig vorgehalten; unbestätigte Chunks verfallen DMS-seitig                          |
+| Third-Party-App                      | out        | Webhook (JIT)                                  | Wertelisten                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Client-only, kein Import                                                                                                                            |
+| Agent                                | in         | MCP                                            | Extraktion/Retrieval                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Minimal-Scopes (C-3), Consent (T-6)                                                                                                                 |
 
 ---
 
@@ -142,6 +152,7 @@ C4Container
     System_Ext(dms, "d.velop DMS-API")
     System_Ext(idp, "d.velop IdP")
     System_Ext(tpa, "Wertelisten-Webhook")
+       UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
 
     System_Boundary(tb, "KI-Verarbeitungsgrenze — lokal, Egress-Allowlist") {
         Container(ng, "Angular Frontend", "Angular/SSR-CSR", "Upload, PDF-Vorschau, Validierungs-UI (iframe)")
@@ -153,18 +164,39 @@ C4Container
     }
 
     Rel(sb, ng, "bedient")
-    Rel(ng, app, "REST (Session-Cookie)")
-    Rel(app, ng, "SSE-Fortschritts-Events (processId, PII-frei)")
-    Rel(agent, app, "MCP")
-    Rel(app, prev, "Konvertierung (nur Nicht-PDF)")
-    Rel(app, doc, "Strukturierung + Chunking (Chunks nur in-memory)")
-    Rel(app, llm, "Embeddings / Extraktion; kein direkter DB-/DMS-Zugriff")
-    Rel(app, pg, "R/W (JPA/pgvector)")
-    Rel(app, idp, "Session-Validierung → Tenant/ACL")
-    Rel(app, dms, "Metadaten / Doc- + Preview-Chunk / Rückschreiben nach Consent")
-    Rel(app, tpa, "Wertelisten (JIT)")
+    UpdateRelStyle(sb, ng, $offsetY="-140", $offsetX="0")
 
-    UpdateRelStyle(app, tpa, $offsetY="-150", $offsetX="-100")
+    Rel(ng, app, "REST (Session-Cookie)")
+    UpdateRelStyle(ng, app, $offsetY="-80", $offsetX="-80")
+
+    Rel(app, ng, "SSE-Fortschritts-Events (processId, PII-frei)")
+    UpdateRelStyle(app, ng, $offsetY="40", $offsetX="-190")
+
+    Rel(agent, app, "MCP")
+        UpdateRelStyle(agent, app, $offsetY="-180", $offsetX="-10")
+
+    Rel(app, prev, "Konvertierung (nur Nicht-PDF)")
+        UpdateRelStyle(app, prev, $offsetY="-90", $offsetX="0")
+
+    Rel(app, doc, "Strukturierung + Chunking (Chunks nur in-memory)")
+        UpdateRelStyle(app, doc, $offsetY="0", $offsetX="-270")
+
+    Rel(app, llm, "Embeddings / Extraktion; kein direkter DB-/DMS-Zugriff")
+        UpdateRelStyle(app, llm, $offsetY="170", $offsetX="-140")
+
+    Rel(app, pg, "R/W (JPA/pgvector)")
+        UpdateRelStyle(app, pg, $offsetY="0", $offsetX="0")
+
+    Rel(app, idp, "Session-Validierung → Tenant/ACL")
+        UpdateRelStyle(app, idp, $offsetY="-60", $offsetX="-40")
+
+    Rel(app, dms, "Metadaten / Doc- + Preview-Chunk / Rückschreiben nach Consent")
+        UpdateRelStyle(app, dms, $offsetY="0", $offsetX="0")
+
+    Rel(app, tpa, "Wertelisten (JIT)")
+        UpdateRelStyle(app, tpa, $offsetY="-190", $offsetX="-120")
+
+
 
     UpdateElementStyle(tb, $borderColor="red")
 ```
@@ -176,7 +208,7 @@ C4Container
 | **ingest**                 | Upload, Limits und synchroner Original-Chunk-Upload vor `202 Accepted`; Preview nur bei Nicht-PDF, native PDFs ohne Render (FR-1)                                                                                                                                                                                         | `IngestDocument`                                          | `PreviewPort`, `DmsChunkUploadPort`                                                 |
 | **structuring**            | docling-Aufbereitung → **kontextualisierte Chunks** (`HybridChunker` auf dem `DoclingDocument`, struktur- + token-basiert, mit Überschriften-Kontext); Chunks bleiben **transient (in-memory)** — **nicht persistiert** (FR-2, ADR-006/-007). Chunking-Parameter (Tokenizer, `max_tokens`) werden von `retrieval` bezogen | `StructureDocument`                                       | `StructuringPort`, `ChunkingConfigPort` (holt Tokenizer/`max_tokens` aus retrieval) |
 | **retrieval**              | Embedding der Chunks via Ollama; temporäres Staging als `PENDING` mit TTL; Ähnlichkeitssuche ausschliesslich über `APPROVED`-Vektoren mit Tenant-/ACL-Pre-Filter; stellt die Chunking-Config bereit (FR-3, NfA-4/-6, C-7)                                                                                                 | `FindSimilar`, `ProvideChunkingConfig`, `StageEmbeddings` | `EmbeddingPort`, `VectorSearchPort`, `PendingEmbeddingPort`, `AuthContextPort`      |
-| **extraction**             | Schema-constrained LLM-Attributvorschläge inkl. knapper Quell-Exzerpte (FR-4, T-1)                                                                                                                                                                                                                                        | `ExtractAttributes`                                       | `LlmPort`, `ValueListPort`                                                          |
+| **extraction**             | Schema-constrained LLM-Attributvorschläge inkl. knapper Quell-Exzerpte; stützt sich auf Objektdefinitionen (Kategorien/Eigenschaften), Metadaten der 5 ähnlichsten Dokumente (per `document_id`) und Wertelisten (FR-4, T-1)                                                                                              | `ExtractAttributes`                                       | `LlmPort`, `ValueListPort`, `ObjDefPort`, `DmsMetadataPort`                         |
 | **validation**             | Human-in-the-Loop und finales DMS-Rückschreiben; aktiviert vorhandene `PENDING`-Embeddings nach Consent atomar als `APPROVED`; löscht sie bei Ablehnung (FR-5, C-2, C-7)                                                                                                                                                  | `ConfirmAndWriteBack`, `RejectSuggestion`                 | `DmsWritePort`, `CorpusPromotionPort`, `PendingEmbeddingDeletePort`                 |
 | **agentgateway**           | MCP-Tool, teilt Application-Services (FR-6, T-6)                                                                                                                                                                                                                                                                          | `McpTool`                                                 | dieselben wie UI-Pfad                                                               |
 | **process** (Querschnitt)  | Async-Orchestrierung; SSE; PII-freier Prozess-/Schritt-State mit Lease und Heartbeat; Recovery verwaister Jobs                                                                                                                                                                                                            | `SubscribeProgress (SSE)`                                 | `ProcessStatePort`, `JobLeasePort`, `EventPublishPort`, `EventListenPort`           |
@@ -207,7 +239,7 @@ ch.adeon.apps.docextract
 ├─ extraction
 │ ├─ domain # AttributeSchema, ExtractionResult, Confidence, SourceExcerpt
 │ ├─ application # ExtractAttributesService (schema-constrained)
-│ └─ adapter.out # OllamaLlmAdapter, ValueListWebhookAdapter
+│ └─ adapter.out # OllamaLlmAdapter, ValueListWebhookAdapter, DmsObjDefAdapter (/r/{repositoryId}/objdef), DmsObjectMetadataAdapter (/dms/r/{repositoryId}/o2/{document_id}/)
 ├─ validation
 │ ├─ domain # ConfirmedAttributes, Provenance
 │ ├─ application # ConfirmAndWriteBackService (Consent-Gate; PENDING → APPROVED), RejectSuggestionService
@@ -284,11 +316,14 @@ sequenceDiagram
     OLL-->>RET: Dokument-Embeddings
     RET->>VDB: als PENDING mit process_id + expires_at speichern
     RET->>VDB: ANN-Suche nur in APPROVED mit Tenant-/ACL-Pre-Filter [NfA-4/C-7]
-    VDB-->>RET: Top-k Vorlagen
+    VDB-->>RET: Top-5 ähnlichste (document_id, repository_id)
     RET-->>PRC: retrieved (Precision@3)
 
-    API->>EXT: ExtractAttributes(Chunks, Vorlagen, Werteliste) [schema-constrained, T-1]
-    EXT->>OLL: LLM-Call (Extraktion)
+    API->>EXT: ExtractAttributes(Chunks, Top-5)
+    EXT->>DMS: objdef (Kategorien/Eigenschaften) + o2-Metadaten je document_id
+    DMS-->>EXT: Kategorie + Eigenschaftswerte (Position/Format)
+    EXT->>EXT: Wertelisten je Eigenschaft (JIT-Webhook)
+    EXT->>OLL: LLM-Call (Extraktion) [schema-constrained, T-1]
     OLL-->>EXT: JSON-Vorschlag + Konfidenz (+ knappe Quell-Exzerpte)
     API->>AUD: LLM-Call protokollieren (Token, Hash, ohne PII) [C-4/NfA-7]
     EXT-->>PRC: extracted
@@ -318,14 +353,14 @@ sequenceDiagram
     VAL->>VDB: PENDING-Embeddings sperren und Gültigkeit prüfen
     VDB-->>VAL: vorhanden, nicht abgelaufen, gleicher Tenant/Prozess
     VAL->>DMS: Attribute an Location schreiben und Dokument finalisieren
-    DMS-->>VAL: ok
+    DMS-->>VAL: ok (document_id)
     VAL->>VDB: atomar PENDING → APPROVED
-    VAL->>VDB: Provenance setzen, expires_at entfernen
+    VAL->>VDB: dms_document_id + Provenance setzen, expires_at entfernen
     VAL->>AUD: Consent-, DMS-Write- und Promotion-Ereignis
     API-->>FE: bestätigt
 ```
 
-**Keine erneute Vektorisierung:** Die beim ursprünglichen Extraktionslauf erzeugten Embeddings werden in pgvector als `PENDING` zwischengespeichert. Bis zur Freigabe sind sie durch das zwingende Retrieval-Prädikat `status = APPROVED` unsichtbar. Nach erfolgreichem DMS-Write werden dieselben Vektoren atomar auf `APPROVED` gesetzt. Bei Ablehnung, endgültigem Prozessfehler oder Ablauf von `expires_at` werden die `PENDING`-Einträge gelöscht.
+**Keine erneute Vektorisierung:** Die beim ursprünglichen Extraktionslauf erzeugten Embeddings werden in pgvector als `PENDING` zwischengespeichert. Bis zur Freigabe sind sie durch das zwingende Retrieval-Prädikat `status = APPROVED` unsichtbar. Nach erfolgreichem DMS-Write werden dieselben Vektoren atomar auf `APPROVED` gesetzt und die dabei bekannt gewordene DMS-`document_id` (samt `repository_id`) am Embedding hinterlegt. Bei Ablehnung, endgültigem Prozessfehler oder Ablauf von `expires_at` werden die `PENDING`-Einträge gelöscht.
 
 **Konsistenzregel:** DMS-Write und PostgreSQL-Promotion können keine gemeinsame ACID-Transaktion bilden. Der Validierungsvorgang wird deshalb idempotent als kleine Saga ausgeführt: Zuerst wird das DMS-Dokument finalisiert, danach werden die Embeddings promotet. Schlägt die Promotion fehl, bleibt der Prozess in `FINALIZED_INDEX_PENDING`. Ein Retry führt ausschliesslich die idempotente Promotion erneut aus. Der TTL-Cleanup überspringt Einträge dieses Recovery-Zustands.
 
@@ -436,6 +471,8 @@ erDiagram
         uuid id PK
         string tenant_id "NfA-4: Mandant"
         string acl_scope "normalisierte Berechtigungsgruppen/-referenz"
+        string repository_id "DMS-Repository, ab erstem Aufruf bekannt"
+        string dms_document_id "DMS-Objekt-ID; NULL bis zur Finalisierung, dann gesetzt"
         string source_type "E-1..E-5"
         string media_type "gilt PDF? → keine Konvertierung"
         string status "workflow-state (M2)"
@@ -445,7 +482,9 @@ erDiagram
     }
     EMBEDDING {
         uuid id PK
-        uuid document_id FK "Referenz statt Roh-Text (ADR-006)"
+        uuid document_id FK "app-interne Referenz statt Roh-Text (ADR-006)"
+        string repository_id "DMS-Repository, ab erstem Aufruf bekannt (Filter/Scope)"
+        string dms_document_id "DMS-Objekt-ID; NULL solange PENDING, wird mit APPROVE gesetzt"
         int chunk_index "Position des Chunks im Dokument (docling HybridChunker)"
         vector embedding "pgvector, ACL-pre-filterbar"
         string tenant_id "Filterspalte"
@@ -519,7 +558,7 @@ erDiagram
 | **Kurzlebige Binär-Objekte** | **DMS-Chunk-Store** (extern): Dokument-Chunk + Preview-Chunk (nur Nicht-PDF)                                                    | unfinalisiert, DMS-seitig verfallend             | Roh-Bytes & gerenderte Vorschau; App hält nur `Location` (ADR-005)                                                             |
 | **Prozess-/Event-State**     | Postgres: `PROCESS_STEP` (+ `LISTEN/NOTIFY`)                                                                                    | bis Prozessende, dann aufräumbar                 | Async-Fortschritt & SSE-Catch-up, **PII-frei** (ADR-004)                                                                       |
 
-> **Datenminimierung (ADR-006):** Die **Chunks sind Volltext-Fragmente inkl. Roh-PII** und werden deshalb **nie persistiert** — weder relational noch im Objektspeicher. Sie leben nur im Arbeitsspeicher des Jobs (structuring → retrieval → extraction) und werden danach verworfen. Der Retrieval-Korpus besteht aus **Embeddings** (+ `tenant_id`/`acl_ref` + `document_id` + `chunk_index`), nicht aus Roh-Text vergangener Dokumente; Metadaten ähnlicher Dokumente kommen live aus der DMS-API. Das minimiert Rest-PII (NfA-5), vermeidet Cleanup-Aufwand und hält C-4 konsistent.
+> **Datenminimierung (ADR-006):** Die **Chunks sind Volltext-Fragmente inkl. Roh-PII** und werden deshalb **nie persistiert** — weder relational noch im Objektspeicher. Sie leben nur im Arbeitsspeicher des Jobs (structuring → retrieval → extraction) und werden danach verworfen. Der Retrieval-Korpus besteht aus **Embeddings** (+ `tenant_id`/`acl_ref` + `repository_id`/`dms_document_id` + `chunk_index`), nicht aus Roh-Text vergangener Dokumente; Metadaten ähnlicher Dokumente kommen live per `document_id` aus der DMS-API (`/dms/r/{repositoryId}/o2/{document_id}/`). Das minimiert Rest-PII (NfA-5), vermeidet Cleanup-Aufwand und hält C-4 konsistent.
 
 ### 8.5 KI-Integration (Krit. 16 — substanzielle, abgesicherte KI-Funktion)
 
@@ -529,9 +568,9 @@ Die KI-Pipeline hat **zwei getrennte Modell-Nutzungen** auf demselben Ollama-Bac
 - **Tokenizer-Alignment (Design-Regel):** Der docling-Chunker braucht einen **Tokenizer, der zum Embedding-Modell passt** (`max_tokens` aus dem Tokenizer abgeleitet), sonst passen Chunk-Größen nicht zum Kontextfenster des Ollama-Embedders. Deshalb liefert **`retrieval` die `ChunkingConfig`** (Modellname, Tokenizer, `max_tokens`), die der `structuring`/docling-Adapter konsumiert. Die Chunk-Größe ist damit eine **Eigenschaft des Embedding-Modells**, nicht von docling.
 - **Retrieval (FR-3) — hier entstehen die Vektoren:**
   1. **Embedding:** Jeder kontextualisierte Chunk wird über den `EmbeddingPort` (`OllamaEmbeddingAdapter`) einmalig zu einem Dokument-Embedding vektorisiert und als `PENDING` mit TTL gespeichert. Für die Ähnlichkeitssuche werden diese Vektoren im selben Lauf verwendet.
-  2. **Ähnlichkeitssuche:** `VectorSearchPort` (`PgVectorSearchAdapter`) sucht in pgvector **nach ACL-Pre-Filter** (`tenant_id`/`acl_ref` als Query-Prädikat) → Top-k Vorlagen → Precision@3 (NfA-6).
-- **Korpus-Aufbau (T-2/C-7):** Embeddings werden beim Extraktionslauf als `PENDING` gespeichert und treten erst durch die Consent-geschützte Promotion zu `APPROVED` dem aktiven Korpus bei. Rohtext wird nie abgelegt; gespeichert werden Vektor, Dokument-/Chunk-Referenz, Tenant-/ACL-Scope, Prozessreferenz, Status, TTL und Provenance (ADR-006).
-- **Extraktion (FR-4):** schema-constrained Decoding gegen JSON-Schema; Werteliste als erlaubte Domäne; „unbekannt" statt Halluzination (E-5); knappe Quell-Exzerpte für UI-Highlighting.
+  2. **Ähnlichkeitssuche:** `VectorSearchPort` (`PgVectorSearchAdapter`) sucht in pgvector **nach ACL-Pre-Filter** (`tenant_id`/`acl_ref` als Query-Prädikat) → die **5 ähnlichsten Dokumente** (Precision@3, NfA-6). Deren `APPROVED`-Embeddings tragen `repository_id` und DMS-`document_id`, über die Kategorie und Eigenschaftswerte live aus dem DMS geladen werden.
+- **Korpus-Aufbau (T-2/C-7):** Embeddings werden beim Extraktionslauf als `PENDING` gespeichert und treten erst durch die Consent-geschützte Promotion zu `APPROVED` dem aktiven Korpus bei. Rohtext wird nie abgelegt; gespeichert werden Vektor, app-interne Dokument-/Chunk-Referenz, `repository_id`, Tenant-/ACL-Scope, Prozessreferenz, Status, TTL und Provenance (ADR-006). Die DMS-`document_id` ist erst nach der Finalisierung im DMS bekannt und wird deshalb **mit dem Statuswechsel auf `APPROVED`** am Embedding hinterlegt.
+- **Extraktion (FR-4):** Das LLM wird durch drei Quellen gestützt: (a) **Objektdefinitionen** — mögliche Dokumentkategorien und Eigenschaften inkl. Datentyp aus `/r/{repositoryId}/objdef`; (b) **Metadaten der 5 ähnlichsten Dokumente** — Kategorie und Eigenschaftswerte per `document_id` aus `/dms/r/{repositoryId}/o2/{document_id}/`, um Position und Format der Vorschläge zu bestimmen; (c) **Wertelisten** je Eigenschaft per JIT-Webhook. Schema-constrained Decoding gegen JSON-Schema; „unbekannt" statt Halluzination (E-5); knappe Quell-Exzerpte für UI-Highlighting.
 - **Absicherung:** Dokument strikt als _untrusted data_ (T-1), keine ableitbaren Tool-Calls (C-2), Least Privilege (C-3), append-only Audit (C-4).
 
 > **PENDING- vs. APPROVED-Embedding:** Beide Zustände verwenden denselben, einmalig erzeugten Vektor. `PENDING` bedeutet temporär persistiert, durch TTL begrenzt und nicht retrievalfähig. `APPROVED` bedeutet durch expliziten Consent für den aktiven Korpus freigegeben. Die Promotion ändert Status, Provenance und Ablaufattribute, erzeugt aber keinen neuen Vektor.
