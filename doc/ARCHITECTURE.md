@@ -66,13 +66,17 @@ Sachbearbeiter:in (UI-Pfad), Agent (MCP-Pfad), Records-/DMS-Owner, IT-Betrieb/Da
 ```mermaid
 C4Context
     title C4 L1 — Systemkontext DocExtract
-    Person(sb, "Sachbearbeiter:in", "Erfasst & verschlagwortet Dokumente im Browser")
-    System_Ext(agent, "Agent (Redmine-/CI-Assistent)", "Konsumiert Extraktion via MCP")
-    Enterprise_Boundary(dv, "d.velop Plattform") {
-        System_Ext(idp, "d.velop Identity Provider", "Cookie-basierte AuthN, Tenant/ACL")
+     UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
+        Person(sb, "Sachbearbeiter:in", "Erfasst & verschlagwortet Dokumente im Browser")
+        System_Ext(agent, "Agent (Redmine-/CI-Assistent)", "Konsumiert Extraktion via MCP")
 
+
+    Enterprise_Boundary(dv, "d.velop Plattform") {
+        System_Ext(dvfe, "d.velop Frontend + Reverse Proxy", "Bettet DocExtract als iframe ein, routet HTTP")
+        System_Ext(idp, "d.velop Identity Provider", "Cookie-basierte AuthN, Tenant/ACL")
         System_Ext(dms, "d.velop DMS-API", "Dokumente hochladen / Metadaten lesen / bestätigte Attribute zurückschreiben")
-                System_Ext(dvfe, "d.velop Frontend + Reverse Proxy", "Bettet DocExtract als iframe ein, routet HTTP")
+
+
     }
 
     System_Boundary(tb, "KI-Verarbeitungsgrenze (lokal; Egress-Allowlist)") {
@@ -84,29 +88,35 @@ C4Context
     UpdateElementStyle(tb, $borderColor="red")
 
     Rel(sb, dvfe, "bedient (HTTPS)")
+    UpdateRelStyle(sb, dvfe, $offsetY="-40", $offsetX="0")
     Rel(dvfe, docx, "routet iframe-Requests + Session-Cookie", "HTTP localhost")
+    UpdateRelStyle(dvfe, docx, $offsetY="-60", $offsetX="-230")
     Rel(agent, docx, "ruft Extraktion/Retrieval", "MCP")
+    UpdateRelStyle(agent, docx, $offsetY="-300", $offsetX="-20")
+
     Rel(docx, idp, "validiert Session, leitet Tenant/ACL ab")
+    UpdateRelStyle(docx, idp, $offsetY="-100", $offsetX="80")
+
     Rel(docx, dms, "lädt Dokument als Chunk hoch (Location) / liest ähnliche Metadaten / schreibt Attribute nach Freigabe an Location")
+    UpdateRelStyle(docx, dms, $offsetY="-30", $offsetX="20")
+
     Rel(docx, tpa, "holt Wertelisten (JIT)")
-    UpdateRelStyle(docx, dms, $offsetY="10", $offsetX="-280")
-    UpdateRelStyle(docx, idp, $offsetY="10", $offsetX="-70")
-    UpdateRelStyle(sb, dvfe, $offsetY="-150", $offsetX="-100")
-    UpdateRelStyle(dvfe, docx, $offsetY="90", $offsetX="-150")
+    UpdateRelStyle(docx, tpa, $offsetY="-240", $offsetX="170")
+
 ```
 
 > **KI-Verarbeitungsgrenze (rot):** Parsing, Chunking, Embeddings, LLM-Inferenz und pgvector bleiben lokal. Kontrollierter Ausgang nur zu IdP, DMS-API und Wertelisten-Webhook. Dokument- und Preview-Bytes dürfen ausschliesslich zur DMS-API übertragen werden.
 
 ### 3.1 Externe Schnittstellen
 
-| Nachbarsystem                        | Richtung   | Protokoll                                      | Zweck                                                                                                                                                                                                                                                                              | Sicherheitsnote                                                                                                                                     |
-| ------------------------------------ | ---------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| d.velop Frontend/Proxy               | in         | HTTP (iframe)                                  | UI-Auslieferung + REST                                                                                                                                                                                                                                                             | Session-Cookie durchgereicht                                                                                                                        |
-| d.velop Frontend/Proxy (Fortschritt) | out (Push) | HTTP/SSE (`GET /processes/{processId}/events`) | Asynchroner Fortschritts-Push je Prozess: `preview_ready`, `structured`, `retrieved`, `extracted`, `failed`                                                                                                                                                                        | **Nur Metadaten** (`processId`, `step`, `status`) — **keine PII**; cluster-weiter Fan-out via Postgres `LISTEN/NOTIFY`, Catch-up aus `PROCESS_STEP` |
-| d.velop IdP                          | out        | HTTP                                           | Session → Tenant/ACL-Prädikate                                                                                                                                                                                                                                                     | Basis für NfA-4                                                                                                                                     |
+| Nachbarsystem                        | Richtung   | Protokoll                                      | Zweck                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Sicherheitsnote                                                                                                                                     |
+| ------------------------------------ | ---------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| d.velop Frontend/Proxy               | in         | HTTP (iframe)                                  | UI-Auslieferung + REST                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Session-Cookie durchgereicht                                                                                                                        |
+| d.velop Frontend/Proxy (Fortschritt) | out (Push) | HTTP/SSE (`GET /processes/{processId}/events`) | Asynchroner Fortschritts-Push je Prozess: `preview_ready`, `structured`, `retrieved`, `extracted`, `failed`                                                                                                                                                                                                                                                                                                                                                                    | **Nur Metadaten** (`processId`, `step`, `status`) — **keine PII**; cluster-weiter Fan-out via Postgres `LISTEN/NOTIFY`, Catch-up aus `PROCESS_STEP` |
+| d.velop IdP                          | out        | HTTP                                           | Session → Tenant/ACL-Prädikate                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Basis für NfA-4                                                                                                                                     |
 | d.velop DMS-API                      | in/out     | HTTP                                           | Zweiphasig: (1) Dokument-Chunk hochladen → `Location` im Response-Header, (2) nach Freigabe Attribute an diese `Location` schreiben (finalisiert Dokument, DMS-`document_id` wird bekannt). **Lesen:** Objektdefinitionen (`/r/{repositoryId}/objdef`) und Metadaten ähnlicher Dokumente per `document_id` (`/dms/r/{repositoryId}/o2/{document_id}/`). **Zusätzlich kurzlebiger Objektspeicher:** gerenderte Preview (nur Nicht-PDF) als **separater, unfinalisierter Chunk** | Finaler Write **nur** nach Consent (C-2); `Location`(s) serverseitig vorgehalten; unbestätigte Chunks verfallen DMS-seitig                          |
-| Third-Party-App                      | out        | Webhook (JIT)                                  | Wertelisten                                                                                                                                                                                                                                                                        | Client-only, kein Import                                                                                                                            |
-| Agent                                | in         | MCP                                            | Extraktion/Retrieval                                                                                                                                                                                                                                                               | Minimal-Scopes (C-3), Consent (T-6)                                                                                                                 |
+| Third-Party-App                      | out        | Webhook (JIT)                                  | Wertelisten                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Client-only, kein Import                                                                                                                            |
+| Agent                                | in         | MCP                                            | Extraktion/Retrieval                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Minimal-Scopes (C-3), Consent (T-6)                                                                                                                 |
 
 ---
 
@@ -142,6 +152,7 @@ C4Container
     System_Ext(dms, "d.velop DMS-API")
     System_Ext(idp, "d.velop IdP")
     System_Ext(tpa, "Wertelisten-Webhook")
+       UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
 
     System_Boundary(tb, "KI-Verarbeitungsgrenze — lokal, Egress-Allowlist") {
         Container(ng, "Angular Frontend", "Angular/SSR-CSR", "Upload, PDF-Vorschau, Validierungs-UI (iframe)")
@@ -153,18 +164,39 @@ C4Container
     }
 
     Rel(sb, ng, "bedient")
-    Rel(ng, app, "REST (Session-Cookie)")
-    Rel(app, ng, "SSE-Fortschritts-Events (processId, PII-frei)")
-    Rel(agent, app, "MCP")
-    Rel(app, prev, "Konvertierung (nur Nicht-PDF)")
-    Rel(app, doc, "Strukturierung + Chunking (Chunks nur in-memory)")
-    Rel(app, llm, "Embeddings / Extraktion; kein direkter DB-/DMS-Zugriff")
-    Rel(app, pg, "R/W (JPA/pgvector)")
-    Rel(app, idp, "Session-Validierung → Tenant/ACL")
-    Rel(app, dms, "Metadaten / Doc- + Preview-Chunk / Rückschreiben nach Consent")
-    Rel(app, tpa, "Wertelisten (JIT)")
+    UpdateRelStyle(sb, ng, $offsetY="-140", $offsetX="0")
 
-    UpdateRelStyle(app, tpa, $offsetY="-150", $offsetX="-100")
+    Rel(ng, app, "REST (Session-Cookie)")
+    UpdateRelStyle(ng, app, $offsetY="-80", $offsetX="-80")
+
+    Rel(app, ng, "SSE-Fortschritts-Events (processId, PII-frei)")
+    UpdateRelStyle(app, ng, $offsetY="40", $offsetX="-190")
+
+    Rel(agent, app, "MCP")
+        UpdateRelStyle(agent, app, $offsetY="-180", $offsetX="-10")
+
+    Rel(app, prev, "Konvertierung (nur Nicht-PDF)")
+        UpdateRelStyle(app, prev, $offsetY="-90", $offsetX="0")
+
+    Rel(app, doc, "Strukturierung + Chunking (Chunks nur in-memory)")
+        UpdateRelStyle(app, doc, $offsetY="0", $offsetX="-270")
+
+    Rel(app, llm, "Embeddings / Extraktion; kein direkter DB-/DMS-Zugriff")
+        UpdateRelStyle(app, llm, $offsetY="170", $offsetX="-140")
+
+    Rel(app, pg, "R/W (JPA/pgvector)")
+        UpdateRelStyle(app, pg, $offsetY="0", $offsetX="0")
+
+    Rel(app, idp, "Session-Validierung → Tenant/ACL")
+        UpdateRelStyle(app, idp, $offsetY="-60", $offsetX="-40")
+
+    Rel(app, dms, "Metadaten / Doc- + Preview-Chunk / Rückschreiben nach Consent")
+        UpdateRelStyle(app, dms, $offsetY="0", $offsetX="0")
+
+    Rel(app, tpa, "Wertelisten (JIT)")
+        UpdateRelStyle(app, tpa, $offsetY="-190", $offsetX="-120")
+
+
 
     UpdateElementStyle(tb, $borderColor="red")
 ```
@@ -176,7 +208,7 @@ C4Container
 | **ingest**                 | Upload, Limits und synchroner Original-Chunk-Upload vor `202 Accepted`; Preview nur bei Nicht-PDF, native PDFs ohne Render (FR-1)                                                                                                                                                                                         | `IngestDocument`                                          | `PreviewPort`, `DmsChunkUploadPort`                                                 |
 | **structuring**            | docling-Aufbereitung → **kontextualisierte Chunks** (`HybridChunker` auf dem `DoclingDocument`, struktur- + token-basiert, mit Überschriften-Kontext); Chunks bleiben **transient (in-memory)** — **nicht persistiert** (FR-2, ADR-006/-007). Chunking-Parameter (Tokenizer, `max_tokens`) werden von `retrieval` bezogen | `StructureDocument`                                       | `StructuringPort`, `ChunkingConfigPort` (holt Tokenizer/`max_tokens` aus retrieval) |
 | **retrieval**              | Embedding der Chunks via Ollama; temporäres Staging als `PENDING` mit TTL; Ähnlichkeitssuche ausschliesslich über `APPROVED`-Vektoren mit Tenant-/ACL-Pre-Filter; stellt die Chunking-Config bereit (FR-3, NfA-4/-6, C-7)                                                                                                 | `FindSimilar`, `ProvideChunkingConfig`, `StageEmbeddings` | `EmbeddingPort`, `VectorSearchPort`, `PendingEmbeddingPort`, `AuthContextPort`      |
-| **extraction**             | Schema-constrained LLM-Attributvorschläge inkl. knapper Quell-Exzerpte; stützt sich auf Objektdefinitionen (Kategorien/Eigenschaften), Metadaten der 5 ähnlichsten Dokumente (per `document_id`) und Wertelisten (FR-4, T-1)                                                                                                | `ExtractAttributes`                                       | `LlmPort`, `ValueListPort`, `ObjDefPort`, `DmsMetadataPort`                         |
+| **extraction**             | Schema-constrained LLM-Attributvorschläge inkl. knapper Quell-Exzerpte; stützt sich auf Objektdefinitionen (Kategorien/Eigenschaften), Metadaten der 5 ähnlichsten Dokumente (per `document_id`) und Wertelisten (FR-4, T-1)                                                                                              | `ExtractAttributes`                                       | `LlmPort`, `ValueListPort`, `ObjDefPort`, `DmsMetadataPort`                         |
 | **validation**             | Human-in-the-Loop und finales DMS-Rückschreiben; aktiviert vorhandene `PENDING`-Embeddings nach Consent atomar als `APPROVED`; löscht sie bei Ablehnung (FR-5, C-2, C-7)                                                                                                                                                  | `ConfirmAndWriteBack`, `RejectSuggestion`                 | `DmsWritePort`, `CorpusPromotionPort`, `PendingEmbeddingDeletePort`                 |
 | **agentgateway**           | MCP-Tool, teilt Application-Services (FR-6, T-6)                                                                                                                                                                                                                                                                          | `McpTool`                                                 | dieselben wie UI-Pfad                                                               |
 | **process** (Querschnitt)  | Async-Orchestrierung; SSE; PII-freier Prozess-/Schritt-State mit Lease und Heartbeat; Recovery verwaister Jobs                                                                                                                                                                                                            | `SubscribeProgress (SSE)`                                 | `ProcessStatePort`, `JobLeasePort`, `EventPublishPort`, `EventListenPort`           |
