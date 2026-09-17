@@ -1,0 +1,37 @@
+### DocExtract — Ingest e2e requests
+### Run with the VS Code "REST Client" extension or the IntelliJ HTTP Client.
+### Prerequisites: see e2e/README.md
+
+@host = https://dms.local
+@contextPath = /dms
+@baseUrl = {{host}}{{contextPath}}
+# dvelop-mock's identityprovider-validate.json accepts any bearer token.
+@authHeader = Bearer {{$processEnv DMS_TEST_TOKEN}}
+
+@repositoryId = 7cd5d582-2b5d-5e56-9a15-619f94e6e3ed
+
+### Show version
+GET {{baseUrl}}
+Authorization: {{authHeader}}
+
+### Upload a document to chunk
+# See doc/api/dvelop-dmsapp.yaml, operationId: uploadBlobChunk.
+# First POST goes to /blob/chunk; the Location header returned here is the
+# contentLocationUri to use for any subsequent chunk (uploaded sequentially).
+# @name uploadChunk
+POST {{baseUrl}}/r/{{repositoryId}}/blob/chunk
+Authorization: {{authHeader}}
+Content-Type: application/octet-stream
+
+< ../../e2e/fixtures/letter.txt
+
+### Read back the chunk via the Location header — body must equal the uploaded fixture.
+GET {{host}}{{uploadChunk.response.headers.Location}}
+Authorization: {{authHeader}}
+# NOTE: this returns 404. The temp blob/chunk location (doc/api/dvelop-dmsapp.yaml,
+# uploadBlobChunk) is write-only staging — it has no GET endpoint. It's only valid
+# as the "contentLocationUri" of a subsequent storeDmsObjectWithMapping (POST /o2m)
+# call. To verify the bytes round-trip, store a DMS object with this Location as
+# contentLocationUri, then GET its "_links.mainblobcontent" (MappingDmsObject schema).
+
+

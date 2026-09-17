@@ -10,7 +10,8 @@ class PgvectorSimilaritySearchAdapterTest {
     void query_contains_acl_prefilter_columns() {
         String sql = PgvectorSimilaritySearchAdapter.buildQuery();
 
-        assertThat(sql).contains("WHERE tenant_id = :tenant_id");
-        assertThat(sql).contains("AND acl_ref = :acl_ref");
+        assertThat(sql)
+            .contains("WHERE tenant_id = :tenant_id")
+            .contains("AND acl_ref = :acl_ref");
     }
 }

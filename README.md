@@ -99,6 +99,10 @@ Der Stack ist für einen reproduzierbaren Betrieb mit Docker Compose auf folgend
 
 Die konkrete Compose-Konfiguration und die erforderlichen Umgebungsvariablen werden zusammen mit der Implementierung im Repository bereitgestellt. Verbindliche Betriebs- und Sicherheitsentscheidungen sind in den Architekturentscheidungen dokumentiert.
 
+## Manuelles End-to-End-Testen
+
+Runnable HTTP-Requests gegen die laufende App (d.velop-Mock + echtes Gotenberg statt Test-Doubles) liegen unter [e2e/](e2e/README.md), inklusive Upload-Beispielen für native PDFs und Nicht-PDFs.
+
 ### Lokale Entwicklung (dev mode)
 
 1. d.velop-Mock (DMS/IdP-Simulation) starten:

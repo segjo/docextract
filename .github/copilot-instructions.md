@@ -94,9 +94,13 @@ Diese Regeln haben **immer** Vorrang. Code, der dagegen verstößt, ist nicht ak
 - **Async + Fortschritt (ADR-004):** Nicht-blockierender Upload (`202 + processId`), **SSE** je `processId`,
   cluster-weiter Fan-out via **Postgres LISTEN/NOTIFY**, Catch-up aus durable **PII-freier** `PROCESS_STEP`.
   **Kein externer Broker.** SSE-Payload trägt nur `processId`/`step` — nie PII.
-- **Kurzlebige Binär-Objekte (ADR-005):** **DMS-Chunk-Store** als Ephemeral-Store. Native **PDFs** direkt aus der
-  DMS-Location streamen (kein Gotenberg-Render); **Nicht-PDFs** via Gotenberg → separater, unfinalisierter
-  Preview-Chunk. **Kein Postgres-Blobstore.**
+- **Kurzlebige Binär-Objekte (ADR-008, ersetzt ADR-005):** Der DMS-Chunk-Upload ist **write-only** (vor Finalisierung
+  nicht rücklesbar) und taugt daher **nicht** als Zwischenspeicher. Roh- und Preview-Bytes liegen stattdessen
+  **TTL-begrenzt, gechunkt (`BYTEA`-Seiten à 1 MiB, max. 50 MB/Blob) in PostgreSQL** (`DOCUMENT_BLOB` /
+  `DOCUMENT_BLOB_PAGE`) — der cluster-sichtbare Übergabepunkt für den Async-Job. Native **PDFs** werden direkt
+  aus dem `ORIGINAL`-Blob gestreamt (kein Gotenberg-Render); **Nicht-PDFs** werden von Gotenberg aus dem
+  `ORIGINAL`-Blob in einen separaten `PREVIEW`-Blob gerendert. Blobs werden bei Consent, Ablehnung, Abbruch
+  oder TTL-Ablauf gelöscht (gleicher Cleanup-Mechanismus wie ADR-006), respektieren aber `FINALIZED_INDEX_PENDING`.
 - **Datenminimierung (ADR-006):** **Chunks und `DoclingDocument` bleiben ausschliesslich in-memory** und werden nach
   `extracted` verworfen. Rohtext wird **nie** persistiert. Dokument-Embeddings werden bis zur Freigabe als nicht
   retrievalfähige `PENDING`-Einträge mit TTL gespeichert; dauerhaft bleiben nur freigegebene Korpus-Embeddings,
@@ -114,7 +118,7 @@ Basis-Package: **`ch.adeon.apps.docextract`**
 
 ```
 ch.adeon.apps.docextract
-├─ ingest         # Upload, Limits, synchroner Original-Chunk-Upload; Preview nur bei Nicht-PDF (FR-1)
+├─ ingest         # Upload, Limits, Blob-Ablage (TTL) + write-only DMS-Chunk-Upload; Preview nur bei Nicht-PDF (FR-1, ADR-008)
 ├─ structuring    # docling → kontextualisierte Chunks (in-memory, KEIN Persist) (FR-2, ADR-006/-007)
 ├─ retrieval      # Embedding, PENDING-Staging (TTL), ANN-Suche nur APPROVED + ACL-Pre-Filter (FR-3, NfA-4/-6, C-7)
 ├─ extraction     # schema-constrained LLM-Attributvorschläge + Quell-Exzerpte (FR-4, T-1)
@@ -138,7 +142,9 @@ ch.adeon.apps.docextract
 
 ## 6. Datenmodell & Persistenz-Regeln
 
-- Rohtext/Chunks **niemals** in Tabellen oder Objektspeicher schreiben.
+- Rohtext/Chunks **niemals** in Tabellen oder Objektspeicher schreiben (ADR-006). Roh-/Preview-**Bytes** sind davon
+  ausgenommen: sie liegen **TTL-begrenzt** und **gechunkt** (`BYTEA`-Seiten) in `DOCUMENT_BLOB`/`DOCUMENT_BLOB_PAGE`,
+  weil der DMS-Chunk-Upload write-only ist und nicht als Zwischenspeicher taugt (ADR-008).
 - `EMBEDDING` speichert: Vektor, `document_id`, `chunk_index`, `tenant_id`, `acl_ref`, `status`
   (`PENDING|APPROVED`), `process_id`, `expires_at`, `approved_at`, `provenance` — **kein** Roh-Text.
 - pgvector-Index (HNSW/IVFFlat) muss **filterfähig** sein (`tenant_id`/`acl_ref` als Query-Prädikat, Pre-Filter).

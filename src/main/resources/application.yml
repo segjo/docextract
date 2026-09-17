@@ -3,6 +3,18 @@ spring:
     name: docextract
   mvc:
     static-path-pattern: /ui/**
+  servlet:
+    multipart:
+      # Above Spring's 1 MiB default, so uploads reach the domain-level check in Limits (50 MiB, T-4)
+      # instead of failing earlier with a bare 413 from the container.
+      max-file-size: 50MB
+      max-request-size: 50MB
+  datasource:
+    url: jdbc:postgresql://localhost:5432/docextract
+    username: docextract
+    password: docextract-local
+  flyway:
+    locations: classpath:db/migration
 
 server:
   servlet:
@@ -13,6 +25,20 @@ docextract:
     jstore-uri: http://localhost:6380/store/httpgateway/appconfig
     # fallback used only when the jstore endpoint above is unreachable, e.g. https://dms.local
     system-base-uri: http://localhost:8081
+    # system-base-uri: https://dms.local
+  ingest:
+    # T-4 DoS mitigation: hard cap on upload size (bytes), default 50 MiB
+    max-file-size-bytes: 52428800
+    # Blobstore quarantine window (ADR-008): raw/preview bytes are deleted at consent, rejection,
+    # abort or when this TTL elapses, whichever comes first.
+    blob-ttl: PT2H
+    dms:
+      repository-id: 7cd5d582-2b5d-5e56-9a15-619f94e6e3ed
+      # Origin header required by the DMS API for POST/PUT/DELETE/PATCH (CSRF protection)
+      # origin: http://localhost:8081
+      origin: https://dms.local
+  gotenberg:
+    base-uri: http://localhost:3000
 
 ---
 spring:
