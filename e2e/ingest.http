@@ -1,0 +1,72 @@
+### DocExtract — Ingest e2e requests
+### Run with the VS Code "REST Client" extension or the IntelliJ HTTP Client.
+### Prerequisites: see e2e/README.md
+
+@host = http://localhost:8080
+@contextPath = /adeon-docextract
+@baseUrl = {{host}}{{contextPath}}
+# dvelop-mock's identityprovider-validate.json accepts any bearer token.
+@authHeader = Bearer {{$processEnv DMS_TEST_TOKEN}}
+
+### Test Authentication
+GET {{baseUrl}}/api/v1/ingest/documents/test
+Authorization: {{authHeader}}
+
+
+### Upload a native PDF — direct chunk upload, no Gotenberg render.
+# @name uploadPdf
+POST {{baseUrl}}/api/v1/ingest/documents
+Authorization: {{authHeader}}
+Content-Type: multipart/form-data; boundary=----docextractE2E
+
+------docextractE2E
+Content-Disposition: form-data; name="file"; filename="invoice.pdf"
+Content-Type: application/pdf
+
+< ./fixtures/invoice.pdf
+------docextractE2E--
+
+### Stream the preview of the PDF just uploaded (previewLocation == dmsLocation). 
+GET {{baseUrl}}/api/v1/ingest/documents/{{uploadPdf.response.body.$.originalBlobId}}/preview
+Authorization: {{authHeader}}
+
+### Upload a non-PDF — rendered via Gotenberg into a separate, unfinalized preview chunk.
+# @name uploadLetter
+POST {{baseUrl}}/api/v1/ingest/documents
+Authorization: {{authHeader}}
+Content-Type: multipart/form-data; boundary=----docextractE2E
+
+------docextractE2E
+Content-Disposition: form-data; name="file"; filename="letter.txt"
+Content-Type: text/plain
+
+< ./fixtures/letter.txt
+------docextractE2E--
+
+### Stream the Gotenberg-rendered preview (previewLocation != dmsLocation here).
+GET {{baseUrl}}/api/v1/ingest/documents/{{uploadLetter.response.body.$.originalBlobId}}/preview
+Authorization: {{authHeader}}
+
+### No credential on the request — expect 401 (nothing to replay to the DMS).
+POST {{baseUrl}}/api/v1/ingest/documents
+Content-Type: multipart/form-data; boundary=----docextractE2E
+
+------docextractE2E
+Content-Disposition: form-data; name="file"; filename="invoice.pdf"
+Content-Type: application/pdf
+
+< ./fixtures/invoice.pdf
+------docextractE2E--
+
+### Upload exceeding docextract.ingest.max-file-size-bytes — expect 400 "Upload rejected".
+### Lower the limit for this run, e.g. DOCEXTRACT_INGEST_MAX_FILE_SIZE_BYTES=10
+POST {{baseUrl}}/api/v1/ingest/documents
+Authorization: {{authHeader}}
+Content-Type: multipart/form-data; boundary=----docextractE2E
+
+------docextractE2E
+Content-Disposition: form-data; name="file"; filename="invoice.pdf"
+Content-Type: application/pdf
+
+< ./fixtures/invoice.pdf
+------docextractE2E--

@@ -54,6 +54,7 @@ Sachbearbeiter:in (UI-Pfad), Agent (MCP-Pfad), Records-/DMS-Owner, IT-Betrieb/Da
 | Technisch   | Java 21 · Spring Boot 4 · Angular (iframe) · pgvector/PostgreSQL · docling · Ollama · Docker Compose                                        | SPEC § 4 (Empfehlung)      |
 | Integration | App läuft **als iframe hinter d.velop Reverse Proxy** auf lokalem HTTP-Endpunkt; AuthN via **d.velop-Cookie/Session** (keine Impersonation) | SPEC § 4                   |
 | Betrieb     | Reproduzierbar per `docker compose up` auf Linux **und** Windows/WSL2; **Cluster-Modus** (mehrere Instanzen, gemeinsame Datenhaltung)       | SPEC § 5.2 C-6             |
+| Fachlich    | **Maximale Dokumentgrösse 50 MB** je Upload (hart abgewiesen bei Überschreitung); dimensioniert den Postgres-Blobstore (ADR-008) und begrenzt DoS-Fläche (T-4) | SPEC § 5.2, ADR-008        |
 | Sicherheit  | Egress technisch unterbunden + CI-Egress-Test; Least Privilege; Digest-Pinning; append-only Audit                                           | SPEC § 5.2 C-1/C-3/C-4/C-5 |
 | Prozess     | Projekt-Kontext-Dokument versioniert; ADRs für Grundentscheide; arc42 empfohlen                                                             | Projektarbeit Block 1–5    |
 
@@ -61,7 +62,7 @@ Sachbearbeiter:in (UI-Pfad), Agent (MCP-Pfad), Records-/DMS-Owner, IT-Betrieb/Da
 
 ## 3. Kontextabgrenzung — C4 Level 1 (arc42 §3 / Perspektive: Interaktion)
 
-**Textuell:** Die Sachbearbeiter:in bedient DocExtract ausschliesslich im Browser über das **d.velop-Frontend**, das die App als iframe einbettet; der **Reverse Proxy** routet auf den lokalen HTTP-Endpunkt. Ein zweiter Konsument, ein **Agent**, nutzt denselben Kern über ein **MCP-Tool** — mit identischen Guardrails. Parsing, Chunking, Embedding und Inferenz bleiben lokal. Original- und Preview-Bytes dürfen zielgebunden an die autorisierte DMS-API übertragen werden; Embeddings, Chunks, Prompts und LLM-Kontexte verlassen die KI-Verarbeitungsgrenze nie (C-1).
+**Textuell:** Die Sachbearbeiter:in bedient DocExtract ausschliesslich im Browser über das **d.velop-Frontend**, das die App als iframe einbettet; der **Reverse Proxy** routet auf den lokalen HTTP-Endpunkt. Ein zweiter Konsument, ein **Agent**, nutzt denselben Kern über ein **MCP-Tool** — mit identischen Guardrails. Parsing, Chunking, Embedding und Inferenz bleiben lokal. Der Original-Chunk-Upload zur DMS-API ist **write-only** (die hochgeladenen Bytes sind vor der Finalisierung nicht rücklesbar); deshalb liegen Roh- und Preview-Bytes während der Verarbeitung **TTL-begrenzt im lokalen Postgres-Blobstore** (ADR-008). Original-Bytes dürfen zielgebunden an die autorisierte DMS-API übertragen werden; Embeddings, Chunks, Prompts und LLM-Kontexte verlassen die KI-Verarbeitungsgrenze nie (C-1).
 
 ```mermaid
 C4Context
@@ -97,7 +98,7 @@ C4Context
     Rel(docx, idp, "validiert Session, leitet Tenant/ACL ab")
     UpdateRelStyle(docx, idp, $offsetY="-100", $offsetX="80")
 
-    Rel(docx, dms, "lädt Dokument als Chunk hoch (Location) / liest ähnliche Metadaten / schreibt Attribute nach Freigabe an Location")
+    Rel(docx, dms, "lädt Dokument als Chunk hoch (write-only → Location) / liest ähnliche Metadaten / schreibt Attribute nach Freigabe an Location")
     UpdateRelStyle(docx, dms, $offsetY="-30", $offsetX="20")
 
     Rel(docx, tpa, "holt Wertelisten (JIT)")
@@ -105,7 +106,7 @@ C4Context
 
 ```
 
-> **KI-Verarbeitungsgrenze (rot):** Parsing, Chunking, Embeddings, LLM-Inferenz und pgvector bleiben lokal. Kontrollierter Ausgang nur zu IdP, DMS-API und Wertelisten-Webhook. Dokument- und Preview-Bytes dürfen ausschliesslich zur DMS-API übertragen werden.
+> **KI-Verarbeitungsgrenze (rot):** Parsing, Chunking, Embeddings, LLM-Inferenz und pgvector bleiben lokal. Kontrollierter Ausgang nur zu IdP, DMS-API und Wertelisten-Webhook. Dokument-Bytes dürfen ausschliesslich zur DMS-API übertragen werden; Preview-Bytes verlassen die Grenze gar nicht (ADR-008).
 
 ### 3.1 Externe Schnittstellen
 
@@ -114,7 +115,7 @@ C4Context
 | d.velop Frontend/Proxy               | in         | HTTP (iframe)                                  | UI-Auslieferung + REST                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Session-Cookie durchgereicht                                                                                                                        |
 | d.velop Frontend/Proxy (Fortschritt) | out (Push) | HTTP/SSE (`GET /processes/{processId}/events`) | Asynchroner Fortschritts-Push je Prozess: `preview_ready`, `structured`, `retrieved`, `extracted`, `failed`                                                                                                                                                                                                                                                                                                                                                                    | **Nur Metadaten** (`processId`, `step`, `status`) — **keine PII**; cluster-weiter Fan-out via Postgres `LISTEN/NOTIFY`, Catch-up aus `PROCESS_STEP` |
 | d.velop IdP                          | out        | HTTP                                           | Session → Tenant/ACL-Prädikate                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Basis für NfA-4                                                                                                                                     |
-| d.velop DMS-API                      | in/out     | HTTP                                           | Zweiphasig: (1) Dokument-Chunk hochladen → `Location` im Response-Header, (2) nach Freigabe Attribute an diese `Location` schreiben (finalisiert Dokument, DMS-`document_id` wird bekannt). **Lesen:** Objektdefinitionen (`/r/{repositoryId}/objdef`) und Metadaten ähnlicher Dokumente per `document_id` (`/dms/r/{repositoryId}/o2/{document_id}/`). **Zusätzlich kurzlebiger Objektspeicher:** gerenderte Preview (nur Nicht-PDF) als **separater, unfinalisierter Chunk** | Finaler Write **nur** nach Consent (C-2); `Location`(s) serverseitig vorgehalten; unbestätigte Chunks verfallen DMS-seitig                          |
+| d.velop DMS-API                      | in/out     | HTTP                                           | Zweiphasig: (1) Dokument-Chunk hochladen → `Location` im Response-Header, (2) nach Freigabe Attribute an diese `Location` schreiben (finalisiert Dokument, DMS-`document_id` wird bekannt). **Lesen:** Objektdefinitionen (`/r/{repositoryId}/objdef`) und Metadaten ähnlicher Dokumente per `document_id` (`/dms/r/{repositoryId}/o2/{document_id}/`). Der Chunk-Upload ist **write-only** — hochgeladene Bytes sind vor der Finalisierung nicht rücklesbar, daher **kein** Einsatz als Zwischenspeicher (ADR-008) | Finaler Write **nur** nach Consent (C-2); `Location` serverseitig vorgehalten; unbestätigte Chunks verfallen DMS-seitig                          |
 | Third-Party-App                      | out        | Webhook (JIT)                                  | Wertelisten                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Client-only, kein Import                                                                                                                            |
 | Agent                                | in         | MCP                                            | Extraktion/Retrieval                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Minimal-Scopes (C-3), Consent (T-6)                                                                                                                 |
 
@@ -130,13 +131,13 @@ C4Context
 | Skalierung (Cluster)                      | Kein dauerhafter instanzgebundener Fachzustand; laufende Jobs besitzen transienten In-Memory-Zustand und sind instanzgebunden                                                                                                                  | Shared-Data, Stateless-App               |
 | Agent-Konsum ohne UI-Bruch                | Fachlogik hinter Inbound-Ports; **REST-Adapter** und **MCP-Adapter** teilen denselben Application-Service                                                                                                                                      | Adapter-Symmetrie                        |
 | Fortschritts-Feedback (Async, ADR-004)    | Nicht-blockierender Upload (`202 + processId`); **SSE** je `processId`; cluster-weiter Event-Fan-out via Postgres `LISTEN/NOTIFY`; durable `PROCESS_STEP` (PII-frei) für Catch-up (NfA-3)                                                      | Event-Push, kein externer Broker         |
-| Zustandslose Vorschau (ADR-005)           | Native PDFs direkt aus DMS-`Location` gestreamt; Nicht-PDFs via Gotenberg → **kurzlebiger DMS-Chunk** — kein Postgres-Blobstore                                                                                                                | DMS als Ephemeral-Store                  |
+| Zustandslose Vorschau (ADR-008)           | Roh- und Preview-Bytes als **gechunkte `BYTEA`-Seiten in Postgres** (`DOCUMENT_BLOB` / `DOCUMENT_BLOB_PAGE`, TTL-begrenzt); native PDFs direkt gestreamt, Nicht-PDFs via Gotenberg — DMS-Chunk-Upload ist write-only                            | DB als transienter Blobstore             |
 | **Datenminimierung (ADR-006, NfA-5/C-4)** | Chunks bleiben ausschliesslich in-memory. Bereits erzeugte Dokument-Embeddings werden temporär als nicht retrievalfähige `PENDING`-Einträge mit TTL in pgvector gespeichert; nach Consent ohne Neuberechnung atomar aktiviert, sonst gelöscht. | Privacy-by-Design, Quarantine-by-Default |
 | **Retrieval-Qualität (ADR-007, NfA-6)**   | **docling-natives Chunking** auf dem `DoclingDocument` (struktur- + token-basiert, kontextualisiert) statt Post-Export-Splitting von Markdown                                                                                                  | Struktur-treue Chunks                    |
 
 **Grundentscheid (siehe ADR-001):** kein Microservice-Split — keine nichtfunktionale Anforderung (Last, unabhängige Deploybarkeit, Team-Topologie) rechtfertigt die Verteilungskosten. Cluster-Betrieb wird durch gemeinsame dauerhafte Datenhaltung und instanzgebundene transiente Jobs erreicht, nicht durch Service-Zerlegung.
 
-**Skalierungsmodell & Job-Affinität:** Modultrennung ist **logisch** (eigene Ports/Verträge, per ArchUnit erzwungen), **nicht distributiv**. Alle Fachmodule laufen im selben JVM-Prozess; der Handoff `structuring → retrieval → extraction` ist ein **In-Process-Aufruf** (kein Netz-Hop, NfA-2). Die Skalierungseinheit ist das **Dokument (Request-Level)**: verschiedene Dokumente laufen parallel auf verschiedenen Instanzen (Ende-zu-Ende je Instanz). Cluster-weit geteilt wird nur, was mehrere Instanzen brauchen — Fortschritt (`PROCESS_STEP`), Korpus (Embeddings), Preview-Bytes (DMS) — **nicht** die transienten Chunks eines Jobs.
+**Skalierungsmodell & Job-Affinität:** Modultrennung ist **logisch** (eigene Ports/Verträge, per ArchUnit erzwungen), **nicht distributiv**. Alle Fachmodule laufen im selben JVM-Prozess; der Handoff `structuring → retrieval → extraction` ist ein **In-Process-Aufruf** (kein Netz-Hop, NfA-2). Die Skalierungseinheit ist das **Dokument (Request-Level)**: verschiedene Dokumente laufen parallel auf verschiedenen Instanzen (Ende-zu-Ende je Instanz). Cluster-weit geteilt wird nur, was mehrere Instanzen brauchen — Fortschritt (`PROCESS_STEP`), Korpus (Embeddings), Roh-/Preview-Bytes (Postgres-Blobstore, ADR-008) — **nicht** die transienten Chunks eines Jobs.
 
 ---
 
@@ -157,10 +158,10 @@ C4Container
     System_Boundary(tb, "KI-Verarbeitungsgrenze — lokal, Egress-Allowlist") {
         Container(ng, "Angular Frontend", "Angular/SSR-CSR", "Upload, PDF-Vorschau, Validierungs-UI (iframe)")
         Container(app, "DocExtract Backend", "Java 21 / Spring Boot 4", "Hexagonaler Kern: Ingest, Structuring, Retrieval, Extraction, Validation, Process, Audit; REST- + MCP- + SSE-Inbound; kein dauerhafter instanzgebundener Zustand; Jobs transient instanzgebunden")
-        Container(prev, "Preview-Service", "Gotenberg/LibreOffice", "Nur Nicht-PDF → PDF für visuelle Kontrolle")
+        Container(prev, "Preview-Service", "Gotenberg/LibreOffice", "Nur Nicht-PDF → PDF für visuelle Kontrolle; Quelle und Ziel sind Postgres-Blob-Seiten")
         Container(doc, "docling", "Container", "Dokument → strukturierte, kontextualisierte Chunks (transient, in-memory)")
         Container(llm, "Ollama", "Qwen 3, lokal", "Embeddings (Query + Korpus) + schema-constrained Extraktion")
-        ContainerDb(pg, "PostgreSQL + pgvector", "RDBMS", "Metadaten, Vektoren (Korpus), Audit-Log, Process-State (LISTEN/NOTIFY) — KEIN Roh-Text")
+        ContainerDb(pg, "PostgreSQL + pgvector", "RDBMS", "Metadaten, Vektoren (Korpus), Audit-Log, Process-State (LISTEN/NOTIFY), transienter Blobstore (Roh-/Preview-Bytes, gechunkt, TTL, max. 50 MB) — KEIN Roh-Text")
     }
 
     Rel(sb, ng, "bedient")
@@ -184,13 +185,13 @@ C4Container
     Rel(app, llm, "Embeddings / Extraktion; kein direkter DB-/DMS-Zugriff")
         UpdateRelStyle(app, llm, $offsetY="170", $offsetX="-140")
 
-    Rel(app, pg, "R/W (JPA/pgvector)")
+    Rel(app, pg, "R/W (JPA/pgvector) + Blob-Seiten (Roh-/Preview-Bytes, TTL)")
         UpdateRelStyle(app, pg, $offsetY="0", $offsetX="0")
 
     Rel(app, idp, "Session-Validierung → Tenant/ACL")
         UpdateRelStyle(app, idp, $offsetY="-60", $offsetX="-40")
 
-    Rel(app, dms, "Metadaten / Doc- + Preview-Chunk / Rückschreiben nach Consent")
+    Rel(app, dms, "Metadaten / Doc-Chunk (write-only) / Rückschreiben nach Consent")
         UpdateRelStyle(app, dms, $offsetY="0", $offsetX="0")
 
     Rel(app, tpa, "Wertelisten (JIT)")
@@ -205,7 +206,7 @@ C4Container
 
 | Modul                      | Verantwortung                                                                                                                                                                                                                                                                                                             | Inbound-Port                                              | Wichtigste Outbound-Ports                                                           |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| **ingest**                 | Upload, Limits und synchroner Original-Chunk-Upload vor `202 Accepted`; Preview nur bei Nicht-PDF, native PDFs ohne Render (FR-1)                                                                                                                                                                                         | `IngestDocument`                                          | `PreviewPort`, `DmsChunkUploadPort`                                                 |
+| **ingest**                 | Upload (max. 50 MB), Limits, synchrone Ablage der Roh-Bytes im Postgres-Blobstore **und** Original-Chunk-Upload ins DMS vor `202 Accepted`; Bereitstellung der Vorschau per Range-fähigem Streaming — Preview nur bei Nicht-PDF, native PDFs ohne Render (FR-1, ADR-008)                                                  | `IngestDocument`, `StreamPreview`                         | `DocumentBlobPort`, `PreviewPort`, `DmsChunkUploadPort`                             |
 | **structuring**            | docling-Aufbereitung → **kontextualisierte Chunks** (`HybridChunker` auf dem `DoclingDocument`, struktur- + token-basiert, mit Überschriften-Kontext); Chunks bleiben **transient (in-memory)** — **nicht persistiert** (FR-2, ADR-006/-007). Chunking-Parameter (Tokenizer, `max_tokens`) werden von `retrieval` bezogen | `StructureDocument`                                       | `StructuringPort`, `ChunkingConfigPort` (holt Tokenizer/`max_tokens` aus retrieval) |
 | **retrieval**              | Embedding der Chunks via Ollama; temporäres Staging als `PENDING` mit TTL; Ähnlichkeitssuche ausschliesslich über `APPROVED`-Vektoren mit Tenant-/ACL-Pre-Filter; stellt die Chunking-Config bereit (FR-3, NfA-4/-6, C-7)                                                                                                 | `FindSimilar`, `ProvideChunkingConfig`, `StageEmbeddings` | `EmbeddingPort`, `VectorSearchPort`, `PendingEmbeddingPort`, `AuthContextPort`      |
 | **extraction**             | Schema-constrained LLM-Attributvorschläge inkl. knapper Quell-Exzerpte; stützt sich auf Objektdefinitionen (Kategorien/Eigenschaften), Metadaten der 5 ähnlichsten Dokumente (per `document_id`) und Wertelisten (FR-4, T-1)                                                                                              | `ExtractAttributes`                                       | `LlmPort`, `ValueListPort`, `ObjDefPort`, `DmsMetadataPort`                         |
@@ -222,12 +223,13 @@ C4Container
 
 ch.adeon.apps.docextract
 ├─ ingest
-│ ├─ domain # DocumentUpload, Limits, ValidationResult, DmsLocation, MediaType
-│ ├─ application # IngestDocumentService (Branch: PDF→direkt / Nicht-PDF→Gotenberg→Preview-Chunk)
+│ ├─ domain # DocumentUpload, SizeLimit (50 MB), ValidationResult, DmsLocation, MediaType, BlobRef, PageRange
+│ ├─ application # IngestDocumentService (Blob-Ablage → DMS-Chunk → 202), PreviewStreamService (Branch: PDF→direkt / Nicht-PDF→Gotenberg→PREVIEW-Blob)
 │ └─ adapter
-│ ├─ in.rest # UploadController (POST /documents → 202 + processId), PreviewController (GET .../preview → Stream aus DMS-Location)
-│ ├─ out.preview # GotenbergPreviewAdapter (nur Nicht-PDF)
-│ └─ out.dms # DmsChunkUploadAdapter (POST Doc-Chunk + Preview-Chunk → liest Location-Header)
+│ ├─ in.rest # UploadController (POST /documents → 202 + processId), PreviewController (GET .../preview → Range-Stream aus Blob-Seiten)
+│ ├─ out.preview # GotenbergPreviewAdapter (nur Nicht-PDF; liest/schreibt Blob-Seiten)
+│ ├─ out.blob # PgDocumentBlobAdapter (DOCUMENT_BLOB + DOCUMENT_BLOB_PAGE, 1-MiB-Seiten, Range-Read über segment_no)
+│ └─ out.dms # DmsChunkUploadAdapter (POST Doc-Chunk → liest Location-Header; write-only)
 ├─ structuring
 │ ├─ domain # DocChunk (Text + Kontext-Metadaten), ChunkingConfig (Tokenizer, max_tokens)
 │ ├─ application # StructureDocumentService (Chunks nur in-memory, KEIN Persist — ADR-006)
@@ -254,7 +256,7 @@ ch.adeon.apps.docextract
 │ └─ out.pg # PgProcessStateAdapter (PROCESS_STEP), PgNotifyAdapter (LISTEN/NOTIFY)
 ├─ audit # append-only, ohne roh-PII (C-4)
 ├─ security # AuthContext, TenantAclResolver, ConsentGuard
-└─ shared # Fehlerbehandlung, Config, Observability, In-Memory-Job-Context (transiente Chunks)
+└─ shared # Fehlerbehandlung, Config, Observability, In-Memory-Job-Context (transiente Chunks), BlobTtlCleanupJob (gemeinsam mit ADR-006)
 ```
 
 **Verantwortlichkeitsprinzip:** Domäne kennt keine Frameworks; Adapter kennen keine Fachregeln; die `security`- und `audit`-Querschnitte werden über Spring-DI und Aspekte eingezogen, sodass jeder Inbound-Pfad (REST **und** MCP) dieselben Guardrails durchläuft.
@@ -265,7 +267,7 @@ ch.adeon.apps.docextract
 
 ### 6.1 Happy-Path — synchroner Übergabepunkt, danach asynchrone Verarbeitung (UI)
 
-Der HTTP-Request wird erst nach dem erfolgreichen synchronen Upload des Originals in den DMS-Chunk-Store mit `202 Accepted + processId` beantwortet. Die DMS-Location ist der dauerhafte Übergabepunkt. Der Async-Job läuft auf einer Instanz und hält das `DoclingDocument` und die Chunks nur transient; die daraus erzeugten Dokument-Embeddings werden als `PENDING` mit TTL gespeichert. Eine Lease mit Heartbeat ermöglicht die Erkennung verwaister Jobs.
+Der HTTP-Request wird erst mit `202 Accepted + processId` beantwortet, nachdem die Roh-Bytes synchron in den **Postgres-Blobstore** geschrieben und das Original als Chunk ins DMS hochgeladen wurde. Der **Blobstore ist der cluster-sichtbare Übergabepunkt** für den Async-Job (der DMS-Chunk ist write-only und nicht rücklesbar); die DMS-`Location` ist das spätere Finalisierungsziel. Der Async-Job läuft auf einer Instanz und hält das `DoclingDocument` und die Chunks nur transient; die daraus erzeugten Dokument-Embeddings werden als `PENDING` mit TTL gespeichert. Eine Lease mit Heartbeat ermöglicht die Erkennung verwaister Jobs.
 
 ```mermaid
 sequenceDiagram
@@ -277,6 +279,7 @@ sequenceDiagram
     participant DMS as d.velop DMS-API
     participant PRC as process
     participant ING as ingest
+    participant BLB as Postgres-Blobstore (DOCUMENT_BLOB, TTL)
     participant JOB as In-Memory-Job-Context (Chunks transient)
     participant STR as structuring (docling + HybridChunker)
     participant RET as retrieval
@@ -289,23 +292,26 @@ sequenceDiagram
     SB->>FE: Dokument hochladen
     FE->>API: POST /documents
     API->>SEC: Session validieren, Tenant + Berechtigungen ableiten
-    API->>ING: Limits prüfen
-    ING->>DMS: Original direkt als Chunk streamen
+    API->>ING: Limits prüfen (max. 50 MB, Medientyp)
+    ING->>BLB: Roh-Bytes als ORIGINAL-Blob in 1-MiB-Seiten schreiben (expires_at)
+    BLB-->>ING: blob_id
+    ING->>DMS: Original als Chunk streamen (write-only)
     DMS-->>ING: dms_location
     API->>PRC: PROCESS + Lease anlegen, Job nach Commit planen
     API-->>FE: 202 + processId
     FE->>API: SSE abonnieren
     alt PDF
-        PRC-->>FE: preview_ready aus dms_location
+        PRC-->>FE: preview_ready (Stream aus ORIGINAL-Blob, Range-fähig)
     else Nicht-PDF
-        PRC->>DMS: Original lesen
+        PRC->>BLB: Original-Seiten lesen
         PRC->>ING: mit Gotenberg rendern
-        ING->>DMS: Preview-Chunk hochladen
-        PRC-->>FE: preview_ready aus preview_location
+        ING->>BLB: PREVIEW-Blob schreiben (expires_at)
+        PRC-->>FE: preview_ready (Stream aus PREVIEW-Blob)
     end
 
     Note over STR,RET: Chunking bei docling (ADR-007), Tokenizer-Config kommt aus retrieval
     RET-->>STR: ChunkingConfig (Tokenizer, max_tokens des Embedding-Modells)
+    API->>BLB: ORIGINAL-Blob lesen (Seiten streamen)
     API->>STR: Dokument → DoclingDocument → HybridChunker.chunk() + contextualize()
     STR->>JOB: kontextualisierte Chunks im Job-Context halten (transient, KEIN Persist)
     STR-->>PRC: structured
@@ -328,6 +334,7 @@ sequenceDiagram
     API->>AUD: LLM-Call protokollieren (Token, Hash, ohne PII) [C-4/NfA-7]
     EXT-->>PRC: extracted
     API->>JOB: Job-Context verwerfen → `DoclingDocument` + Chunks weg
+    Note over BLB: Blobs bleiben bis Consent/Ablehnung/TTL — Preview wird in der Validierungs-UI benötigt
     PRC-->>FE: SSE: extracted → Validierungs-UI
     FE-->>SB: Vorschläge anzeigen (Quellprüfung am PDF-Preview)
 ```
@@ -345,6 +352,7 @@ sequenceDiagram
     participant VAL as validation
     participant DMS as d.velop DMS-API
     participant VDB as pgvector
+    participant BLB as Postgres-Blobstore
     participant AUD as audit
 
     SB->>FE: korrigiert / bestätigt Attribute
@@ -356,11 +364,14 @@ sequenceDiagram
     DMS-->>VAL: ok (document_id)
     VAL->>VDB: atomar PENDING → APPROVED
     VAL->>VDB: dms_document_id + Provenance setzen, expires_at entfernen
+    VAL->>BLB: ORIGINAL- + PREVIEW-Blob löschen (Bytes liegen nun final im DMS)
     VAL->>AUD: Consent-, DMS-Write- und Promotion-Ereignis
     API-->>FE: bestätigt
 ```
 
 **Keine erneute Vektorisierung:** Die beim ursprünglichen Extraktionslauf erzeugten Embeddings werden in pgvector als `PENDING` zwischengespeichert. Bis zur Freigabe sind sie durch das zwingende Retrieval-Prädikat `status = APPROVED` unsichtbar. Nach erfolgreichem DMS-Write werden dieselben Vektoren atomar auf `APPROVED` gesetzt und die dabei bekannt gewordene DMS-`document_id` (samt `repository_id`) am Embedding hinterlegt. Bei Ablehnung, endgültigem Prozessfehler oder Ablauf von `expires_at` werden die `PENDING`-Einträge gelöscht.
+
+**Blob-Lebensende:** Die Roh- und Preview-Blobs werden im selben Schritt gelöscht — nach erfolgreicher Finalisierung liegt das Original im DMS, die Vorschau wird nicht mehr gebraucht. Ablehnung, endgültiger Abbruch und TTL-Ablauf löschen sie ebenfalls; der Cleanup ist derselbe Mechanismus wie für `PENDING`-Embeddings (ADR-006/-008) und respektiert `FINALIZED_INDEX_PENDING`.
 
 **Konsistenzregel:** DMS-Write und PostgreSQL-Promotion können keine gemeinsame ACID-Transaktion bilden. Der Validierungsvorgang wird deshalb idempotent als kleine Saga ausgeführt: Zuerst wird das DMS-Dokument finalisiert, danach werden die Embeddings promotet. Schlägt die Promotion fehl, bleibt der Prozess in `FINALIZED_INDEX_PENDING`. Ein Retry führt ausschliesslich die idempotente Promotion erneut aus. Der TTL-Cleanup überspringt Einträge dieses Recovery-Zustands.
 
@@ -415,7 +426,7 @@ flowchart TB
         prev["preview (Gotenberg/LibreOffice)"]
         doc["docling"]
         llm["ollama (Qwen3, Digest-gepinnt C-5)"]
-        db[("postgres + pgvector\nMetadaten · Vektoren (Korpus) · Audit\nProcess-State (LISTEN/NOTIFY) — kein Roh-Text")]
+        db[("postgres + pgvector\nMetadaten · Vektoren (Korpus) · Audit\nProcess-State (LISTEN/NOTIFY)\ntransienter Blobstore (Roh-/Preview-Bytes, TTL) — kein Roh-Text")]
               end
     end
     proxy["d.velop Reverse Proxy"] --> fe
@@ -423,15 +434,16 @@ flowchart TB
     fe --> be2
     be1 --> prev & doc & llm & db
     be2 --> prev & doc & llm & db
-    be1 -. "Metadaten + Doc-/Preview-Chunk" .-> dms["d.velop DMS-API"]
+    be1 -. "Metadaten + Doc-Chunk (write-only) + Finalisierung" .-> dms["d.velop DMS-API"]
     be1 -. "Session" .-> idp["d.velop IdP"]
 
     classDef tb fill:#fff3f3,stroke:#c0392b,stroke-width:2px;
     class tb tb;
 ```
 
-- **Cluster-fähig:** N Backend-Instanzen hinter dem Proxy, gemeinsame DB; keine Sticky Sessions für HTTP/SSE; laufende Jobs bleiben instanzgebunden. SSE-Fortschritt cluster-weit via Postgres `LISTEN/NOTIFY` + `PROCESS_STEP` (ADR-004); Preview-Bytes im DMS-Chunk-Store (ADR-005).
-- **Job-Affinität:** Die Verarbeitung _eines_ Dokuments läuft als Async-Task auf der annehmenden Instanz (`DoclingDocument` und Chunks nur in-memory; Dokument-Embeddings als `PENDING` mit TTL in pgvector, ADR-006). Bei Instanzausfall erkennt Recovery die abgelaufene Lease; der Job endet definiert oder wird aus der DMS-Location begrenzt wiederholt (NfA-3).
+- **Cluster-fähig:** N Backend-Instanzen hinter dem Proxy, gemeinsame DB; keine Sticky Sessions für HTTP/SSE; laufende Jobs bleiben instanzgebunden. SSE-Fortschritt cluster-weit via Postgres `LISTEN/NOTIFY` + `PROCESS_STEP` (ADR-004); Roh- und Preview-Bytes im transienten Postgres-Blobstore, damit jede Instanz die Vorschau ausliefern kann (ADR-008).
+- **Job-Affinität:** Die Verarbeitung _eines_ Dokuments läuft als Async-Task auf der annehmenden Instanz (`DoclingDocument` und Chunks nur in-memory; Dokument-Embeddings als `PENDING` mit TTL in pgvector, ADR-006). Bei Instanzausfall erkennt Recovery die abgelaufene Lease; der Job endet definiert oder wird aus dem `ORIGINAL`-Blob begrenzt wiederholt, solange dessen TTL nicht abgelaufen ist (NfA-3, ADR-008).
+- **Blobstore-Dimensionierung (ADR-008):** Bei 50 MB Maximalgrösse und ORIGINAL + PREVIEW je Dokument sind ≤ 100 MB pro laufendem Prozess einzuplanen; das Volumen ist über die TTL und die Anzahl paralleler Prozesse begrenzt, nicht über den Dokumentbestand. Blob-Tabellen in **eigenem Tablespace**, `ALTER TABLE ... ALTER COLUMN bytes SET STORAGE EXTERNAL` (PDFs sind bereits komprimiert), aggressiveres Autovacuum, erhöhtes WAL-/Backup-Volumen einkalkulieren.
 - **Reproduzierbar (C-6):** `docker compose up`, Basis-Images per **Digest** fixiert, Modelle per Digest-Pinning (T-5/C-5).
 - **CI-Gate:** Smoke- + **Egress-Allowlist-Test** (LLM als Mock), Security-Scan (SAST/Dependency/Image) vor Publish.
 
@@ -448,7 +460,7 @@ flowchart TB
 
 ### 8.2 Sicherheit (Überblick, Details § 10.3)
 
-Session-basierte AuthN (d.velop-Cookie) → **Tenant/ACL-Auflösung** → Pre-Filter im Retrieval → Consent-Gate vor irreversiblen Aktionen → append-only Audit ohne roh-PII. Least Privilege: Ollama besitzt keinen direkten Zugriff auf PostgreSQL, pgvector oder die DMS-API; Datenzugriffe erfolgen über getrennte Backend-Ports und Rollen. **Datenminimierung (ADR-006):** `DoclingDocument` und Chunks werden nie at-rest gehalten; Dokument-Embeddings liegen bis zur Freigabe ausschliesslich als nicht retrievalfähige `PENDING`-Einträge mit TTL vor. Dauerhaft bleiben nur freigegebene Korpus-Embeddings, Metadaten und Audit-Hashes. Das reduziert die Rest-PII-Fläche (NfA-5) und ist konsistent mit C-4.
+Session-basierte AuthN (d.velop-Cookie) → **Tenant/ACL-Auflösung** → Pre-Filter im Retrieval → Consent-Gate vor irreversiblen Aktionen → append-only Audit ohne roh-PII. Least Privilege: Ollama besitzt keinen direkten Zugriff auf PostgreSQL, pgvector oder die DMS-API; Datenzugriffe erfolgen über getrennte Backend-Ports und Rollen. **Datenminimierung (ADR-006/-008):** `DoclingDocument` und Chunks werden nie at-rest gehalten; Dokument-Embeddings liegen bis zur Freigabe ausschliesslich als nicht retrievalfähige `PENDING`-Einträge mit TTL vor. Roh- und Preview-**Bytes** liegen bewusst temporär im Postgres-Blobstore — TTL-begrenzt, tenant-gescoped und in die NfA-5-Löschkaskade eingebunden; die Zusicherung „kein Roh-**Text** in Postgres" bleibt unberührt, da keine extrahierten Textfragmente persistiert werden. Dauerhaft bleiben nur freigegebene Korpus-Embeddings, Metadaten und Audit-Hashes. Das reduziert die Rest-PII-Fläche (NfA-5) und ist konsistent mit C-4.
 
 ### 8.3 Observability
 
@@ -463,6 +475,8 @@ erDiagram
     ATTRIBUTE_SUGGESTION ||--o| CONFIRMATION : "wird bestätigt"
     DOCUMENT ||--o{ EMBEDDING : "Korpus (nur nach Freigabe, T-2)"
     DOCUMENT ||--o{ PROCESS : "Verarbeitung"
+    DOCUMENT ||--o{ DOCUMENT_BLOB : "transiente Bytes (ADR-008)"
+    DOCUMENT_BLOB ||--o{ DOCUMENT_BLOB_PAGE : "Seiten à 1 MiB"
     PROCESS ||--o{ PROCESS_STEP : "Fortschritt"
     EXTRACTION_RUN ||--o{ AUDIT_ENTRY : "protokolliert"
     CONFIRMATION ||--o| TEMPLATE : "kann Vorlage werden"
@@ -476,8 +490,7 @@ erDiagram
         string source_type "E-1..E-5"
         string media_type "gilt PDF? → keine Konvertierung"
         string status "workflow-state (M2)"
-        string dms_location "Location aus Dokument-Chunk-Upload, Ziel der Finalisierung"
-        string preview_location "Location des kurzlebigen Preview-Chunks (nur Nicht-PDF); sonst = dms_location"
+        string dms_location "Location aus Dokument-Chunk-Upload (write-only), Ziel der Finalisierung"
         timestamptz retention_until "NfA-5: Löschfrist"
     }
     EMBEDDING {
@@ -494,6 +507,25 @@ erDiagram
         timestamptz expires_at "TTL für PENDING"
         timestamptz approved_at "Consent-Zeitpunkt"
         string provenance "Herkunft/Vertrauen"
+    }
+    DOCUMENT_BLOB {
+        uuid id PK
+        uuid document_id FK
+        string tenant_id "Scope-/Filterspalte, Pflicht bei jedem Zugriff"
+        string kind "ORIGINAL|PREVIEW"
+        string media_type "Content-Type für den Stream"
+        bigint size_bytes "<= 52428800 (50 MB), per CHECK erzwungen"
+        int page_count "abgeleitet: ceil(size_bytes / page_size)"
+        int page_size "Seitengrösse in Bytes, Default 1048576"
+        string sha256 "Integritätsprüfung beim Streamen"
+        string process_id "Extraktionslauf"
+        timestamptz expires_at "TTL, gemeinsamer Cleanup mit ADR-006"
+        timestamptz created_at
+    }
+    DOCUMENT_BLOB_PAGE {
+        uuid blob_id FK "Teil des PK"
+        int segment_no "Teil des PK; ermöglicht Range-Read ohne Materialisierung"
+        bytea bytes "STORAGE EXTERNAL, keine TOAST-Kompression"
     }
     PROCESS {
         uuid id PK
@@ -547,7 +579,7 @@ erDiagram
     }
 ```
 
-**Migrationsstrategie:** versionierte SQL-Migrationen (Flyway/Liquibase); pgvector-Index (HNSW/IVFFlat) mit `tenant_id`/`acl_ref` als Filterspalten, damit der **Pre-Filter** Teil der Query, nicht ein Post-Filter ist. Löschpfad (NfA-5) kaskadiert Dokument + Embeddings; Audit bleibt referenzierend (Hashes) erhalten.
+**Migrationsstrategie:** versionierte SQL-Migrationen (Flyway/Liquibase); Blob-Tabellen mit `PRIMARY KEY (blob_id, segment_no)`, Index auf `expires_at` für den Cleanup und `STORAGE EXTERNAL` auf `bytes`; pgvector-Index (HNSW/IVFFlat) mit `tenant_id`/`acl_ref` als Filterspalten, damit der **Pre-Filter** Teil der Query, nicht ein Post-Filter ist. Löschpfad (NfA-5) kaskadiert Dokument + Embeddings; Audit bleibt referenzierend (Hashes) erhalten.
 
 **Speicher-Topologie (bewusste Trennung nach Lebensdauer & Natur):**
 
@@ -555,10 +587,10 @@ erDiagram
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
 | **Durable relational**       | Postgres: `DOCUMENT`, `EMBEDDING` (Korpus), `EXTRACTION_RUN`, `ATTRIBUTE_SUGGESTION`, `CONFIRMATION`, `TEMPLATE`, `AUDIT_ENTRY` | Dokument-Lebenszyklus (NfA-5-Kaskade)            | Metadaten, Vektoren, Ergebnisse, Audit-Hashes — **kein Roh-Text**                                                              |
 | **Transient (flüchtig)**     | **In-Memory-Job-Context** der verarbeitenden Instanz                                                                            | nur während des Jobs, nach `extracted` verworfen | **Chunks** und `DoclingDocument` als flüchtige Pipeline-Zwischenprodukte; Embeddings separat als `PENDING` mit TTL in pgvector |
-| **Kurzlebige Binär-Objekte** | **DMS-Chunk-Store** (extern): Dokument-Chunk + Preview-Chunk (nur Nicht-PDF)                                                    | unfinalisiert, DMS-seitig verfallend             | Roh-Bytes & gerenderte Vorschau; App hält nur `Location` (ADR-005)                                                             |
+| **Kurzlebige Binär-Objekte** | **Postgres-Blobstore** (lokal): `DOCUMENT_BLOB` + `DOCUMENT_BLOB_PAGE`, Seiten à 1 MiB, max. 50 MB je Blob                     | TTL-begrenzt; gelöscht bei Consent, Ablehnung, Abbruch oder Ablauf | Roh-Bytes & gerenderte Vorschau als cluster-sichtbarer Übergabepunkt und Quelle der Range-fähigen Vorschau (ADR-008)          |
 | **Prozess-/Event-State**     | Postgres: `PROCESS_STEP` (+ `LISTEN/NOTIFY`)                                                                                    | bis Prozessende, dann aufräumbar                 | Async-Fortschritt & SSE-Catch-up, **PII-frei** (ADR-004)                                                                       |
 
-> **Datenminimierung (ADR-006):** Die **Chunks sind Volltext-Fragmente inkl. Roh-PII** und werden deshalb **nie persistiert** — weder relational noch im Objektspeicher. Sie leben nur im Arbeitsspeicher des Jobs (structuring → retrieval → extraction) und werden danach verworfen. Der Retrieval-Korpus besteht aus **Embeddings** (+ `tenant_id`/`acl_ref` + `repository_id`/`dms_document_id` + `chunk_index`), nicht aus Roh-Text vergangener Dokumente; Metadaten ähnlicher Dokumente kommen live per `document_id` aus der DMS-API (`/dms/r/{repositoryId}/o2/{document_id}/`). Das minimiert Rest-PII (NfA-5), vermeidet Cleanup-Aufwand und hält C-4 konsistent.
+> **Datenminimierung (ADR-006):** Die **Chunks sind Volltext-Fragmente inkl. Roh-PII** und werden deshalb **nie persistiert** — weder relational noch im Blobstore. Sie leben nur im Arbeitsspeicher des Jobs (structuring → retrieval → extraction) und werden danach verworfen. Der Retrieval-Korpus besteht aus **Embeddings** (+ `tenant_id`/`acl_ref` + `repository_id`/`dms_document_id` + `chunk_index`), nicht aus Roh-Text vergangener Dokumente; Metadaten ähnlicher Dokumente kommen live per `document_id` aus der DMS-API (`/dms/r/{repositoryId}/o2/{document_id}/`). Die temporären Blobs (ADR-008) sind davon ausgenommen: sie tragen die Original-Bytes, sind aber weder durchsuchbar noch Teil des Korpus und unterliegen derselben TTL-Disziplin. Das minimiert Rest-PII (NfA-5) und hält C-4 konsistent.
 
 ### 8.5 KI-Integration (Krit. 16 — substanzielle, abgesicherte KI-Funktion)
 
@@ -577,7 +609,7 @@ Die KI-Pipeline hat **zwei getrennte Modell-Nutzungen** auf demselben Ollama-Bac
 
 ## 9. Architekturentscheidungen — ADRs (arc42 §9 / Krit. 18: bewusst nicht delegiert)
 
-**ADR-001 bis ADR-003** wurden **bewusst nicht an die KI delegiert** (Krit. 18: Entwerfen/Prüfen statt Implementieren). **ADR-004 bis ADR-006** ergänzen die Grundentscheide zu asynchroner Verarbeitung, Speicher-Topologie und Datenminimierung, die sich aus den Cluster-/Async- und Datenschutz-Anforderungen ergeben.
+**ADR-001 bis ADR-003** wurden **bewusst nicht an die KI delegiert** (Krit. 18: Entwerfen/Prüfen statt Implementieren). **ADR-004 bis ADR-008** ergänzen die Grundentscheide zu asynchroner Verarbeitung, Speicher-Topologie, Datenminimierung und Chunking, die sich aus den Cluster-/Async- und Datenschutz-Anforderungen ergeben. **ADR-005 wurde durch ADR-008 abgelöst**, nachdem sich die Write-only-Natur des DMS-Chunk-Uploads herausstellte — die Revision ist bewusst dokumentiert statt überschrieben (Krit. 18).
 
 ### ADR-001 — Modularer Monolith statt Microservices
 
@@ -609,10 +641,9 @@ Die KI-Pipeline hat **zwei getrennte Modell-Nutzungen** auf demselben Ollama-Bac
 
 ### ADR-005 — Kurzlebige Binär-Objekte über DMS-Chunk-Upload statt eigenem Objektspeicher
 
-- **Status:** akzeptiert · **Kontext:** Kein gemeinsamer Object Storage (S3/NFS) verfügbar; PDF-Vorschau muss für **alle** Cluster-Instanzen sichtbar sein; Instanzen zustandslos. Der DMS-Chunk-Upload liefert bereits eine `Location`, an der unfinalisierte Bytes vorgehalten werden.
-- **Entscheidung:** Der **DMS-Chunk-Store dient als kurzlebiger Objektspeicher**. Native **PDFs** werden nicht gerendert, sondern direkt aus der Dokument-`Location` gestreamt. Für **Nicht-PDFs** rendert Gotenberg die Vorschau, die als **separater, unfinalisierter Preview-Chunk** hochgeladen und über dessen `Location` gestreamt wird. **Kein Postgres-Blobstore.**
-- **Begründung:** Vermeidet einen zweiten Speichermechanismus, hält Postgres schlank; App bleibt zustandslos (nur `Location`-Referenzen); unbestätigte Chunks verfallen DMS-seitig (kein eigener Cleanup-Job).
-- **Konsequenz:** `DmsChunkUploadPort` für Dokument- **und** Preview-Chunk; `DOCUMENT` trägt `dms_location` und `preview_location`.
+- **Status:** **abgelöst durch ADR-008** · **Kontext:** Kein gemeinsamer Object Storage (S3/NFS) verfügbar; PDF-Vorschau muss für **alle** Cluster-Instanzen sichtbar sein; Instanzen zustandslos. Der DMS-Chunk-Upload liefert bereits eine `Location`, an der unfinalisierte Bytes vorgehalten werden.
+- **Ursprüngliche Entscheidung:** Der DMS-Chunk-Store dient als kurzlebiger Objektspeicher; native PDFs werden direkt aus der Dokument-`Location` gestreamt, Nicht-PDF-Vorschauen als separater, unfinalisierter Preview-Chunk abgelegt. Kein Postgres-Blobstore.
+- **Grund der Ablösung:** Die Annahme, dass hochgeladene Chunks rücklesbar sind, trifft nicht zu — der **DMS-Chunk-Upload ist write-only**. Vor der Finalisierung lassen sich die Bytes weder für die Vorschau streamen noch vom Async-Job erneut lesen. Damit fehlt der Entscheidung ihre technische Grundlage; sie wird durch ADR-008 ersetzt.
 
 ### ADR-006 — Chunks flüchtig, Embeddings temporär in Quarantäne
 
@@ -627,6 +658,15 @@ Die KI-Pipeline hat **zwei getrennte Modell-Nutzungen** auf demselben Ollama-Bac
 - **Entscheidung:** **Option (b)** — docling-natives Chunking. Das Chunking wird **technisch im `structuring`/docling-Adapter** ausgeführt; die **Chunking-Config (Tokenizer, `max_tokens`) liefert `retrieval`**, weil die Chunk-Größe eine Eigenschaft des Embedding-Modells ist (Tokenizer-Alignment). `contextualize()` erzeugt die einzubettende Chunk-Repräsentation (mit Überschriften-Metadaten).
 - **Begründung:** Struktur-treue Chunks (Tabellen/Überschriften/Lesereihenfolge bleiben intakt) und heading-angereicherte Kontextualisierung verbessern die Retrieval-Güte gegenüber flachem Markdown-Splitting; harte Token-Limits verhindern Überlauf des Embedder-Kontextfensters. Nur eine Bibliothek (docling) für Parsing **und** Chunking reduziert Komplexität.
 - **Konsequenz:** `structuring` liefert **einen Strom kontextualisierter Chunks** (statt „nur Markdown"); der In-Memory-Typ im Job-Context ist `List<DocChunk>` (statt `String`). Bewusste, **dünne Config-Kopplung**: der docling-Adapter hängt am Tokenizer des Embedding-Modells (`ChunkingConfigPort`) — kein Fachwissen, nur Parametrisierung. ADR-006 bleibt unberührt (Chunks weiterhin transient).
+
+### ADR-008 — Transienter Postgres-Blobstore mit gechunkten `BYTEA`-Seiten (ersetzt ADR-005)
+
+- **Status:** akzeptiert · **Kontext:** Der DMS-Chunk-Upload ist **write-only** — hochgeladene Bytes sind vor der Finalisierung nicht rücklesbar, weshalb ADR-005 nicht trägt. Es gibt keinen gemeinsamen Object Storage (S3/NFS), und ein zusätzlicher Container (z. B. MinIO) widerspräche der Betriebsökonomie von ADR-001. PostgreSQL ist bereits die einzige gemeinsame Datenbasis. Gebraucht werden: ein cluster-sichtbarer Übergabepunkt für den Async-Job und eine Range-fähige Quelle für die PDF-Vorschau.
+- **Betrachtete Optionen:** (a) einspaltiges `BYTEA` je Objekt, (b) PostgreSQL **Large Objects** (`lo`), (c) **gechunktes `BYTEA`** in Seiten fester Grösse.
+- **Entscheidung:** **Option (c).** `DOCUMENT_BLOB` (Kopfdaten: `kind ORIGINAL|PREVIEW`, `media_type`, `size_bytes`, `sha256`, `tenant_id`, `process_id`, `expires_at`) plus `DOCUMENT_BLOB_PAGE` (`PRIMARY KEY (blob_id, segment_no)`, `bytes` à **1 MiB**, `STORAGE EXTERNAL`). Der Upload ist auf **50 MB** begrenzt (`CHECK size_bytes <= 52428800`), also höchstens 50 Seiten je Blob. Native PDFs werden direkt aus dem `ORIGINAL`-Blob gestreamt; Nicht-PDFs rendert Gotenberg aus dem `ORIGINAL`-Blob in einen `PREVIEW`-Blob. Der DMS-Chunk-Upload bleibt erhalten, liefert aber ausschliesslich die `Location` als Finalisierungsziel.
+- **Begründung:** Option (a) zwingt bei jedem Zugriff den gesamten Blob in den Heap — bei 50 MB und mehreren parallelen Vorschauen untragbar und ohne HTTP-Range-Unterstützung. Option (b) beherrscht echtes Seek/Read, bringt aber mit `lo_unlink`, Orphan-LOs und `vacuumlo` eine **zweite Aufräum-Semantik** neben dem TTL-Cleanup aus ADR-006. Option (c) liefert dieselbe Range-Fähigkeit über einfache `segment_no`-Arithmetik, bleibt im normalen Tabellen- und Transaktionsmodell und nutzt **denselben `expires_at`-Cleanup** wie die `PENDING`-Embeddings — ein Aufräumpfad statt zwei. Das harte 50-MB-Limit macht Speicherbedarf, WAL-Volumen und Latenz vorhersagbar (≤ 100 MB je laufendem Prozess für `ORIGINAL` + `PREVIEW`).
+- **Konsequenz:** Neuer `DocumentBlobPort` im `ingest`-Modul (`write`, `readRange`, `delete`); `DOCUMENT.preview_location` entfällt, `dms_location` bleibt. Die Zusicherung „kein Roh-Text in Postgres" (ADR-006) gilt weiterhin für Chunks, wird aber für Roh-**Bytes** bewusst gelockert — begrenzt durch TTL, Tenant-Scope und NfA-5-Kaskade (§ 8.2). Betrieblich: eigener Tablespace, `STORAGE EXTERNAL` (PDFs sind bereits komprimiert, TOAST-Kompression kostet nur CPU), aggressiveres Autovacuum, grösseres WAL-/Backup-Volumen. Blobs werden bei Consent, Ablehnung, endgültigem Abbruch oder TTL-Ablauf gelöscht; der Cleanup respektiert `FINALIZED_INDEX_PENDING`. Metrik für Anzahl, Gesamtgrösse und Alter der Blobs ist Pflicht.
+- **Offene Grenze:** Ab deutlich grösseren Limits oder hohem Parallelitätsgrad kippt die Abwägung Richtung Large Objects oder eines echten Object Stores innerhalb der Vertrauensgrenze; bei 50 MB ist das nicht der Fall.
 
 > Weitere ADRs pro Block: Präsentationsschicht (Block 2), Vektor-DB-Integration & Persistenzmuster (Block 4).
 
@@ -644,7 +684,9 @@ Die KI-Pipeline hat **zwei getrennte Modell-Nutzungen** auf demselben Ollama-Bac
 | Fehlerinjektion   | ungültiges LLM-JSON, docling-Absturz, OCR-Müll → sauberer Endzustand (Event `failed`)                                                          | NfA-3               |
 | Cross-Tenant/ACL  | automatisierter Zugriffstest, 0 Fremdtreffer                                                                                                   | NfA-4               |
 | Async/SSE         | Fortschritts-Events vollständig & geordnet; Reconnect-Catch-up; abgelaufene Lease wird atomar beendet oder begrenzt wiederholt                 | NfA-3, ADR-004      |
-| Preview-Branch    | PDF → kein Gotenberg-Render, Stream aus `dms_location`; Nicht-PDF → Preview-Chunk, Stream aus `preview_location`                               | ADR-005             |
+| Preview-Branch    | PDF → kein Gotenberg-Render, Stream aus `ORIGINAL`-Blob; Nicht-PDF → `PREVIEW`-Blob, Stream daraus                                             | ADR-008             |
+| Blobstore         | Seiten-Round-Trip byte-identisch (`sha256`); Range-Request liest nur die betroffenen `segment_no`; Upload > 50 MB wird abgewiesen; Blob-Zugriff ohne passenden `tenant_id` liefert nichts | ADR-008, T-4, NfA-4 |
+| Blob-Lebensende   | Blobs nach Consent, Ablehnung und Abbruch gelöscht; TTL-Cleanup entfernt verwaiste Blobs und überspringt `FINALIZED_INDEX_PENDING`            | ADR-008, NfA-5      |
 | Datenminimierung  | Nach `extracted` keine Chunks oder Rohtexte at-rest; Embeddings nur als `PENDING` mit TTL; nach Ablehnung/Ablauf gelöscht                      | ADR-006, C-7, NfA-5 |
 | Korpus-Quarantäne | Retrieval liefert auch bei maximaler Ähnlichkeit niemals `PENDING`; Consent promotet ohne Neuberechnung; Cleanup entfernt abgelaufene Einträge | T-2, C-7, NfA-4     |
 | Eval (KI)         | Soll/Ist-JSON gegen Eval-Set (M2 provisorisch, M3 belastbar)                                                                                   | NfA-1/-2/-6/-7      |
@@ -675,10 +717,11 @@ Mind. ein automatischer Security-Check (SAST/Dependency/Secret/Image/IaC) mit in
 - **SSE hinter Reverse Proxy:** Proxy-Buffering/Timeouts können den Event-Stream unterbrechen → Heartbeat/Keep-alive + Reconnect mit `PROCESS_STEP`-Catch-up (ADR-004); Proxy auf ungepuffertes Streaming konfigurieren.
 - **`LISTEN/NOTIFY`-Limits:** Payload-Grenze (8 kB) und flüchtige Zustellung → nur `processId`/`step` transportieren, Details aus `PROCESS_STEP`.
 - **Temporäre Embeddings (ADR-006/C-7):** Verwaiste `PENDING`-Einträge könnten Speicher belegen oder versehentlich sichtbar werden. Mitigation: obligatorischer `APPROVED`-Pre-Filter, kurze TTL, periodischer Cleanup, Metrik für Anzahl/Alter und Schutz des Recovery-Zustands `FINALIZED_INDEX_PENDING`.
-- **DMS-Chunk-Verfall (Preview):** verlässt sich auf DMS-seitiges Aufräumen unfinalisierter Chunks → TTL-Verhalten verifizieren; ggf. Preview-Chunk nach Anzeige aktiv verwerfen (ADR-005).
+- **Blobstore-Wachstum (ADR-008):** Verwaiste Blobs belegen Speicher, treiben WAL- und Backup-Volumen und führen bei ausbleibendem Autovacuum zu Bloat → harter 50-MB-Deckel, kurze TTL, periodischer Cleanup im selben Job wie ADR-006, Metrik für Anzahl/Gesamtgrösse/Alter, eigener Tablespace.
+- **Skalierungsgrenze des DB-Blobstores:** Bei steigender Parallelität oder höherem Grössenlimit wird Postgres zum Engpass (WAL-Durchsatz, Backup-Fenster) → Schwellwert beobachten; Ausweichpfad ist ein Object Store innerhalb der Vertrauensgrenze (ADR-008, „Offene Grenze").
 
 ---
 
 ## 12. Glossar (arc42 §12)
 
-**ACL-Pre-Filter** – Berechtigungsprädikat als Teil der Vektor-Query · **HybridChunker** – docling-Chunker, der struktur- und token-basiert kontextualisierte Chunks auf dem `DoclingDocument` erzeugt (ADR-007) · **Kontextualisierung** – Anreicherung eines Chunks mit Überschriften-Metadaten (`contextualize()`) vor dem Embedding · **Tokenizer-Alignment** – Abstimmung des Chunker-Tokenizers auf das Embedding-Modell (`max_tokens`) · **PENDING-Embedding** – temporär persistierter, nicht retrievalfähiger Vektor mit TTL · **APPROVED-Embedding** – nach Consent aktivierter Korpus-Vektor · **Korpus-Promotion** – atomarer Statuswechsel `PENDING → APPROVED` ohne erneute Vektorisierung · **Guardrail** – unverhandelbare Leitplanke für den KI-Anteil · **Vertrauensgrenze** – lokale Betriebsgrenze ohne Egress (C-1) · **HITL** – Human-in-the-Loop · **MCP** – Model Context Protocol (Agent-Schnittstelle) · **In-Memory-Job-Context** – flüchtiger Arbeitsspeicher-Kontext eines Dokument-Jobs, hält das `DoclingDocument` und Chunks transient; Embeddings werden separat als `PENDING` gestaged (ADR-006) · **PROCESS_STEP** – durable, PII-freie Fortschrittstabelle für SSE-Catch-up (ADR-004). Weitere Begriffe siehe [SPEC.md](SPEC.md).
+**ACL-Pre-Filter** – Berechtigungsprädikat als Teil der Vektor-Query · **HybridChunker** – docling-Chunker, der struktur- und token-basiert kontextualisierte Chunks auf dem `DoclingDocument` erzeugt (ADR-007) · **Kontextualisierung** – Anreicherung eines Chunks mit Überschriften-Metadaten (`contextualize()`) vor dem Embedding · **Tokenizer-Alignment** – Abstimmung des Chunker-Tokenizers auf das Embedding-Modell (`max_tokens`) · **PENDING-Embedding** – temporär persistierter, nicht retrievalfähiger Vektor mit TTL · **APPROVED-Embedding** – nach Consent aktivierter Korpus-Vektor · **Korpus-Promotion** – atomarer Statuswechsel `PENDING → APPROVED` ohne erneute Vektorisierung · **Guardrail** – unverhandelbare Leitplanke für den KI-Anteil · **Vertrauensgrenze** – lokale Betriebsgrenze ohne Egress (C-1) · **HITL** – Human-in-the-Loop · **MCP** – Model Context Protocol (Agent-Schnittstelle) · **In-Memory-Job-Context** – flüchtiger Arbeitsspeicher-Kontext eines Dokument-Jobs, hält das `DoclingDocument` und Chunks transient; Embeddings werden separat als `PENDING` gestaged (ADR-006) · **PROCESS_STEP** – durable, PII-freie Fortschrittstabelle für SSE-Catch-up (ADR-004) · **Blob-Seite** – 1 MiB grosses `BYTEA`-Fragment eines Dokuments in `DOCUMENT_BLOB_PAGE`; ermöglicht Range-Zugriff ohne Materialisierung des ganzen Objekts (ADR-008) · **Transienter Blobstore** – TTL-begrenzter Postgres-Speicher für Roh- und Preview-Bytes, cluster-sichtbarer Übergabepunkt des Async-Jobs (ADR-008). Weitere Begriffe siehe [SPEC.md](SPEC.md).

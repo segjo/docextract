@@ -4,13 +4,166 @@
     <meta charset="UTF-8" />
     <title>DocExtract</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 60rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      #result {
+        white-space: pre-wrap;
+        background: #f4f4f4;
+        padding: 0.75rem;
+        border-radius: 4px;
+      }
+      iframe {
+        width: 100%;
+        height: 70vh;
+        border: 1px solid #ccc;
+        margin-top: 1rem;
+      }
+    </style>
   </head>
   <body>
     <!-- Placeholder until the Angular app (frontend/) is built and copied here -->
     <h1>DocExtract</h1>
     <p>
-      Die Validierungs-UI ist noch nicht verfügbar. Bitte Angular-Frontend
-      gemäss frontend/README.md aufsetzen.
+      Die Validierungs-UI ist noch nicht verfügbar. Diese Seite dient nur zum
+      manuellen Testen von Upload (FR-1) und Vorschau (ADR-008).
     </p>
+
+    <form id="upload-form">
+      <label>
+        Bearer-Token (dvelop-mock akzeptiert jeden Wert)
+        <input type="text" id="token-input" placeholder="test-token" />
+      </label>
+      <br />
+      <input type="file" id="file-input" required />
+      <button type="submit">Hochladen</button>
+    </form>
+
+    <h2>Ergebnis</h2>
+    <div id="result">–</div>
+
+    <h2>Fortschritt (SSE)</h2>
+    <div id="progress">–</div>
+
+    <iframe id="preview" hidden></iframe>
+
+    <script>
+      // Static resources are served under the context path at /ui/**; derive the API base from it.
+      const apiBase = window.location.pathname.replace(/\/ui\/.*$/, "");
+
+      const form = document.getElementById("upload-form");
+      const result = document.getElementById("result");
+      const progress = document.getElementById("progress");
+      const preview = document.getElementById("preview");
+      const tokenInput = document.getElementById("token-input");
+
+      // EventSource can't carry an Authorization header, so the SSE stream is read manually via fetch.
+      async function subscribeToProcessEvents(processId, token, onEvent) {
+        const response = await fetch(
+          `${apiBase}/api/v1/processes/${processId}/events`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: "text/event-stream",
+            },
+          },
+        );
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) {
+            return;
+          }
+          buffer += decoder.decode(value, { stream: true });
+          const frames = buffer.split("\n\n");
+          buffer = frames.pop();
+          for (const frame of frames) {
+            const dataLine = frame
+              .split("\n")
+              .find((line) => line.startsWith("data:"));
+            if (dataLine) {
+              onEvent(JSON.parse(dataLine.slice("data:".length).trim()));
+            }
+          }
+        }
+      }
+
+      function logProgress(event) {
+        progress.textContent += `${event.step} — ${event.status}${event.blobId ? " (" + event.blobId + ")" : ""}\n`;
+      }
+
+      async function showPreview(blobId, token) {
+        const previewResponse = await fetch(
+          `${apiBase}/api/v1/ingest/documents/${blobId}/preview`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
+        const pdfBlob = await previewResponse.blob();
+        preview.src = URL.createObjectURL(pdfBlob);
+        preview.hidden = false;
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const file = document.getElementById("file-input").files[0];
+        if (!file) {
+          return;
+        }
+        const token = tokenInput.value;
+
+        const body = new FormData();
+        body.append("file", file);
+
+        result.textContent = "Lade hoch …";
+        progress.textContent = "";
+        preview.hidden = true;
+
+        try {
+          const response = await fetch(`${apiBase}/api/v1/ingest/documents`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+            body,
+          });
+          const rawBody = await response.text();
+          if (!response.ok) {
+            result.textContent = `Fehler ${response.status}: ${rawBody || response.statusText}`;
+            return;
+          }
+          const payload = JSON.parse(rawBody);
+          result.textContent = JSON.stringify(payload, null, 2);
+
+          if (payload.processId) {
+            subscribeToProcessEvents(
+              payload.processId,
+              token,
+              (processEvent) => {
+                logProgress(processEvent);
+                if (
+                  processEvent.step === "PREVIEW" &&
+                  processEvent.status === "COMPLETED"
+                ) {
+                  showPreview(processEvent.blobId, token);
+                } else if (
+                  processEvent.step === "PREVIEW" &&
+                  processEvent.status === "FAILED"
+                ) {
+                  progress.textContent +=
+                    "Vorschau konnte nicht erzeugt werden.\n";
+                }
+              },
+            );
+          }
+        } catch (error) {
+          result.textContent = "Fehler: " + error;
+        }
+      });
+    </script>
   </body>
 </html>

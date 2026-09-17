@@ -1,0 +1,7 @@
+Sehr geehrte Damen und Herren
+
+Dies ist ein Beispieldokument fuer den End-to-End-Test des Ingest-Moduls.
+Es wird ueber Gotenberg/LibreOffice in eine PDF-Vorschau konvertiert.
+
+Freundliche Gruesse
+DocExtract

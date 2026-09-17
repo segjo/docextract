@@ -80,6 +80,19 @@ services:
       context: ./docker/dvelop-mock
     ports:
       - "127.0.0.1:${DVELOP_MOCK_PORT:-8081}:8080"
+    # Bind-mount the stub directories so recorded mappings/bodies land
+    # directly back in the repo instead of only inside the container.
+    volumes:
+      - ./docker/dvelop-mock/mappings:/home/wiremock/mappings
+      - ./docker/dvelop-mock/__files:/home/wiremock/__files
+    # NOTE: --trust-all-proxy-targets/--trust-proxy-target crash this image's
+    # stripped-down JRE (MissingResourceException in the uncaught exception
+    # handler, reproducible even on the bare wiremock/wiremock:3.13.1 image).
+    # Do not set WIREMOCK_OPTIONS to either flag. If https://dms.local uses a
+    # self-signed cert, import it into a truststore and use
+    # --https-truststore/--truststore-password instead.
+    extra_hosts:
+      - "dms.local:192.168.122.37"
     healthcheck:
       test:
         [
@@ -104,7 +117,7 @@ configs:
 
 networks:
   docextract:
-    internal: true
+    internal: false
 
 volumes:
   postgres-data:
