@@ -21,6 +21,7 @@ import ch.adeon.apps.docextract.process.application.ProcessEventPort;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
 import ch.adeon.apps.docextract.security.application.OutboundCredentialPort;
 import ch.adeon.apps.docextract.security.domain.AuthContext;
+import ch.adeon.apps.docextract.structuring.application.StructureDocument;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -35,6 +36,7 @@ class IngestDocumentServiceTest {
   private final AuditPort auditPort = mock(AuditPort.class);
   private final ProcessEventPort processEventPort = mock(ProcessEventPort.class);
   private final GeneratePreview generatePreview = mock(GeneratePreview.class);
+  private final StructureDocument structureDocument = mock(StructureDocument.class);
   private final IngestDocumentService service =
       new IngestDocumentService(
           documentBlobPort,
@@ -44,6 +46,7 @@ class IngestDocumentServiceTest {
           auditPort,
           processEventPort,
           generatePreview,
+          structureDocument,
           1024L);
 
   @Test
@@ -51,6 +54,7 @@ class IngestDocumentServiceTest {
     UUID blobId = UUID.randomUUID();
     when(authContextPort.current())
         .thenReturn(new AuthContext("tenant-a", "acl", "user-1", "User One"));
+    when(generatePreview.supports(MediaType.PDF)).thenReturn(true);
     when(documentBlobPort.store(
             eq(BlobKind.ORIGINAL),
             eq(MediaType.PDF),
@@ -89,6 +93,7 @@ class IngestDocumentServiceTest {
     UUID previewBlobId = UUID.randomUUID();
     when(authContextPort.current())
         .thenReturn(new AuthContext("tenant-a", "acl", "user-1", "User One"));
+    when(generatePreview.supports(MediaType.PDF)).thenReturn(true);
     when(documentBlobPort.store(
             eq(BlobKind.ORIGINAL),
             eq(MediaType.PDF),

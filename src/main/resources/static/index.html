@@ -156,6 +156,12 @@
                 ) {
                   progress.textContent +=
                     "Vorschau konnte nicht erzeugt werden.\n";
+                } else if (
+                  processEvent.step === "STRUCTURED" &&
+                  processEvent.status === "FAILED"
+                ) {
+                  progress.textContent +=
+                    "Strukturierung (docling) ist fehlgeschlagen.\n";
                 }
               },
             );

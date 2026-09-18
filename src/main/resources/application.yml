@@ -39,7 +39,16 @@ docextract:
       origin: https://dms.local
   gotenberg:
     base-uri: http://localhost:3000
-
+  docling:
+    base-uri: http://localhost:5001
+  structuring:
+    # docling (primary, ADR-007) | pdfbox-fast-track (local dev/tests without the docling container)
+    mode: docling
+    # Chunk-size budget (approximated by word count) until retrieval exposes the real
+    # tokenizer-derived ChunkingConfig (ADR-007).
+    max-chunk-tokens: 512
+    # Safety-net TTL for in-memory staged chunks (ADR-006): they must never reach disk/DB.
+    chunk-ttl: PT30M
 ---
 spring:
   config:

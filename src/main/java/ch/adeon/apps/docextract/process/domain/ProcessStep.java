@@ -4,5 +4,6 @@ package ch.adeon.apps.docextract.process.domain;
 public enum ProcessStep {
   BLOB_STORED,
   DMS_UPLOADED,
-  PREVIEW
+  PREVIEW,
+  STRUCTURED
 }
