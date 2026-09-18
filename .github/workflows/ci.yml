@@ -127,6 +127,8 @@ jobs:
           output: trivy-deps.sarif
           severity: CRITICAL,HIGH
           exit-code: "1"
+          # SARIF format otherwise ignores `severity` for the exit-code check and reports all severities.
+          limit-severities-for-sarif: true
           # Reuse the trivy binary/DB installed by the table-format step above.
           skip-setup-trivy: true
 
@@ -169,6 +171,8 @@ jobs:
           output: trivy-iac.sarif
           severity: CRITICAL,HIGH
           exit-code: "1"
+          # SARIF format otherwise ignores `severity` for the exit-code check and reports all severities.
+          limit-severities-for-sarif: true
           # Reuse the trivy binary/DB installed by the table-format step above.
           skip-setup-trivy: true
 
