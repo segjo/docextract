@@ -1,13 +1,184 @@
 name: CI
-on: [pull_request]
+
+on:
+  pull_request:
+
+# Least-privilege default. Only SARIF upload jobs receive security-events: write.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    name: Build and test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
         with:
           distribution: temurin
-          java-version: 21
+          java-version: "21"
+          cache: maven
+
       - name: Build and test
-        run: mvn -q verify
+        run: mvn --batch-mode --no-transfer-progress verify
+
+  # C-4 CI gate (SPEC section 8): secret, SAST, dependency, IaC and image scans
+  # must pass before an artifact is published.
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout full Git history
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Scan Git history with Gitleaks
+        run: |
+          docker run --rm \
+            -v "$PWD:/repo" \
+            zricethezav/gitleaks@sha256:b109bc5f8f76a38196a3e413704fc5b9e3c32360bce4e4b603bd6f45b3721dbb \
+            detect --source /repo --verbose --redact
+
+  sast:
+    name: SAST scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Install OpenGrep
+        run: |
+          curl -fsSL \
+            -o opengrep \
+            "https://github.com/opengrep/opengrep/releases/download/v1.30.0/opengrep_manylinux_x86"
+          echo "35779bdd72e92129c8df2a77f0c55e8c08356801ea92591ef32108d6b28d564c  opengrep" \
+            | sha256sum -c -
+          chmod +x opengrep
+
+      # Prefer a version-controlled local ruleset for reproducible CI results.
+      # Replace --config auto with, for example:
+      # --config security/opengrep-rules
+      - name: Run OpenGrep
+        run: |
+          ./opengrep scan \
+            --config auto \
+            --sarif \
+            --output opengrep.sarif \
+            --error \
+            .
+
+      - name: Upload OpenGrep SARIF
+        if: ${{ always() && hashFiles('opengrep.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        with:
+          sarif_file: opengrep.sarif
+          category: opengrep-sast
+
+  dependency-scan:
+    name: Dependency scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      # Human-readable report in the job log; the SARIF step below is what gates the job.
+      - name: Print dependency scan report
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: "0"
+
+      - name: Scan dependencies with Trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          format: sarif
+          output: trivy-deps.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          # SARIF format otherwise ignores `severity` for the exit-code check and reports all severities.
+          limit-severities-for-sarif: true
+          # Reuse the trivy binary/DB installed by the table-format step above.
+          skip-setup-trivy: true
+
+      - name: Upload dependency SARIF
+        if: ${{ always() && hashFiles('trivy-deps.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        with:
+          sarif_file: trivy-deps.sarif
+          category: trivy-dependencies
+
+  iac-scan:
+    name: IaC scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      # Human-readable report in the job log; the SARIF step below is what gates the job.
+      - name: Print IaC scan report
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: "0"
+
+      - name: Scan IaC and configuration with Trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          format: sarif
+          output: trivy-iac.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          # SARIF format otherwise ignores `severity` for the exit-code check and reports all severities.
+          limit-severities-for-sarif: true
+          # Reuse the trivy binary/DB installed by the table-format step above.
+          skip-setup-trivy: true
+
+      - name: Upload IaC SARIF
+        if: ${{ always() && hashFiles('trivy-iac.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        with:
+          sarif_file: trivy-iac.sarif
+          category: trivy-iac
