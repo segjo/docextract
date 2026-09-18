@@ -1,0 +1,9 @@
+/repo/README.md:curl-auth-header:123
+/repo/doc/api/dvelop-dmsapp.yaml:generic-api-key:728
+/repo/doc/api/dvelop-dmsapp.yaml:generic-api-key:736
+
+# git history scan (fingerprints include commit hash + pre-rename path)
+
+699c29ec2a8a70c874423f19166e078771ef76fe:README.md:curl-auth-header:119
+39e1c5f39808365b6fda731bea7102de287823f8:doc/dvelop-dmsapp.yaml:generic-api-key:728
+39e1c5f39808365b6fda731bea7102de287823f8:doc/dvelop-dmsapp.yaml:generic-api-key:736
