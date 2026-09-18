@@ -17,4 +17,9 @@ public interface GeneratePreview {
 
   CompletableFuture<Optional<UUID>> generate(
       String processId, UUID originalBlobId, MediaType mediaType, String tenantId, String userId);
+
+  /**
+   * Whether ingest can obtain a PDF preview for the given media type (native PDF, or renderable).
+   */
+  boolean supports(MediaType mediaType);
 }

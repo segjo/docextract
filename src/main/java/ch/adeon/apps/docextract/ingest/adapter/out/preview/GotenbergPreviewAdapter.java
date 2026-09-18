@@ -30,9 +30,12 @@ public class GotenbergPreviewAdapter implements PreviewRenderPort {
   }
 
   /**
-   * Gotenberg's LibreOffice route selects the input format from the filename extension, not the
-   * MIME type. Callers here pass the blob id (no extension), so one is appended from the MIME type
-   * before upload.
+   * Media types this adapter renders via Gotenberg's LibreOffice route — a deliberately curated
+   * subset of business-document formats LibreOffice can convert (LibreOffice itself supports far
+   * more, e.g. {@code .epub}, {@code .pages}, vector/drawing formats; widening this needs a
+   * deliberate decision, not just "LibreOffice happens to support it", T-4 attack-surface
+   * minimization). Owned here, not shared with other adapters — each adapter's supported set
+   * reflects only what that specific tool actually does.
    */
   private static final Map<String, String> EXTENSION_BY_MEDIA_TYPE =
       Map.ofEntries(
@@ -68,7 +71,6 @@ public class GotenbergPreviewAdapter implements PreviewRenderPort {
           restClient
               .post()
               .uri(baseUri + "/forms/libreoffice/convert")
-              .contentType(org.springframework.http.MediaType.MULTIPART_FORM_DATA)
               .body(body)
               .retrieve()
               .body(byte[].class);
@@ -81,6 +83,16 @@ public class GotenbergPreviewAdapter implements PreviewRenderPort {
     }
   }
 
+  @Override
+  public boolean supports(MediaType mediaType) {
+    return EXTENSION_BY_MEDIA_TYPE.containsKey(mediaType.value().toLowerCase(Locale.ROOT));
+  }
+
+  /**
+   * Gotenberg's LibreOffice route selects the input format from the filename extension, not the
+   * MIME type. Callers here pass the blob id (no extension), so one is appended from the MIME type
+   * before upload.
+   */
   private static String withExtension(String filename, MediaType mediaType) {
     if (filename != null && filename.lastIndexOf('.') > 0) {
       return filename;

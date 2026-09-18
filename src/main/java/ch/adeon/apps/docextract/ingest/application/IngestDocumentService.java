@@ -18,6 +18,9 @@ import ch.adeon.apps.docextract.security.application.AuthContextPort;
 import ch.adeon.apps.docextract.security.application.OutboundCredentialPort;
 import ch.adeon.apps.docextract.security.domain.AuthContext;
 import ch.adeon.apps.docextract.security.domain.DvelopCredential;
+import ch.adeon.apps.docextract.structuring.application.StructureDocument;
+import ch.adeon.apps.docextract.structuring.domain.StructuringCommand;
+import ch.adeon.apps.docextract.structuring.domain.StructuringException;
 import jakarta.annotation.PreDestroy;
 import java.util.Optional;
 import java.util.UUID;
@@ -25,6 +28,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -41,6 +46,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class IngestDocumentService implements IngestDocument {
 
+  private static final Logger log = LoggerFactory.getLogger(IngestDocumentService.class);
+
   private final DocumentBlobPort documentBlobPort;
   private final DmsChunkUploadPort dmsChunkUploadPort;
   private final AuthContextPort authContextPort;
@@ -48,6 +55,7 @@ public class IngestDocumentService implements IngestDocument {
   private final AuditPort auditPort;
   private final ProcessEventPort processEventPort;
   private final GeneratePreview generatePreview;
+  private final StructureDocument structureDocument;
   private final Limits limits;
   private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
@@ -59,6 +67,7 @@ public class IngestDocumentService implements IngestDocument {
       AuditPort auditPort,
       ProcessEventPort processEventPort,
       GeneratePreview generatePreview,
+      StructureDocument structureDocument,
       @Value("${docextract.ingest.max-file-size-bytes:26214400}") long maxFileSizeBytes) {
     this.documentBlobPort = documentBlobPort;
     this.dmsChunkUploadPort = dmsChunkUploadPort;
@@ -67,6 +76,7 @@ public class IngestDocumentService implements IngestDocument {
     this.auditPort = auditPort;
     this.processEventPort = processEventPort;
     this.generatePreview = generatePreview;
+    this.structureDocument = structureDocument;
     this.limits = new Limits(maxFileSizeBytes);
   }
 
@@ -84,9 +94,21 @@ public class IngestDocumentService implements IngestDocument {
     if (!validationResult.valid()) {
       throw new UploadRejectedException(validationResult.reason());
     }
+    // Media-type acceptance isn't a fixed domain list: it's whatever the configured preview
+    // adapter can actually turn into a PDF (PDF itself needs no conversion). Each adapter owns its
+    // own supported-type set (T-4 attack-surface minimization).
+    if (!generatePreview.supports(upload.mediaType())) {
+      throw new UploadRejectedException("Unsupported media type: " + upload.mediaType().value());
+    }
 
     String processId = UUID.randomUUID().toString();
     AuthContext auth = authContextPort.current();
+    log.info(
+        "ingest started processId={} filename={} mediaType={} tenant={}",
+        processId,
+        upload.filename(),
+        upload.mediaType().value(),
+        auth.tenantId());
     // Captured on the request thread: the executor's virtual threads don't inherit the
     // ThreadLocal SecurityContext set by DvelopAuthenticationFilter.
     DvelopCredential credential = outboundCredentialPort.current();
@@ -111,6 +133,7 @@ public class IngestDocumentService implements IngestDocument {
     CompletableFuture<Optional<UUID>> previewFuture =
         blobFuture.thenCompose(
             blob -> {
+              log.info("blob stored processId={} blobId={}", processId, blob.blobId());
               processEventPort.publish(
                   new ProcessEvent(
                       processId,
@@ -120,6 +143,40 @@ public class IngestDocumentService implements IngestDocument {
               return generatePreview.generate(
                   processId, blob.blobId(), upload.mediaType(), auth.tenantId(), auth.userId());
             });
+
+    // Structuring normally runs off the ORIGINAL blob, independently of preview rendering and the
+    // DMS upload, so a slow/failed conversion doesn't delay the 202 response (ADR-004/-008). If
+    // the configured StructuringPort doesn't accept the upload's media type, it falls back to the
+    // rendered PDF preview instead (every StructuringPort accepts PDF). Failures are already
+    // reported via the STRUCTURED/FAILED process event.
+    blobFuture
+        .thenCompose(
+            blob -> {
+              if (structureDocument.supports(upload.mediaType())) {
+                return CompletableFuture.completedFuture(blob.blobId());
+              }
+              log.info(
+                  "structuring media type unsupported, falling back to PDF preview"
+                      + " processId={} mediaType={}",
+                  processId,
+                  upload.mediaType().value());
+              return previewFuture.thenApply(preview -> preview.orElse(blob.blobId()));
+            })
+        .thenAcceptAsync(
+            structuringBlobId -> {
+              try {
+                structureDocument.structure(
+                    new StructuringCommand(
+                        processId,
+                        structuringBlobId,
+                        upload.mediaType(),
+                        auth.tenantId(),
+                        auth.userId()));
+              } catch (StructuringException ex) {
+                log.warn("structuring failed processId={}", processId, ex);
+              }
+            },
+            executor);
 
     BlobRef originalBlob;
     try {
@@ -132,12 +189,15 @@ public class IngestDocumentService implements IngestDocument {
     try {
       dmsLocation = dmsFuture.join();
     } catch (CompletionException ex) {
+      RuntimeException cause = unwrap(ex);
+      log.warn("dms upload failed processId={}", processId, cause);
       rollback(originalBlob, previewFuture);
       processEventPort.publish(
           new ProcessEvent(processId, ProcessStep.DMS_UPLOADED, StepStatus.FAILED, null));
-      throw unwrap(ex);
+      throw cause;
     }
 
+    log.info("dms upload completed processId={} dmsLocation={}", processId, dmsLocation.uri());
     processEventPort.publish(
         new ProcessEvent(processId, ProcessStep.DMS_UPLOADED, StepStatus.COMPLETED, null));
 

@@ -9,4 +9,9 @@ import ch.adeon.apps.docextract.ingest.domain.MediaType;
 public interface PreviewRenderPort {
 
   byte[] renderPreview(String filename, MediaType mediaType, byte[] content);
+
+  /** Whether this adapter can render a PDF preview for the given media type. */
+  default boolean supports(MediaType mediaType) {
+    return true;
+  }
 }

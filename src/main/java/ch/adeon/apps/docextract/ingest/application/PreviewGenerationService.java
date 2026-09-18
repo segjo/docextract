@@ -11,6 +11,8 @@ import ch.adeon.apps.docextract.process.domain.StepStatus;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -21,6 +23,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class PreviewGenerationService implements GeneratePreview {
+
+  private static final Logger log = LoggerFactory.getLogger(PreviewGenerationService.class);
 
   private final DocumentBlobPort documentBlobPort;
   private final PreviewRenderPort previewRenderPort;
@@ -39,9 +43,11 @@ public class PreviewGenerationService implements GeneratePreview {
   @Override
   public CompletableFuture<Optional<UUID>> generate(
       String processId, UUID originalBlobId, MediaType mediaType, String tenantId, String userId) {
+    log.info("preview started processId={} originalBlobId={}", processId, originalBlobId);
     processEventPort.publish(
         new ProcessEvent(processId, ProcessStep.PREVIEW, StepStatus.STARTED, null));
     if (mediaType.isPdf()) {
+      log.info("preview skipped (native pdf) processId={}", processId);
       processEventPort.publish(
           new ProcessEvent(
               processId, ProcessStep.PREVIEW, StepStatus.COMPLETED, originalBlobId.toString()));
@@ -49,6 +55,7 @@ public class PreviewGenerationService implements GeneratePreview {
     }
     try {
       BlobRef previewBlob = renderAndStorePreview(originalBlobId, processId, tenantId, userId);
+      log.info("preview completed processId={} previewBlobId={}", processId, previewBlob.blobId());
       processEventPort.publish(
           new ProcessEvent(
               processId,
@@ -57,6 +64,7 @@ public class PreviewGenerationService implements GeneratePreview {
               previewBlob.blobId().toString()));
       return CompletableFuture.completedFuture(Optional.of(previewBlob.blobId()));
     } catch (PreviewRenderingException ex) {
+      log.warn("preview failed processId={}", processId, ex);
       processEventPort.publish(
           new ProcessEvent(processId, ProcessStep.PREVIEW, StepStatus.FAILED, null));
       return CompletableFuture.completedFuture(Optional.empty());
@@ -73,5 +81,10 @@ public class PreviewGenerationService implements GeneratePreview {
             originalBlobId.toString(), original.mediaType(), originalBytes);
     return documentBlobPort.store(
         BlobKind.PREVIEW, MediaType.PDF, pdf, processId, tenantId, userId);
+  }
+
+  @Override
+  public boolean supports(MediaType mediaType) {
+    return mediaType.isPdf() || previewRenderPort.supports(mediaType);
   }
 }
