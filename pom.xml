@@ -20,6 +20,8 @@
         <frontend.project.name>docextract-ui</frontend.project.name>
         <node.version>v22.11.0</node.version>
         <testcontainers.version>2.0.5</testcontainers.version>
+        <!-- Override Spring Boot's managed version: fixes CVE-2026-42198/CVE-2026-54291 -->
+        <postgresql.version>42.7.12</postgresql.version>
     </properties>
 
     <dependencyManagement>

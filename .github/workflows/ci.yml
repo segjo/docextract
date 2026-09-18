@@ -106,6 +106,17 @@ jobs:
         with:
           persist-credentials: false
 
+      # Human-readable report in the job log; the SARIF step below is what gates the job.
+      - name: Print dependency scan report
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: "0"
+
       - name: Scan dependencies with Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         with:
@@ -116,6 +127,8 @@ jobs:
           output: trivy-deps.sarif
           severity: CRITICAL,HIGH
           exit-code: "1"
+          # Reuse the trivy binary/DB installed by the table-format step above.
+          skip-setup-trivy: true
 
       - name: Upload dependency SARIF
         if: ${{ always() && hashFiles('trivy-deps.sarif') != '' }}
@@ -137,6 +150,16 @@ jobs:
         with:
           persist-credentials: false
 
+      # Human-readable report in the job log; the SARIF step below is what gates the job.
+      - name: Print IaC scan report
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: "0"
+
       - name: Scan IaC and configuration with Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         with:
@@ -146,6 +169,8 @@ jobs:
           output: trivy-iac.sarif
           severity: CRITICAL,HIGH
           exit-code: "1"
+          # Reuse the trivy binary/DB installed by the table-format step above.
+          skip-setup-trivy: true
 
       - name: Upload IaC SARIF
         if: ${{ always() && hashFiles('trivy-iac.sarif') != '' }}
