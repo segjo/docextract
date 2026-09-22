@@ -1,0 +1,29 @@
+{
+  "id": "2b1f517b-3c1e-4858-9fa1-ca28c2bf049b",
+  "name": "dms_validvalues_p_15",
+  "request": {
+    "urlPathPattern": "/dms/r/[^/]+/validvalues/p/15",
+    "method": "POST"
+  },
+  "response": {
+    "status": 200,
+    "jsonBody": {
+      "values": [
+        { "value": "Entwurf", "_links": {}, "_embedded": {} },
+        { "value": "In Prüfung", "_links": {}, "_embedded": {} },
+        { "value": "Freigegeben", "_links": {}, "_embedded": {} },
+        { "value": "Aktiv", "_links": {}, "_embedded": {} },
+        { "value": "Archiviert", "_links": {}, "_embedded": {} },
+        { "value": "Gesperrt", "_links": {}, "_embedded": {} },
+        { "value": "Abgelaufen", "_links": {}, "_embedded": {} },
+        { "value": "Storniert", "_links": {}, "_embedded": {} }
+      ]
+    },
+    "headers": {
+      "Content-Type": "application/json; charset=utf-8"
+    }
+  },
+  "uuid": "2b1f517b-3c1e-4858-9fa1-ca28c2bf049b",
+  "persistent": true,
+  "insertionIndex": 20
+}

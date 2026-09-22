@@ -14,6 +14,8 @@ import ch.adeon.apps.docextract.process.application.ProcessEventPort;
 import ch.adeon.apps.docextract.process.domain.ProcessEvent;
 import ch.adeon.apps.docextract.process.domain.ProcessStep;
 import ch.adeon.apps.docextract.process.domain.StepStatus;
+import ch.adeon.apps.docextract.retrieval.application.FindSimilar;
+import ch.adeon.apps.docextract.retrieval.domain.RetrievalException;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
 import ch.adeon.apps.docextract.security.application.OutboundCredentialPort;
 import ch.adeon.apps.docextract.security.domain.AuthContext;
@@ -56,6 +58,8 @@ public class IngestDocumentService implements IngestDocument {
   private final ProcessEventPort processEventPort;
   private final GeneratePreview generatePreview;
   private final StructureDocument structureDocument;
+  private final FindSimilar findSimilar;
+  private final int retrievalTopK;
   private final Limits limits;
   private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
@@ -68,7 +72,9 @@ public class IngestDocumentService implements IngestDocument {
       ProcessEventPort processEventPort,
       GeneratePreview generatePreview,
       StructureDocument structureDocument,
-      @Value("${docextract.ingest.max-file-size-bytes:26214400}") long maxFileSizeBytes) {
+      FindSimilar findSimilar,
+      @Value("${docextract.ingest.max-file-size-bytes:26214400}") long maxFileSizeBytes,
+      @Value("${docextract.retrieval.top-k:5}") int retrievalTopK) {
     this.documentBlobPort = documentBlobPort;
     this.dmsChunkUploadPort = dmsChunkUploadPort;
     this.authContextPort = authContextPort;
@@ -77,6 +83,8 @@ public class IngestDocumentService implements IngestDocument {
     this.processEventPort = processEventPort;
     this.generatePreview = generatePreview;
     this.structureDocument = structureDocument;
+    this.findSimilar = findSimilar;
+    this.retrievalTopK = retrievalTopK;
     this.limits = new Limits(maxFileSizeBytes);
   }
 
@@ -174,6 +182,16 @@ public class IngestDocumentService implements IngestDocument {
                         auth.userId()));
               } catch (StructuringException ex) {
                 log.warn("structuring failed processId={}", processId, ex);
+                return;
+              }
+              // Runs right after structuring, on the same virtual thread, so the chunks staged
+              // for this processId are still in the in-memory job context (ADR-006) when
+              // retrieval reads them; failures are already reported via the RETRIEVED/FAILED
+              // process event.
+              try {
+                findSimilar.find(processId, retrievalTopK, credential);
+              } catch (RetrievalException ex) {
+                log.warn("retrieval failed processId={}", processId, ex);
               }
             },
             executor);

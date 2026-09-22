@@ -58,7 +58,7 @@ services:
   ollama:
     image: ollama/ollama:latest@sha256:075246f72d4109385b4a01c3ac8e9cbd26a0bcb21cd7aa30edbccd24e1b3180c
     ports:
-      - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
+      - "127.0.0.1:${OLLAMA_PORT:-11435}:11434"
     volumes:
       - ollama-data:/root/.ollama
     healthcheck:

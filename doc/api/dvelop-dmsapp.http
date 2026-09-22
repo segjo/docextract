@@ -35,3 +35,27 @@ Authorization: {{authHeader}}
 # contentLocationUri, then GET its "_links.mainblobcontent" (MappingDmsObject schema).
 
 
+### Read Object Definitions
+# See doc/api/dvelop-dmsapp.yaml, operationId: getObjectDefinitions.
+GET {{baseUrl}}/r/{{repositoryId}}/objdef
+Authorization: {{authHeader}}
+
+### Get Value List for a Property
+# this is an inoffical endpoint for fetching value lists for a specific property.
+@dmsPropertyId = 15
+
+POST {{baseUrl}}/r/{{repositoryId}}/validvalues/p/{{dmsPropertyId}}
+Authorization: {{authHeader}}
+Content-Type: application/json
+
+{
+  "type": 1,
+  "objectDefinitionId": "DREC",
+  "remarks": {},
+  "multivalueExtendedProperties": {},
+  "extendedProperties": {
+    "4": "2026-10-04",
+    "15": "suchfilter"
+  }
+}
+ 

@@ -18,6 +18,7 @@ import ch.adeon.apps.docextract.ingest.domain.IngestCommand;
 import ch.adeon.apps.docextract.ingest.domain.IngestedDocument;
 import ch.adeon.apps.docextract.ingest.domain.MediaType;
 import ch.adeon.apps.docextract.process.application.ProcessEventPort;
+import ch.adeon.apps.docextract.retrieval.application.FindSimilar;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
 import ch.adeon.apps.docextract.security.application.OutboundCredentialPort;
 import ch.adeon.apps.docextract.security.domain.AuthContext;
@@ -37,6 +38,7 @@ class IngestDocumentServiceTest {
   private final ProcessEventPort processEventPort = mock(ProcessEventPort.class);
   private final GeneratePreview generatePreview = mock(GeneratePreview.class);
   private final StructureDocument structureDocument = mock(StructureDocument.class);
+  private final FindSimilar findSimilar = mock(FindSimilar.class);
   private final IngestDocumentService service =
       new IngestDocumentService(
           documentBlobPort,
@@ -47,7 +49,9 @@ class IngestDocumentServiceTest {
           processEventPort,
           generatePreview,
           structureDocument,
-          1024L);
+          findSimilar,
+          1024L,
+          5);
 
   @Test
   void writes_original_bytes_to_the_blobstore_tagged_with_the_current_tenant_and_user() {

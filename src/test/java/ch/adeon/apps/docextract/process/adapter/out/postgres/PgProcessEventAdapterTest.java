@@ -18,9 +18,10 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.testcontainers.utility.DockerImageName;
 import tools.jackson.databind.ObjectMapper;
 
 @Testcontainers
@@ -29,7 +30,9 @@ class PgProcessEventAdapterTest {
   @Container
   @SuppressWarnings("resource") // lifecycle managed by the @Testcontainers JUnit extension
   static final PostgreSQLContainer POSTGRES =
-      new PostgreSQLContainer("postgres:17-alpine")
+      new PostgreSQLContainer(
+              DockerImageName.parse("pgvector/pgvector:pg17-bookworm")
+                  .asCompatibleSubstituteFor("postgres"))
           .withDatabaseName("docextract")
           .withUsername("docextract")
           .withPassword("docextract-test");
@@ -46,6 +49,9 @@ class PgProcessEventAdapterTest {
             .password(POSTGRES.getPassword())
             .driverClassName("org.postgresql.Driver")
             .build();
+    // V3__embedding.sql relies on the vector extension shipped by the pgvector/pgvector image
+    // (docker-compose.yml provisions it the same way for local/prod runs).
+    new JdbcTemplate(dataSource).execute("CREATE EXTENSION IF NOT EXISTS vector");
     Flyway.configure().dataSource(dataSource).load().migrate();
     jdbcTemplate = new JdbcTemplate(dataSource);
     adapter =
