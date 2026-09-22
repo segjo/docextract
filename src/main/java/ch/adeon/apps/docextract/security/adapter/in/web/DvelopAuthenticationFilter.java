@@ -58,6 +58,7 @@ public class DvelopAuthenticationFilter extends OncePerRequestFilter {
   }
 
   private Authenticated authenticate(HttpServletRequest request) {
+    String acceptLanguage = request.getHeader(HttpHeaders.ACCEPT_LANGUAGE);
     String authorizationHeader = request.getHeader("Authorization");
     if (authorizationHeader != null
         && authorizationHeader.regionMatches(true, 0, BEARER_PREFIX, 0, BEARER_PREFIX.length())) {
@@ -65,14 +66,16 @@ public class DvelopAuthenticationFilter extends OncePerRequestFilter {
           identityProviderPort.validateBearerToken(
               authorizationHeader.substring(BEARER_PREFIX.length()));
       return new Authenticated(
-          dvelopUser, new DvelopCredential(HttpHeaders.AUTHORIZATION, authorizationHeader));
+          dvelopUser,
+          new DvelopCredential(HttpHeaders.AUTHORIZATION, authorizationHeader, acceptLanguage));
     }
     String authSessionId = extractAuthSessionCookie(request);
     if (authSessionId != null) {
       DvelopUser dvelopUser = identityProviderPort.validateSessionCookie(authSessionId);
       return new Authenticated(
           dvelopUser,
-          new DvelopCredential(HttpHeaders.COOKIE, AUTH_SESSION_COOKIE + "=" + authSessionId));
+          new DvelopCredential(
+              HttpHeaders.COOKIE, AUTH_SESSION_COOKIE + "=" + authSessionId, acceptLanguage));
     }
     return null;
   }

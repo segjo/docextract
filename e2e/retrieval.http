@@ -1,0 +1,62 @@
+### DocExtract — retrieval e2e requests
+### Run with the VS Code "REST Client" extension or the IntelliJ HTTP Client.
+### Prerequisites: see e2e/README.md
+
+@host = http://localhost:8080
+@contextPath = /adeon-docextract
+@baseUrl = {{host}}{{contextPath}}
+# dvelop-mock's identityprovider-validate.json accepts any bearer token.
+@authHeader = Bearer {{$processEnv DMS_TEST_TOKEN}}
+
+@objectDefinitionId = DREC
+@propertyId = 15
+
+### Upload a document to obtain a processId for the process-scoped requests below.
+# @name uploadLetter
+POST {{baseUrl}}/api/v1/ingest/documents
+Authorization: {{authHeader}}
+Content-Type: multipart/form-data; boundary=----docextractE2E
+
+------docextractE2E
+Content-Disposition: form-data; name="file"; filename="letter.txt"
+Content-Type: text/plain
+
+< ./fixtures/letter.txt
+------docextractE2E--
+
+### Similar documents already APPROVED for this process (FR-3, NfA-6).
+GET {{baseUrl}}/api/v1/processes/{{uploadLetter.response.body.$.processId}}/similar-documents
+Authorization: {{authHeader}}
+
+### Document type candidate(s) for this process — falls back to the full repository catalog.
+GET {{baseUrl}}/api/v1/processes/{{uploadLetter.response.body.$.processId}}/document-type-candidates
+Authorization: {{authHeader}}
+
+### Full repository catalog of document types/properties, independent of any process.
+GET {{baseUrl}}/api/v1/object-definitions
+Authorization: {{authHeader}}
+
+### A single property's valid values, unfiltered.
+POST {{baseUrl}}/api/v1/value-lists/{{propertyId}}
+Authorization: {{authHeader}}
+Content-Type: application/json
+
+{
+  "objectDefinitionId": "{{objectDefinitionId}}",
+  "extendedProperties": {},
+  "multivalueExtendedProperties": {},
+  "searchTerm": null
+}
+
+### Same property, filtered via searchTerm (frontend typeahead).
+POST {{baseUrl}}/api/v1/value-lists/{{propertyId}}
+Authorization: {{authHeader}}
+Content-Type: application/json
+
+{
+  "objectDefinitionId": "{{objectDefinitionId}}",
+  "extendedProperties": {},
+  "multivalueExtendedProperties": {},
+  "searchTerm": "Fre"
+}
+

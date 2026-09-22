@@ -47,6 +47,7 @@ public class DmsChunkUploadAdapter implements DmsChunkUploadPort {
               // Origin is mandatory for write access (POST/PUT/DELETE/PATCH) to prevent CSRF.
               .header(HttpHeaders.ORIGIN, origin)
               .header(credential.headerName(), credential.headerValue())
+              .headers(headers -> addAcceptLanguage(headers, credential))
               .contentType(org.springframework.http.MediaType.APPLICATION_OCTET_STREAM)
               .body(content)
               .retrieve()
@@ -60,6 +61,12 @@ public class DmsChunkUploadAdapter implements DmsChunkUploadPort {
     } catch (RestClientException ex) {
       throw new DmsChunkUploadException(
           "Uploading the document chunk to the d.velop DMS failed", ex);
+    }
+  }
+
+  private static void addAcceptLanguage(HttpHeaders headers, DvelopCredential credential) {
+    if (credential.acceptLanguage() != null) {
+      headers.set(HttpHeaders.ACCEPT_LANGUAGE, credential.acceptLanguage());
     }
   }
 }

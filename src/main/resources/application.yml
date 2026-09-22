@@ -20,6 +20,11 @@ server:
   servlet:
     context-path: /adeon-docextract
 
+logging:
+  level:
+    # Benign noise from PDFTextStripper on base-14 fonts (e.g. Times-Roman) with unmapped glyphs
+    org.apache.pdfbox: error
+
 docextract:
   dvelop:
     jstore-uri: http://localhost:6380/store/httpgateway/appconfig
@@ -41,9 +46,29 @@ docextract:
     base-uri: http://localhost:3000
   docling:
     base-uri: http://localhost:5001
+  ollama:
+    base-uri: http://localhost:11435
+  retrieval:
+    # Dedicated embedding model, separate from the extraction LLM (§8.5); see V3__embedding.sql
+    # for the vector column dimension this model must produce.
+    embedding-model: qwen3-embedding:0.6b
+    # Quarantine window for PENDING embeddings (ADR-006/C-7), analogous to ingest's blob-ttl.
+    pending-embedding-ttl: PT2H
+    # Number of similar APPROVED documents FindSimilar returns (NfA-6: Precision@3 target).
+    top-k: 5
+    # Cosine-similarity floor (0..1) a hit must reach to be reported; lower-similarity hits are
+    # dropped rather than shown to the user (NfA-6). 0.0 disables filtering.
+    min-score: 0.9
+    # TTL for the similar-documents result handed to the validation UI, persisted in Postgres
+    # (not per-instance memory) so any cluster node can serve it (ADR-004).
+    result-ttl: PT2H
+  valuelist:
+    # Cap on values kept per property from the DMS valuelist webhook (T-4: a value list can hold
+    # arbitrarily many entries). DmsPropertyDefinition.hasMoreValues signals when more existed.
+    max-values: 50
   structuring:
-    # docling (primary, ADR-007) | pdfbox-fast-track (local dev/tests without the docling container)
-    mode: docling
+    # docling (primary, ADR-007) | pdfbox-fast-track (no ocr - local dev/tests without the docling container)
+    mode: pdfbox-fast-track
     # Chunk-size budget (approximated by word count) until retrieval exposes the real
     # tokenizer-derived ChunkingConfig (ADR-007).
     max-chunk-tokens: 512

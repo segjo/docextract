@@ -120,8 +120,7 @@ Runnable HTTP-Requests gegen die laufende App (d.velop-Mock + echtes Gotenberg s
 3. Aufruf testen:
 
    ```bash
-   curl -X GET "http://localhost:8080/adeon-docextract/api/v1/ingest/test" \
-     -H "Authorization: Bearer dummy-token"
+   curl -X GET "http://localhost:8080/adeon-docextract/health"
    ```
 
 ## Qualitätssicherung

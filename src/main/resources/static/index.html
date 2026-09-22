@@ -23,6 +23,34 @@
         border: 1px solid #ccc;
         margin-top: 1rem;
       }
+      #health-status {
+        list-style: none;
+        padding: 0;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      #health-status li {
+        padding: 0.25rem 0.6rem;
+        border-radius: 4px;
+        font-size: 0.9rem;
+      }
+      #health-status li.up {
+        background: #d7f5dc;
+      }
+      #health-status li.down {
+        background: #f8d7da;
+      }
+      #health-status li.warn {
+        background: #ffe8b3;
+      }
+      #progress {
+        white-space: pre-wrap;
+        background: #f4f4f4;
+        padding: 0.75rem;
+        border-radius: 4px;
+        font-family: monospace;
+      }
     </style>
   </head>
   <body>
@@ -32,6 +60,11 @@
       Die Validierungs-UI ist noch nicht verfügbar. Diese Seite dient nur zum
       manuellen Testen von Upload (FR-1) und Vorschau (ADR-008).
     </p>
+
+    <h2>Systemstatus</h2>
+    <ul id="health-status">
+      <li>–</li>
+    </ul>
 
     <form id="upload-form">
       <label>
@@ -49,16 +82,51 @@
     <h2>Fortschritt (SSE)</h2>
     <div id="progress">–</div>
 
+    <h2>Ähnliche Dokumente</h2>
+    <ul id="similar-documents">
+      <li>–</li>
+    </ul>
+
     <iframe id="preview" hidden></iframe>
 
     <script>
       // Static resources are served under the context path at /ui/**; derive the API base from it.
       const apiBase = window.location.pathname.replace(/\/ui\/.*$/, "");
 
+      const healthList = document.getElementById("health-status");
+
+      async function loadHealth() {
+        try {
+          const response = await fetch(`${apiBase}/health`);
+          const health = await response.json();
+          healthList.innerHTML = "";
+          for (const component of health.components) {
+            const item = document.createElement("li");
+            // dvelop-jstore falls back to docextract.dvelop.system-base-uri, so it being
+            // unreachable is a warning, not an outage (unlike the other dependencies).
+            const isFallbackWarning =
+              component.name === "dvelop-jstore" && component.status === "DOWN";
+            item.className = isFallbackWarning
+              ? "warn"
+              : component.status.toLowerCase();
+            item.textContent = `${component.name}: ${component.status}`;
+            if (component.detail) {
+              item.title = component.detail;
+            }
+            healthList.appendChild(item);
+          }
+        } catch (error) {
+          healthList.innerHTML = `<li class="down">Systemstatus nicht verfügbar: ${error}</li>`;
+        }
+      }
+
+      loadHealth();
+
       const form = document.getElementById("upload-form");
       const result = document.getElementById("result");
       const progress = document.getElementById("progress");
       const preview = document.getElementById("preview");
+      const similarDocuments = document.getElementById("similar-documents");
       const tokenInput = document.getElementById("token-input");
 
       // EventSource can't carry an Authorization header, so the SSE stream is read manually via fetch.
@@ -110,6 +178,30 @@
         preview.hidden = false;
       }
 
+      async function showSimilarDocuments(processId, token) {
+        const response = await fetch(
+          `${apiBase}/api/v1/processes/${processId}/similar-documents`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
+        const results = await response.json();
+        similarDocuments.innerHTML = "";
+        if (results.length === 0) {
+          similarDocuments.innerHTML =
+            "<li>Keine ähnlichen Dokumente gefunden.</li>";
+          return;
+        }
+        for (const doc of results) {
+          const item = document.createElement("li");
+          item.textContent = `${doc.documentId} (Score: ${doc.score.toFixed(3)}, Repository: ${doc.repositoryId})`;
+          if (doc.properties) {
+            item.textContent += " — Eigenschaften vorhanden";
+          }
+          similarDocuments.appendChild(item);
+        }
+      }
+
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         const file = document.getElementById("file-input").files[0];
@@ -124,6 +216,7 @@
         result.textContent = "Lade hoch …";
         progress.textContent = "";
         preview.hidden = true;
+        similarDocuments.innerHTML = "<li>–</li>";
 
         try {
           const response = await fetch(`${apiBase}/api/v1/ingest/documents`, {
@@ -162,6 +255,19 @@
                 ) {
                   progress.textContent +=
                     "Strukturierung (docling) ist fehlgeschlagen.\n";
+                } else if (
+                  processEvent.step === "RETRIEVED" &&
+                  processEvent.status === "FAILED"
+                ) {
+                  progress.textContent +=
+                    "Ähnlichkeitssuche (Embedding/Retrieval) ist fehlgeschlagen.\n";
+                } else if (
+                  processEvent.step === "RETRIEVED" &&
+                  processEvent.status === "COMPLETED"
+                ) {
+                  progress.textContent +=
+                    "Ähnlichkeitssuche abgeschlossen (Embeddings als PENDING gespeichert).\n";
+                  showSimilarDocuments(payload.processId, token);
                 }
               },
             );
