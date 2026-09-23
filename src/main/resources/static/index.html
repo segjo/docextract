@@ -87,6 +87,9 @@
       <li>–</li>
     </ul>
 
+    <h2>Extraktion</h2>
+    <div id="extraction-result">–</div>
+
     <iframe id="preview" hidden></iframe>
 
     <script>
@@ -127,6 +130,7 @@
       const progress = document.getElementById("progress");
       const preview = document.getElementById("preview");
       const similarDocuments = document.getElementById("similar-documents");
+      const extractionResult = document.getElementById("extraction-result");
       const tokenInput = document.getElementById("token-input");
 
       // EventSource can't carry an Authorization header, so the SSE stream is read manually via fetch.
@@ -202,6 +206,69 @@
         }
       }
 
+      // Resolves the document type name and its properties' names for the extraction result's
+      // documentTypeId, by matching it against the process's already-staged candidates.
+      async function loadDocumentType(processId, documentTypeId, token) {
+        const response = await fetch(
+          `${apiBase}/api/v1/processes/${processId}/document-type-candidates`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
+        const candidates = await response.json();
+        return candidates.find((c) => c.documentType?.id === documentTypeId)
+          ?.documentType;
+      }
+
+      async function showExtractionResult(processId, token) {
+        const response = await fetch(
+          `${apiBase}/api/v1/processes/${processId}/extraction-result`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
+        const extraction = await response.json();
+        if (
+          !extraction.documentTypeId &&
+          (!extraction.attributes || extraction.attributes.length === 0)
+        ) {
+          extractionResult.textContent = "Keine Extraktion verfügbar.";
+          return;
+        }
+        const documentType = await loadDocumentType(
+          processId,
+          extraction.documentTypeId,
+          token,
+        );
+        const propertyNames = new Map(
+          (documentType?.properties ?? []).map((property) => [
+            property.id,
+            property.name,
+          ]),
+        );
+
+        const list = document.createElement("ul");
+        for (const attribute of extraction.attributes ?? []) {
+          const item = document.createElement("li");
+          const value =
+            attribute.values && attribute.values.length > 0
+              ? attribute.values.join(", ")
+              : (attribute.value ?? "unbekannt");
+          const propertyName =
+            propertyNames.get(attribute.propertyId) ?? attribute.propertyId;
+          item.textContent = `${propertyName}: ${value} (Konfidenz: ${attribute.confidence.toFixed(2)})`;
+          if (attribute.sourceExcerpt) {
+            item.title = attribute.sourceExcerpt;
+          }
+          list.appendChild(item);
+        }
+        extractionResult.innerHTML = "";
+        const heading = document.createElement("div");
+        heading.textContent = `Dokumenttyp: ${documentType?.name ?? extraction.documentTypeId ?? "unbekannt"}`;
+        extractionResult.appendChild(heading);
+        extractionResult.appendChild(list);
+      }
+
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         const file = document.getElementById("file-input").files[0];
@@ -217,6 +284,7 @@
         progress.textContent = "";
         preview.hidden = true;
         similarDocuments.innerHTML = "<li>–</li>";
+        extractionResult.textContent = "–";
 
         try {
           const response = await fetch(`${apiBase}/api/v1/ingest/documents`, {
@@ -268,6 +336,17 @@
                   progress.textContent +=
                     "Ähnlichkeitssuche abgeschlossen (Embeddings als PENDING gespeichert).\n";
                   showSimilarDocuments(payload.processId, token);
+                } else if (
+                  processEvent.step === "EXTRACTED" &&
+                  processEvent.status === "FAILED"
+                ) {
+                  progress.textContent += "Extraktion ist fehlgeschlagen.\n";
+                } else if (
+                  processEvent.step === "EXTRACTED" &&
+                  processEvent.status === "COMPLETED"
+                ) {
+                  progress.textContent += "Extraktion abgeschlossen.\n";
+                  showExtractionResult(payload.processId, token);
                 }
               },
             );

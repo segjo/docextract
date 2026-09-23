@@ -66,6 +66,13 @@ docextract:
     # Cap on values kept per property from the DMS valuelist webhook (T-4: a value list can hold
     # arbitrarily many entries). DmsPropertyDefinition.hasMoreValues signals when more existed.
     max-values: 50
+  extraction:
+    # Dedicated generation model, separate from the embedding model (§8.5); digest-pinned by the
+    # operator per C-5, this config only names the tag.
+    llm-model: qwen3:8b
+    # TTL for the extraction result handed to the validation UI, persisted in Postgres (not
+    # per-instance memory) so any cluster node can serve it (ADR-004).
+    result-ttl: PT2H
   structuring:
     # docling (primary, ADR-007) | pdfbox-fast-track (no ocr - local dev/tests without the docling container)
     mode: pdfbox-fast-track

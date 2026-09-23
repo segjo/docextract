@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ch.adeon.apps.docextract.audit.application.AuditPort;
+import ch.adeon.apps.docextract.extraction.application.ExtractAttributes;
 import ch.adeon.apps.docextract.ingest.domain.BlobKind;
 import ch.adeon.apps.docextract.ingest.domain.BlobRef;
 import ch.adeon.apps.docextract.ingest.domain.DmsLocation;
@@ -39,6 +40,7 @@ class IngestDocumentServiceTest {
   private final GeneratePreview generatePreview = mock(GeneratePreview.class);
   private final StructureDocument structureDocument = mock(StructureDocument.class);
   private final FindSimilar findSimilar = mock(FindSimilar.class);
+  private final ExtractAttributes extractAttributes = mock(ExtractAttributes.class);
   private final IngestDocumentService service =
       new IngestDocumentService(
           documentBlobPort,
@@ -50,6 +52,7 @@ class IngestDocumentServiceTest {
           generatePreview,
           structureDocument,
           findSimilar,
+          extractAttributes,
           1024L,
           5);
 

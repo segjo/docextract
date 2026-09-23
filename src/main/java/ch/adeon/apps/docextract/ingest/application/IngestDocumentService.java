@@ -2,6 +2,8 @@ package ch.adeon.apps.docextract.ingest.application;
 
 import ch.adeon.apps.docextract.audit.application.AuditPort;
 import ch.adeon.apps.docextract.audit.domain.AuditEvent;
+import ch.adeon.apps.docextract.extraction.application.ExtractAttributes;
+import ch.adeon.apps.docextract.extraction.domain.ExtractionException;
 import ch.adeon.apps.docextract.ingest.domain.BlobKind;
 import ch.adeon.apps.docextract.ingest.domain.BlobRef;
 import ch.adeon.apps.docextract.ingest.domain.DmsLocation;
@@ -59,6 +61,7 @@ public class IngestDocumentService implements IngestDocument {
   private final GeneratePreview generatePreview;
   private final StructureDocument structureDocument;
   private final FindSimilar findSimilar;
+  private final ExtractAttributes extractAttributes;
   private final int retrievalTopK;
   private final Limits limits;
   private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
@@ -73,6 +76,7 @@ public class IngestDocumentService implements IngestDocument {
       GeneratePreview generatePreview,
       StructureDocument structureDocument,
       FindSimilar findSimilar,
+      ExtractAttributes extractAttributes,
       @Value("${docextract.ingest.max-file-size-bytes:26214400}") long maxFileSizeBytes,
       @Value("${docextract.retrieval.top-k:5}") int retrievalTopK) {
     this.documentBlobPort = documentBlobPort;
@@ -84,6 +88,7 @@ public class IngestDocumentService implements IngestDocument {
     this.generatePreview = generatePreview;
     this.structureDocument = structureDocument;
     this.findSimilar = findSimilar;
+    this.extractAttributes = extractAttributes;
     this.retrievalTopK = retrievalTopK;
     this.limits = new Limits(maxFileSizeBytes);
   }
@@ -192,6 +197,16 @@ public class IngestDocumentService implements IngestDocument {
                 findSimilar.find(processId, retrievalTopK, credential);
               } catch (RetrievalException ex) {
                 log.warn("retrieval failed processId={}", processId, ex);
+                return;
+              }
+              // Runs right after retrieval, on the same virtual thread, while the chunks staged
+              // for this processId are still in the in-memory job context (ADR-006 — discarded
+              // only once this step returns); failures are already reported via the
+              // EXTRACTED/FAILED process event.
+              try {
+                extractAttributes.extract(processId, credential);
+              } catch (ExtractionException ex) {
+                log.warn("extraction failed processId={}", processId, ex);
               }
             },
             executor);

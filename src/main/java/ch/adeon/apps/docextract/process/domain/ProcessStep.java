@@ -6,5 +6,6 @@ public enum ProcessStep {
   DMS_UPLOADED,
   PREVIEW,
   STRUCTURED,
-  RETRIEVED
+  RETRIEVED,
+  EXTRACTED
 }
