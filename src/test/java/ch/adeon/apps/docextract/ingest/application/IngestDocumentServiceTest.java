@@ -11,6 +11,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ch.adeon.apps.docextract.audit.application.AuditPort;
+import ch.adeon.apps.docextract.content.application.ExtractText;
+import ch.adeon.apps.docextract.content.application.ProvideContent;
 import ch.adeon.apps.docextract.extraction.application.ExtractAttributes;
 import ch.adeon.apps.docextract.ingest.domain.BlobKind;
 import ch.adeon.apps.docextract.ingest.domain.BlobRef;
@@ -18,12 +20,13 @@ import ch.adeon.apps.docextract.ingest.domain.DmsLocation;
 import ch.adeon.apps.docextract.ingest.domain.IngestCommand;
 import ch.adeon.apps.docextract.ingest.domain.IngestedDocument;
 import ch.adeon.apps.docextract.ingest.domain.MediaType;
+import ch.adeon.apps.docextract.ingest.port.DmsChunkUploadPort;
+import ch.adeon.apps.docextract.ingest.port.DocumentBlobPort;
 import ch.adeon.apps.docextract.process.application.ProcessEventPort;
 import ch.adeon.apps.docextract.retrieval.application.FindSimilar;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
 import ch.adeon.apps.docextract.security.application.OutboundCredentialPort;
 import ch.adeon.apps.docextract.security.domain.AuthContext;
-import ch.adeon.apps.docextract.structuring.application.StructureDocument;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -38,9 +41,12 @@ class IngestDocumentServiceTest {
   private final AuditPort auditPort = mock(AuditPort.class);
   private final ProcessEventPort processEventPort = mock(ProcessEventPort.class);
   private final GeneratePreview generatePreview = mock(GeneratePreview.class);
-  private final StructureDocument structureDocument = mock(StructureDocument.class);
+  private final ExtractText extractText = mock(ExtractText.class);
+  private final ProvideContent provideContent = mock(ProvideContent.class);
   private final FindSimilar findSimilar = mock(FindSimilar.class);
   private final ExtractAttributes extractAttributes = mock(ExtractAttributes.class);
+  private final DocumentHashStagingPort documentHashStagingPort =
+      mock(DocumentHashStagingPort.class);
   private final IngestDocumentService service =
       new IngestDocumentService(
           documentBlobPort,
@@ -50,17 +56,18 @@ class IngestDocumentServiceTest {
           auditPort,
           processEventPort,
           generatePreview,
-          structureDocument,
+          extractText,
+          provideContent,
           findSimilar,
           extractAttributes,
+          documentHashStagingPort,
           1024L,
           5);
 
   @Test
   void writes_original_bytes_to_the_blobstore_tagged_with_the_current_tenant_and_user() {
     UUID blobId = UUID.randomUUID();
-    when(authContextPort.current())
-        .thenReturn(new AuthContext("tenant-a", "acl", "user-1", "User One"));
+    when(authContextPort.current()).thenReturn(new AuthContext("tenant-a", "user-1", "User One"));
     when(generatePreview.supports(MediaType.PDF)).thenReturn(true);
     when(documentBlobPort.store(
             eq(BlobKind.ORIGINAL),
@@ -98,8 +105,7 @@ class IngestDocumentServiceTest {
   void deletes_the_original_and_preview_blob_when_the_dms_upload_fails() {
     UUID blobId = UUID.randomUUID();
     UUID previewBlobId = UUID.randomUUID();
-    when(authContextPort.current())
-        .thenReturn(new AuthContext("tenant-a", "acl", "user-1", "User One"));
+    when(authContextPort.current()).thenReturn(new AuthContext("tenant-a", "user-1", "User One"));
     when(generatePreview.supports(MediaType.PDF)).thenReturn(true);
     when(documentBlobPort.store(
             eq(BlobKind.ORIGINAL),

@@ -19,7 +19,7 @@ class HexagonalArchitectureTest {
   private static final List<String> FEATURE_MODULES =
       List.of(
           "ingest",
-          "structuring",
+          "content",
           "retrieval",
           "extraction",
           "validation",
@@ -54,7 +54,7 @@ class HexagonalArchitectureTest {
   }
 
   @Test
-  void feature_module_classes_reside_in_domain_application_or_adapter() {
+  void feature_module_classes_reside_in_domain_application_port_or_adapter() {
     String[] featurePackages =
         FEATURE_MODULES.stream().map(module -> BASE + "." + module + "..").toArray(String[]::new);
 
@@ -62,7 +62,29 @@ class HexagonalArchitectureTest {
         .that()
         .resideInAnyPackage(featurePackages)
         .should()
-        .resideInAnyPackage("..domain..", "..application..", "..adapter..")
+        .resideInAnyPackage("..domain..", "..application..", "..port..", "..adapter..")
+        .check(productionClasses);
+  }
+
+  @Test
+  void port_must_not_depend_on_spring() {
+    noClasses()
+        .that()
+        .resideInAPackage("..port..")
+        .should()
+        .dependOnClassesThat()
+        .resideInAnyPackage("org.springframework..")
+        .check(productionClasses);
+  }
+
+  @Test
+  void port_must_not_depend_on_adapter() {
+    noClasses()
+        .that()
+        .resideInAPackage("..port..")
+        .should()
+        .dependOnClassesThat()
+        .resideInAnyPackage("..adapter..")
         .check(productionClasses);
   }
 

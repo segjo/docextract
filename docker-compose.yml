@@ -73,7 +73,7 @@ services:
 
   # Mocks identityprovider-api, dvelop-dmsapp and dashboard-app-api for local
   # development without a real d.velop system. Opt-in only, never used by the
-  # "local"/"ci"/"cluster" application profiles by default:
+  # "dev"/"ci"/"prod" application profiles by default:
   #   docker compose --profile mock up dvelop-mock
   dvelop-mock:
     build:

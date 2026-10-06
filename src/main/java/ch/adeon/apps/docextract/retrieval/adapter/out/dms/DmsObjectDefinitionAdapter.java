@@ -1,6 +1,6 @@
 package ch.adeon.apps.docextract.retrieval.adapter.out.dms;
 
-import ch.adeon.apps.docextract.retrieval.application.DmsObjectDefinitionPort;
+import ch.adeon.apps.docextract.retrieval.port.DmsObjectDefinitionPort;
 import ch.adeon.apps.docextract.retrieval.domain.DmsDocumentMetadata;
 import ch.adeon.apps.docextract.retrieval.domain.DmsDocumentType;
 import ch.adeon.apps.docextract.retrieval.domain.DmsPropertyDataType;
@@ -91,12 +91,12 @@ public class DmsObjectDefinitionAdapter implements DmsObjectDefinitionPort {
         raw.id(),
         raw.displayName(),
         DmsPropertyDataType.fromCode(raw.dataType()),
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
+        raw.isMandatory(),
+        raw.hasValueList(),
+        false, // isDynamicValueList: not exposed by objdef
+        false, // isHidden: not exposed by objdef
+        raw.isModifiable(),
+        raw.isSystemProperty(),
         raw.isList(),
         false,
         0,
@@ -124,5 +124,11 @@ public class DmsObjectDefinitionAdapter implements DmsObjectDefinitionPort {
       int docFieldId,
       String displayName,
       int dataType,
-      boolean isList) {}
+      boolean isList,
+      // Undocumented in dvelop-dmsapp.yaml's ObjDef schema but present on the real/mocked
+      // response (see docker/dvelop-mock/mappings/dms_objdef.json).
+      boolean isMandatory,
+      boolean hasValueList,
+      boolean isModifiable,
+      boolean isSystemProperty) {}
 }

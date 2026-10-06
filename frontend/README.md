@@ -21,5 +21,5 @@ in `src/index.html`) so asset and route URLs resolve correctly behind the revers
 Once `frontend/package.json` exists, `mvn package` automatically:
 
 1. Installs Node/npm and runs `npm ci && npm run build` in `frontend/`.
-2. Copies `frontend/dist/docextract-ui/browser/**` into `src/main/resources/static/ui`, so the Angular
+2. Copies `frontend/dist/docextract-ui/browser/**` into `src/main/resources/static`, so the Angular
    build ships inside the single Spring Boot jar (ADR-001: no separate frontend deployment).

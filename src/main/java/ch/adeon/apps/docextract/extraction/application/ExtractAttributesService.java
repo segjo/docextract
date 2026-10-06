@@ -2,22 +2,23 @@ package ch.adeon.apps.docextract.extraction.application;
 
 import ch.adeon.apps.docextract.audit.application.AuditPort;
 import ch.adeon.apps.docextract.audit.domain.AuditEvent;
+import ch.adeon.apps.docextract.content.application.ContentStagingPort;
+import ch.adeon.apps.docextract.content.domain.DocumentContent;
 import ch.adeon.apps.docextract.extraction.domain.ExtractedAttribute;
 import ch.adeon.apps.docextract.extraction.domain.ExtractionException;
 import ch.adeon.apps.docextract.extraction.domain.ExtractionResult;
 import ch.adeon.apps.docextract.extraction.domain.LlmResponse;
+import ch.adeon.apps.docextract.extraction.port.LlmPort;
 import ch.adeon.apps.docextract.process.application.ProcessEventPort;
 import ch.adeon.apps.docextract.process.domain.ProcessEvent;
 import ch.adeon.apps.docextract.process.domain.ProcessStep;
 import ch.adeon.apps.docextract.process.domain.StepStatus;
 import ch.adeon.apps.docextract.retrieval.application.DocumentTypeCandidatesPort;
-import ch.adeon.apps.docextract.retrieval.application.ValueListPort;
 import ch.adeon.apps.docextract.retrieval.domain.DmsDocumentMetadata;
 import ch.adeon.apps.docextract.retrieval.domain.DmsPropertyDefinition;
 import ch.adeon.apps.docextract.retrieval.domain.DmsValueList;
+import ch.adeon.apps.docextract.retrieval.port.ValueListPort;
 import ch.adeon.apps.docextract.security.domain.DvelopCredential;
-import ch.adeon.apps.docextract.structuring.application.ChunkStagingPort;
-import ch.adeon.apps.docextract.structuring.domain.DocChunk;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -39,7 +40,7 @@ import tools.jackson.databind.ObjectMapper;
  * Classifies the process's staged document type candidates (see {@link DocumentTypeCandidatesPort})
  * with the extraction LLM (skipped when only one candidate exists), then asks the same LLM to
  * suggest values for the winning type's writable properties, grounded in the process's structured
- * chunk text still held in-memory from {@code structuring} (ADR-006 — the chunks are discarded only
+ * document content still held in-memory from the {@code content} module (ADR-006 — discarded only
  * after this step, not before). Every {@code hasValueList} property's suggestion is confirmed
  * against the DMS value list, re-fetching a filtered one live via {@link ValueListPort}/{@code
  * DmsValueListWebhookAdapter} when the already-known list is empty or capped and no match was found
@@ -63,7 +64,7 @@ public class ExtractAttributesService implements ExtractAttributes {
           + "the required JSON.";
 
   private final DocumentTypeCandidatesPort documentTypeCandidatesPort;
-  private final ChunkStagingPort chunkStagingPort;
+  private final ContentStagingPort contentStagingPort;
   private final ValueListPort valueListPort;
   private final ExtractionResultPort extractionResultPort;
   private final LlmPort llmPort;
@@ -75,7 +76,7 @@ public class ExtractAttributesService implements ExtractAttributes {
 
   public ExtractAttributesService(
       DocumentTypeCandidatesPort documentTypeCandidatesPort,
-      ChunkStagingPort chunkStagingPort,
+      ContentStagingPort contentStagingPort,
       ValueListPort valueListPort,
       ExtractionResultPort extractionResultPort,
       LlmPort llmPort,
@@ -85,7 +86,7 @@ public class ExtractAttributesService implements ExtractAttributes {
       @Value("${docextract.ingest.dms.repository-id}") String repositoryId,
       @Value("${docextract.valuelist.max-values:50}") int maxValueListValues) {
     this.documentTypeCandidatesPort = documentTypeCandidatesPort;
-    this.chunkStagingPort = chunkStagingPort;
+    this.contentStagingPort = contentStagingPort;
     this.valueListPort = valueListPort;
     this.extractionResultPort = extractionResultPort;
     this.llmPort = llmPort;
@@ -110,6 +111,8 @@ public class ExtractAttributesService implements ExtractAttributes {
                   () ->
                       new ExtractionException(
                           "no document type candidates staged for process " + processId));
+      // TODO: Use original (when llm supported fileformat) or Preview document (when llm support
+      // file content) instead of documentText
 
       String documentText = documentText(processId);
       DmsDocumentMetadata selectedType =
@@ -131,7 +134,6 @@ public class ExtractAttributesService implements ExtractAttributes {
                   suggestAttributes(documentText, selectedType, writableProperties),
                   selectedType,
                   credential);
-
       ExtractionResult result = new ExtractionResult(selectedType.documentType().id(), attributes);
       extractionResultPort.store(processId, result);
       log.info(
@@ -154,12 +156,11 @@ public class ExtractAttributesService implements ExtractAttributes {
   }
 
   /**
-   * Joins the chunks structuring staged in-memory for this process into plain document text
-   * (ADR-006: still in-memory at this point, discarded only once this step returns).
+   * Reads the document representation content staged for this process (ADR-006: still in-memory at
+   * this point, discarded only once this step returns).
    */
   private String documentText(String processId) {
-    List<DocChunk> chunks = chunkStagingPort.retrieve(processId).orElse(List.of());
-    return chunks.stream().map(DocChunk::text).collect(Collectors.joining("\n\n"));
+    return contentStagingPort.retrieve(processId).map(DocumentContent::value).orElse("");
   }
 
   private DmsDocumentMetadata classifyDocumentType(
@@ -179,11 +180,13 @@ public class ExtractAttributesService implements ExtractAttributes {
             .collect(Collectors.joining("\n"));
     String userPrompt =
         "Candidate document types:\n" + candidateList + "\n\nDocument content:\n" + documentText;
-    Map<String, Object> schema =
-        Map.of(
-            "type", "object",
-            "properties", Map.of("documentTypeId", Map.of("type", "string", "enum", ids)),
-            "required", List.of("documentTypeId"));
+    Map<String, Object> schema = new LinkedHashMap<>();
+    schema.put("type", "object");
+    schema.put("properties", Map.of("documentTypeId", Map.of("type", "string", "enum", ids)));
+    schema.put("required", List.of("documentTypeId"));
+    // OpenAI/Azure's strict Structured Outputs (unlike Ollama) rejects any object-typed schema
+    // node that omits this (T-1).
+    schema.put("additionalProperties", false);
 
     LlmResponse response = llmPort.generate(CLASSIFY_SYSTEM_PROMPT, userPrompt, schema);
     audit("extraction.classify", userPrompt, response);
@@ -220,18 +223,26 @@ public class ExtractAttributesService implements ExtractAttributes {
     Map<String, Object> attributeProperties = new LinkedHashMap<>();
     attributeProperties.put("propertyId", Map.of("type", "string", "enum", ids));
     attributeProperties.put("value", Map.of("type", List.of("string", "null")));
-    attributeProperties.put("values", Map.of("type", "array", "items", Map.of("type", "string")));
+    attributeProperties.put(
+        "values", Map.of("type", List.of("array", "null"), "items", Map.of("type", "string")));
     attributeProperties.put("confidence", Map.of("type", "number"));
     attributeProperties.put("sourceExcerpt", Map.of("type", List.of("string", "null")));
     attributeItemSchema.put("properties", attributeProperties);
-    attributeItemSchema.put("required", List.of("propertyId", "confidence"));
+    // OpenAI/Azure's strict Structured Outputs requires every key in "properties" to also be
+    // listed here (unlike Ollama); nullable fields stay optional in practice via their
+    // ["type", "null"] union above, not by omission from "required".
+    attributeItemSchema.put(
+        "required", List.of("propertyId", "value", "values", "confidence", "sourceExcerpt"));
+    // OpenAI/Azure's strict Structured Outputs (unlike Ollama) rejects any object-typed schema
+    // node that omits this (T-1).
+    attributeItemSchema.put("additionalProperties", false);
 
-    Map<String, Object> schema =
-        Map.of(
-            "type", "object",
-            "properties",
-                Map.of("attributes", Map.of("type", "array", "items", attributeItemSchema)),
-            "required", List.of("attributes"));
+    Map<String, Object> schema = new LinkedHashMap<>();
+    schema.put("type", "object");
+    schema.put(
+        "properties", Map.of("attributes", Map.of("type", "array", "items", attributeItemSchema)));
+    schema.put("required", List.of("attributes"));
+    schema.put("additionalProperties", false);
 
     LlmResponse response = llmPort.generate(EXTRACT_SYSTEM_PROMPT, userPrompt, schema);
     audit("extraction.suggest-attributes", userPrompt, response);
@@ -263,7 +274,10 @@ public class ExtractAttributesService implements ExtractAttributes {
    * Confirms every {@code hasValueList} suggestion against the DMS value list (case-insensitive),
    * re-fetching a {@code searchTerm}-filtered list live via {@link ValueListPort} when the
    * definition's already-known list is empty or capped ({@code hasMoreValues}) and no match was
-   * found yet. Resolved values feed forward as filter context for later, dependent value lists.
+   * found yet. Resolved values feed forward as filter context for later, dependent value lists:
+   * since a property's value list can itself depend on another property not yet resolved (SPEC §3),
+   * unmatched {@code hasValueList} suggestions are retried in further passes — each with the latest
+   * known values as filter context — until a pass makes no further progress.
    */
   private List<ExtractedAttribute> resolveValueLists(
       List<SuggestedAttribute> suggestions,
@@ -274,24 +288,93 @@ public class ExtractAttributesService implements ExtractAttributes {
             .collect(Collectors.toMap(DmsPropertyDefinition::id, p -> p, (a, b) -> a));
     Map<String, String> knownValues = new HashMap<>();
     Map<String, List<String>> knownMultiValues = new HashMap<>();
-    List<ExtractedAttribute> resolved = new ArrayList<>(suggestions.size());
+    Map<String, ExtractedAttribute> resolvedById = new LinkedHashMap<>();
+    List<SuggestedAttribute> pending = new ArrayList<>();
     for (SuggestedAttribute suggestion : suggestions) {
       DmsPropertyDefinition definition = byId.get(suggestion.propertyId());
       if (definition == null) {
         continue;
       }
-      ExtractedAttribute attribute =
-          resolveOne(
-              suggestion, definition, selectedType, credential, knownValues, knownMultiValues);
-      resolved.add(attribute);
-      if (attribute.value() != null) {
-        knownValues.put(definition.id(), attribute.value());
-      }
-      if (attribute.values() != null) {
-        knownMultiValues.put(definition.id(), attribute.values());
+      if (definition.hasValueList()) {
+        pending.add(suggestion);
+      } else {
+        recordResolved(
+            suggestion.propertyId(),
+            new ExtractedAttribute(
+                suggestion.propertyId(),
+                suggestion.value(),
+                suggestion.values(),
+                suggestion.confidence(),
+                suggestion.sourceExcerpt()),
+            resolvedById,
+            knownValues,
+            knownMultiValues);
       }
     }
-    return resolved;
+
+    resolvePendingValueLists(
+        pending, byId, selectedType, credential, resolvedById, knownValues, knownMultiValues);
+
+    return suggestions.stream()
+        .map(SuggestedAttribute::propertyId)
+        .map(resolvedById::get)
+        .filter(Objects::nonNull)
+        .toList();
+  }
+
+  /**
+   * Repeatedly retries still-unconfirmed {@code hasValueList} suggestions, each pass with the
+   * latest known values as filter context, until a pass resolves nothing further — then rejects
+   * whatever remains rather than hallucinating (E-5).
+   */
+  private void resolvePendingValueLists(
+      List<SuggestedAttribute> pending,
+      Map<String, DmsPropertyDefinition> byId,
+      DmsDocumentMetadata selectedType,
+      DvelopCredential credential,
+      Map<String, ExtractedAttribute> resolvedById,
+      Map<String, String> knownValues,
+      Map<String, List<String>> knownMultiValues) {
+    boolean progress = true;
+    while (!pending.isEmpty() && progress) {
+      progress = false;
+      List<SuggestedAttribute> stillPending = new ArrayList<>();
+      for (SuggestedAttribute suggestion : pending) {
+        DmsPropertyDefinition definition = byId.get(suggestion.propertyId());
+        ExtractedAttribute attribute =
+            resolveOne(
+                suggestion, definition, selectedType, credential, knownValues, knownMultiValues);
+        if (attribute.value() != null || attribute.values() != null) {
+          recordResolved(
+              suggestion.propertyId(), attribute, resolvedById, knownValues, knownMultiValues);
+          progress = true;
+        } else {
+          stillPending.add(suggestion);
+        }
+      }
+      pending = stillPending;
+    }
+    for (SuggestedAttribute suggestion : pending) {
+      resolvedById.put(
+          suggestion.propertyId(),
+          new ExtractedAttribute(
+              suggestion.propertyId(), null, null, 0.0, suggestion.sourceExcerpt()));
+    }
+  }
+
+  private static void recordResolved(
+      String propertyId,
+      ExtractedAttribute attribute,
+      Map<String, ExtractedAttribute> resolvedById,
+      Map<String, String> knownValues,
+      Map<String, List<String>> knownMultiValues) {
+    resolvedById.put(propertyId, attribute);
+    if (attribute.value() != null) {
+      knownValues.put(propertyId, attribute.value());
+    }
+    if (attribute.values() != null) {
+      knownMultiValues.put(propertyId, attribute.values());
+    }
   }
 
   private ExtractedAttribute resolveOne(

@@ -1,11 +1,13 @@
 package ch.adeon.apps.docextract.retrieval.adapter.out.postgres;
 
-import ch.adeon.apps.docextract.retrieval.application.PendingEmbeddingPort;
+import ch.adeon.apps.docextract.retrieval.domain.EmbeddingVector;
 import ch.adeon.apps.docextract.retrieval.domain.PendingEmbedding;
+import ch.adeon.apps.docextract.retrieval.port.PendingEmbeddingPort;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -39,18 +41,45 @@ public class PgPendingEmbeddingAdapter implements PendingEmbeddingPort {
       jdbcTemplate.update(
           """
           INSERT INTO embedding
-              (process_id, chunk_index, embedding, tenant_id, acl_ref, status, expires_at,
-               extraction_source, embedding_model)
-          VALUES (?, ?, ?::vector, ?, ?, 'PENDING', ?, ?, ?)
+              (process_id, embedding, tenant_id, status, expires_at,
+               extraction_source, embedding_model, document_hash)
+          VALUES (?, ?::vector, ?, 'PENDING', ?, ?, ?, ?)
           """,
           embedding.processId(),
-          embedding.chunkIndex(),
           PgVectorLiteral.of(embedding.vector().values()),
           embedding.tenantId(),
-          embedding.aclRef(),
           expiresAt,
           embedding.extractionSource(),
-          embedding.embeddingModel());
+          embedding.embeddingModel(),
+          embedding.documentHash());
     }
+  }
+
+  @Override
+  public Optional<EmbeddingVector> findApprovedByHash(
+      String tenantId, String documentHash, String embeddingModel, String extractionSource) {
+    if (documentHash == null || documentHash.isBlank()) {
+      return Optional.empty();
+    }
+    return jdbcTemplate
+        .query(
+            """
+            SELECT embedding::text AS embedding
+            FROM embedding
+            WHERE status = 'APPROVED'
+              AND tenant_id = ?
+              AND document_hash = ?
+              AND embedding_model = ?
+              AND extraction_source = ?
+            LIMIT 1
+            """,
+            (rs, rowNum) -> rs.getString("embedding"),
+            tenantId,
+            documentHash,
+            embeddingModel,
+            extractionSource)
+        .stream()
+        .findFirst()
+        .map(literal -> new EmbeddingVector(PgVectorLiteral.parse(literal)));
   }
 }

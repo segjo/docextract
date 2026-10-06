@@ -15,10 +15,35 @@ spring:
     password: docextract-local
   flyway:
     locations: classpath:db/migration
+  ai:
+    # ADR-009/-011: the generic OpenAI-compatible LLM/embedding adapters build their own
+    # OpenAiChatModel/OpenAiEmbeddingModel directly from docextract.adapters.* below, not from
+    # Spring Boot autoconfiguration. spring-ai-starter-model-openai still auto-configures
+    # chat/embedding/audio/image/moderation OpenAI models by default though (each
+    # matchIfMissing=true), and fails application startup without credentials configured
+    # (BeanCreationException: "At least one credential source must be specified") — disable all
+    # of them explicitly since none are used.
+    model:
+      chat: none
+      embedding: none
+      audio:
+        speech: none
+        transcription: none
+      image: none
+      moderation: none
 
 server:
   servlet:
     context-path: /adeon-docextract
+
+springdoc:
+  paths-to-match: /api/v1/**
+  # Disabled by default (prod/cluster must not expose the API schema or an unauthenticated UI,
+  # see SecurityConfig's securityMatcher("/api/**") gotcha); re-enabled explicitly for local/ci.
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
 
 logging:
   level:
@@ -48,10 +73,42 @@ docextract:
     base-uri: http://localhost:5001
   ollama:
     base-uri: http://localhost:11435
+  adapters:
+    # Chosen per port via @ConditionalOnProperty (ADR-011); a change needs config only, no code.
+    preview: gotenberg
+    text-extraction: pdfbox # pdfbox (default) | docling not offered for FR-3 (ADR-012)
+    document-content: fulltext # fulltext (PDFBox, default) | markdown (docling)
+    llm:
+      # Generic OpenAI-compatible adapter (ADR-011): local runtime (Ollama's /v1, llama.cpp, vLLM)
+      # or hosted provider — only configuration differs. Defaults below point at the previously
+      # opt-in Azure/Microsoft-Foundry deployment (ADR-010, now folded into ADR-011); switch
+      # base-url/model-id to point at a local runtime instead.
+      base-url: https://adeon-drack-analyzer.openai.azure.com
+      api-key: ${DTRACK_ANALYZER_OPENAPI_TOKEN:}
+      model-id: gpt-5.6-sol
+      # Optional Microsoft Foundry/Azure OpenAI api-version query parameter; blank for a plain
+      # OpenAI-compatible endpoint.
+      api-version: 2025-04-01-preview
+      # Optional sampling params; blank means the provider's own default is used.
+      temperature:
+      top-p:
+    embedding:
+      # Local Ollama's OpenAI-compatible embeddings endpoint by default (ADR-011).
+      base-url: ${docextract.ollama.base-uri}/v1
+      api-key:
+      model-id: qwen3-embedding:0.6b
+  content:
+    # First-N-words plain text for FR-3 (ADR-012): no chunking, no structure/table
+    # reconstruction. Must stay <= the embedding model's context window.
+    max-words: 5000
+    # Safety-net TTL for in-memory staged text/content (ADR-006): must never reach disk/DB.
+    staging-ttl: PT30M
   retrieval:
-    # Dedicated embedding model, separate from the extraction LLM (§8.5); see V3__embedding.sql
-    # for the vector column dimension this model must produce.
-    embedding-model: qwen3-embedding:0.6b
+    # Model id stamped onto stored vectors (§8.5), used to detect stale rows after a model switch
+    # (ReindexService); kept in lockstep with docextract.adapters.embedding.model-id rather than
+    # duplicated, since a mismatch would silently tag vectors with the wrong model. See
+    # V3__embedding.sql for the vector column dimension this model must produce.
+    embedding-model: ${docextract.adapters.embedding.model-id}
     # Quarantine window for PENDING embeddings (ADR-006/C-7), analogous to ingest's blob-ttl.
     pending-embedding-ttl: PT2H
     # Number of similar APPROVED documents FindSimilar returns (NfA-6: Precision@3 target).
@@ -67,32 +124,33 @@ docextract:
     # arbitrarily many entries). DmsPropertyDefinition.hasMoreValues signals when more existed.
     max-values: 50
   extraction:
-    # Dedicated generation model, separate from the embedding model (§8.5); digest-pinned by the
-    # operator per C-5, this config only names the tag.
-    llm-model: qwen3:8b
     # TTL for the extraction result handed to the validation UI, persisted in Postgres (not
     # per-instance memory) so any cluster node can serve it (ADR-004).
     result-ttl: PT2H
-  structuring:
-    # docling (primary, ADR-007) | pdfbox-fast-track (no ocr - local dev/tests without the docling container)
-    mode: pdfbox-fast-track
-    # Chunk-size budget (approximated by word count) until retrieval exposes the real
-    # tokenizer-derived ChunkingConfig (ADR-007).
-    max-chunk-tokens: 512
-    # Safety-net TTL for in-memory staged chunks (ADR-006): they must never reach disk/DB.
-    chunk-ttl: PT30M
 ---
 spring:
   config:
     activate:
-      on-profile: local
+      on-profile: dev
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
 ---
 spring:
   config:
     activate:
       on-profile: ci
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
 ---
 spring:
   config:
     activate:
-      on-profile: cluster
+      on-profile: prod

@@ -60,21 +60,15 @@ class PgPendingEmbeddingAdapterTest {
     adapter.stage(
         java.util.List.of(
             new PendingEmbedding(
-                "process-1",
-                0,
-                vector,
-                "tenant-a",
-                "acl-a",
-                "pdfbox-fast-track",
-                "qwen3-embedding:0.6b")));
+                "process-1", vector, "tenant-a", "pdfbox", "qwen3-embedding:0.6b", "hash-1")));
 
     var row =
         jdbcTemplate.queryForMap(
-            "SELECT status, tenant_id, acl_ref, repository_id, dms_document_id, expires_at"
-                + " FROM embedding WHERE process_id = 'process-1' AND chunk_index = 0");
+            "SELECT status, tenant_id, repository_id, dms_document_id, expires_at, document_hash"
+                + " FROM embedding WHERE process_id = 'process-1'");
     assertThat(row).containsEntry("status", "PENDING");
     assertThat(row).containsEntry("tenant_id", "tenant-a");
-    assertThat(row).containsEntry("acl_ref", "acl-a");
+    assertThat(row).containsEntry("document_hash", "hash-1");
     assertThat(row.get("repository_id")).isNull();
     assertThat(row.get("dms_document_id")).isNull();
     assertThat(row.get("expires_at")).isNotNull();
@@ -86,6 +80,37 @@ class PgPendingEmbeddingAdapterTest {
 
     Integer count = jdbcTemplate.queryForObject("SELECT count(*) FROM embedding", Integer.class);
     assertThat(count).isZero();
+  }
+
+  @Test
+  void finds_an_approved_vector_matching_hash_tenant_model_and_source() {
+    EmbeddingVector vector = new EmbeddingVector(floatsOfLength(1024, 0.25f));
+    adapter.stage(
+        java.util.List.of(
+            new PendingEmbedding(
+                "process-2", vector, "tenant-a", "pdfbox", "qwen3-embedding:0.6b", "hash-2")));
+    jdbcTemplate.update(
+        "UPDATE embedding SET status = 'APPROVED', expires_at = NULL WHERE process_id ="
+            + " 'process-2'");
+
+    var found = adapter.findApprovedByHash("tenant-a", "hash-2", "qwen3-embedding:0.6b", "pdfbox");
+
+    assertThat(found).isPresent();
+    assertThat(found.get().values()).isEqualTo(vector.values());
+  }
+
+  @Test
+  void does_not_find_a_pending_or_non_matching_row_as_a_duplicate() {
+    EmbeddingVector vector = new EmbeddingVector(floatsOfLength(1024, 0.25f));
+    adapter.stage(
+        java.util.List.of(
+            new PendingEmbedding(
+                "process-3", vector, "tenant-a", "pdfbox", "qwen3-embedding:0.6b", "hash-3")));
+
+    assertThat(adapter.findApprovedByHash("tenant-a", "hash-3", "qwen3-embedding:0.6b", "pdfbox"))
+        .isEmpty();
+    assertThat(adapter.findApprovedByHash("tenant-a", null, "qwen3-embedding:0.6b", "pdfbox"))
+        .isEmpty();
   }
 
   static float[] floatsOfLength(int length, float value) {

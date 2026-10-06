@@ -1,6 +1,6 @@
 package ch.adeon.apps.docextract.ingest.adapter.out.preview;
 
-import ch.adeon.apps.docextract.ingest.application.PreviewRenderPort;
+import ch.adeon.apps.docextract.ingest.port.PreviewRenderPort;
 import ch.adeon.apps.docextract.ingest.application.PreviewRenderingException;
 import ch.adeon.apps.docextract.ingest.domain.MediaType;
 import java.util.Locale;

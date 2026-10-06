@@ -1,7 +1,7 @@
 package ch.adeon.apps.docextract.ingest.adapter.out.dms;
 
 import ch.adeon.apps.docextract.ingest.application.DmsChunkUploadException;
-import ch.adeon.apps.docextract.ingest.application.DmsChunkUploadPort;
+import ch.adeon.apps.docextract.ingest.port.DmsChunkUploadPort;
 import ch.adeon.apps.docextract.ingest.domain.DmsLocation;
 import ch.adeon.apps.docextract.ingest.domain.MediaType;
 import ch.adeon.apps.docextract.security.application.AppConfigPort;

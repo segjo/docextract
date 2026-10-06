@@ -1,6 +1,7 @@
 package ch.adeon.apps.docextract.retrieval.application;
 
 import ch.adeon.apps.docextract.retrieval.domain.DmsValueList;
+import ch.adeon.apps.docextract.retrieval.port.ValueListPort;
 import ch.adeon.apps.docextract.security.application.OutboundCredentialPort;
 import java.util.List;
 import java.util.Map;

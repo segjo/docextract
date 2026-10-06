@@ -14,9 +14,8 @@ public class SessionAuthContextAdapter implements AuthContextPort {
   public AuthContext current() {
     Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
     if (authentication != null && authentication.getPrincipal() instanceof DvelopUser dvelopUser) {
-      String aclRef = String.join(",", dvelopUser.groupIds());
-      return new AuthContext("default-tenant", aclRef, dvelopUser.id(), dvelopUser.displayName());
+      return new AuthContext("default-tenant", dvelopUser.id(), dvelopUser.displayName());
     }
-    return new AuthContext("default-tenant", "default-acl", "system", "system");
+    return new AuthContext("default-tenant", "system", "system");
   }
 }

@@ -1,0 +1,1235 @@
+<!doctype html>
+<html lang="de-CH">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>DocExtract – DMS Frontend-Mock</title>
+    <style>
+      :root {
+        --blue: #008bd2;
+        --text: #424242;
+        --muted: #747474;
+        --line: #dedede;
+        --soft: #f7f7f7;
+        --green: #39a94b;
+        --red: #c83f3f;
+        --amber: #b56b08;
+        --shadow: 0 2px 8px #0002;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        font:
+          14px/1.35 Arial,
+          Helvetica,
+          sans-serif;
+        color: var(--text);
+        background: white;
+      }
+      button,
+      input,
+      select {
+        font: inherit;
+        color: inherit;
+      }
+      .icon {
+        width: 38px;
+        height: 38px;
+        border: 0;
+        background: transparent;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        font-size: 20px;
+        cursor: pointer;
+      }
+      .icon:hover {
+        background: #eee;
+      }
+      .top {
+        height: 59px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        padding: 0 18px;
+        gap: 14px;
+      }
+      .grid9 {
+        font-size: 23px;
+        letter-spacing: -4px;
+        width: 30px;
+      }
+      .back {
+        font-size: 28px;
+      }
+      .title {
+        font-size: 20px;
+        font-weight: 600;
+      }
+      .top .stretch {
+        flex: 1;
+      }
+      .avatar {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background: #24713a;
+        color: #fff;
+        display: grid;
+        place-items: center;
+        font-weight: bold;
+        font-size: 11px;
+      }
+      .layout {
+        height: calc(100% - 59px);
+        display: grid;
+        grid-template-columns: 72px minmax(580px, 1fr) minmax(
+            610px,
+            0.96fr
+          ) 65px;
+      }
+      .left-rail,
+      .right-rail {
+        border-right: 1px solid var(--line);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding-top: 9px;
+        gap: 9px;
+      }
+      .right-rail {
+        border-right: 0;
+        border-left: 1px solid var(--line);
+      }
+      .railbtn {
+        width: 48px;
+        height: 40px;
+        border: 0;
+        background: #fff;
+        font-size: 21px;
+        color: #555;
+        cursor: pointer;
+      }
+      .railbtn.active {
+        color: var(--blue);
+        border-left: 3px solid var(--blue);
+      }
+      .viewer {
+        border-right: 1px solid var(--line);
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .vtop {
+        height: 52px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        padding: 0 19px;
+        gap: 13px;
+      }
+      .dot4 {
+        display: flex;
+        gap: 4px;
+      }
+      .dot4 i {
+        width: 12px;
+        height: 12px;
+        background: #ddd;
+      }
+      .dot4 i:nth-child(3) {
+        background: var(--green);
+      }
+      .docbadge {
+        margin-left: auto;
+        width: 37px;
+        height: 37px;
+        border-radius: 50%;
+        background: #8f2a9d;
+        color: #fff;
+        display: grid;
+        place-items: center;
+        font-weight: bold;
+      }
+      .pdf {
+        color: #e94b55;
+        font-size: 22px;
+      }
+      .toolbar {
+        height: 49px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        gap: 17px;
+        padding: 0 21px;
+        font-size: 18px;
+      }
+      .toolbar .stretch {
+        flex: 1;
+      }
+      .pagebox {
+        border: 0;
+        border-bottom: 1px solid #777;
+        width: 40px;
+        text-align: center;
+        font-size: 18px;
+      }
+      .paperarea {
+        flex: 1;
+        overflow: auto;
+        background: #fafafa;
+        padding: 8px;
+      }
+      .paper {
+        width: min(780px, 96%);
+        min-height: 900px;
+        margin: 0 auto;
+        background: white;
+        border: 1px solid #ddd;
+        box-shadow: 0 1px 3px #0001;
+        padding: 72px 82px;
+        position: relative;
+        font-family: Georgia, serif;
+      }
+      .paper h1 {
+        font: 700 22px Arial;
+        margin: 0 0 5px;
+      }
+      .paper .invoice {
+        font: 700 26px Arial;
+        text-align: right;
+      }
+      .paper table {
+        border-collapse: collapse;
+        width: 100%;
+        margin-top: 30px;
+      }
+      .paper th,
+      .paper td {
+        padding: 8px;
+        border-bottom: 1px solid #ddd;
+        text-align: left;
+      }
+      .paper .r {
+        text-align: right;
+      }
+      .paper [data-src] {
+        border-radius: 2px;
+        transition: 0.2s;
+      }
+      .paper [data-src].hl {
+        background: #ffe795;
+        box-shadow: 0 0 0 2px #e6b600;
+      }
+      .details {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .dhead {
+        height: 61px;
+        display: flex;
+        align-items: center;
+        padding: 0 17px;
+        border-bottom: 1px solid var(--line);
+        font-size: 20px;
+        font-weight: 600;
+      }
+      .dhead .stretch {
+        flex: 1;
+      }
+      .tabs {
+        height: 62px;
+        display: flex;
+        border-bottom: 1px solid var(--line);
+      }
+      .tab {
+        flex: 1;
+        border: 0;
+        background: #fff;
+        color: #666;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        font-size: 13px;
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        position: relative;
+      }
+      .tab b {
+        font-size: 20px;
+        font-weight: 400;
+      }
+      .tab.active {
+        color: var(--blue);
+      }
+      .tab.active:after {
+        content: "";
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: var(--blue);
+      }
+      .pane {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+      }
+      .prophead {
+        height: 53px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 0 20px;
+        font-size: 20px;
+      }
+      .prophead .stretch {
+        flex: 1;
+      }
+      .section {
+        border-bottom: 1px solid var(--line);
+      }
+      .section-title {
+        height: 49px;
+        display: flex;
+        align-items: center;
+        padding: 0 15px;
+        font-weight: 600;
+      }
+      .formgrid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        padding: 0 14px 14px;
+      }
+      .field {
+        min-height: 80px;
+        border-right: 1px solid var(--line);
+        padding: 8px 14px;
+        position: relative;
+      }
+      .field:nth-child(3n) {
+        border-right: 0;
+      }
+      .label {
+        font-size: 12px;
+        color: #777;
+        margin-bottom: 4px;
+      }
+      .value {
+        font-size: 16px;
+      }
+      .field input,
+      .field select {
+        border: 0;
+        border-bottom: 1px solid #bbb;
+        width: 100%;
+        padding: 4px 0;
+        background: white;
+        font-size: 15px;
+      }
+      .field input:focus,
+      .field select:focus {
+        outline: 0;
+        border-bottom: 2px solid var(--blue);
+      }
+      .conf {
+        position: absolute;
+        right: 11px;
+        top: 8px;
+        font-size: 11px;
+        color: #18863d;
+      }
+      .critical {
+        color: var(--red);
+        font-size: 10px;
+        font-weight: bold;
+        margin-left: 4px;
+      }
+      .source {
+        font-size: 11px;
+        color: var(--blue);
+        cursor: pointer;
+        margin-top: 5px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .field.low {
+        background: #fff8e8;
+      }
+      .field.low .conf {
+        color: var(--amber);
+      }
+      .checkrow {
+        padding: 12px 28px 22px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .bottom {
+        border-top: 1px solid var(--line);
+        padding: 10px 13px;
+        background: #fff;
+      }
+      .summary {
+        display: flex;
+        gap: 17px;
+        font-size: 12px;
+        color: #777;
+        margin-bottom: 8px;
+      }
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .actions .stretch {
+        flex: 1;
+      }
+      .btn {
+        border: 1px solid #bbb;
+        background: #fff;
+        color: var(--text);
+        border-radius: 2px;
+        padding: 9px 16px;
+        cursor: pointer;
+      }
+      .btn.primary {
+        background: var(--blue);
+        border-color: var(--blue);
+        color: #fff;
+      }
+      .btn.danger {
+        color: var(--red);
+        border-color: #e2a2a2;
+      }
+      .btn:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      .banner {
+        margin: 12px 14px;
+        padding: 10px 12px;
+        background: #eaf5fc;
+        border-left: 4px solid var(--blue);
+        font-size: 13px;
+      }
+      .banner.warn {
+        background: #fff6df;
+        border-color: #d48b13;
+      }
+      .progress {
+        padding: 18px;
+      }
+      .step {
+        display: grid;
+        grid-template-columns: 28px 1fr auto;
+        gap: 10px;
+        align-items: start;
+        padding: 12px 0;
+        position: relative;
+      }
+      .step:not(:last-child):after {
+        content: "";
+        position: absolute;
+        left: 13px;
+        top: 40px;
+        bottom: -8px;
+        border-left: 2px solid #ccc;
+      }
+      .circle {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        border: 2px solid #aaa;
+        display: grid;
+        place-items: center;
+      }
+      .step.done .circle {
+        background: #188b68;
+        color: white;
+        border-color: #188b68;
+      }
+      .step.run .circle {
+        border-color: var(--blue);
+        border-top-color: transparent;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .similar {
+        padding: 14px;
+      }
+      .sim {
+        display: grid;
+        grid-template-columns: 35px 1fr auto;
+        gap: 10px;
+        padding: 12px;
+        border-bottom: 1px solid var(--line);
+      }
+      .rank {
+        width: 30px;
+        height: 30px;
+        background: #eee;
+        display: grid;
+        place-items: center;
+      }
+      .audit {
+        padding: 16px;
+      }
+      .log {
+        font:
+          12px/1.55 Consolas,
+          monospace;
+        background: #202833;
+        color: #d9e4ed;
+        padding: 12px;
+        white-space: pre-wrap;
+      }
+      .mockbar {
+        position: fixed;
+        left: 90px;
+        bottom: 18px;
+        z-index: 9;
+        background: #222;
+        color: white;
+        border-radius: 3px;
+        box-shadow: var(--shadow);
+        padding: 8px 11px;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        font-size: 12px;
+      }
+      .mockbar select {
+        background: #444;
+        color: white;
+        border: 1px solid #777;
+        padding: 5px;
+      }
+      .modalback {
+        position: fixed;
+        inset: 0;
+        background: #0006;
+        display: none;
+        place-items: center;
+        z-index: 20;
+      }
+      .modalback.on {
+        display: grid;
+      }
+      .modal {
+        width: 520px;
+        background: white;
+        box-shadow: var(--shadow);
+      }
+      .modal header {
+        padding: 17px 20px;
+        font-size: 19px;
+        border-bottom: 1px solid var(--line);
+      }
+      .modal main {
+        padding: 18px 20px;
+      }
+      .modal footer {
+        padding: 12px 20px;
+        border-top: 1px solid var(--line);
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+      .upload {
+        padding: 45px 30px;
+        text-align: center;
+      }
+      .drop {
+        border: 2px dashed #aaa;
+        padding: 45px;
+        background: #fafafa;
+      }
+      .drop h2 {
+        font-weight: 400;
+      }
+      .hidden {
+        display: none !important;
+      }
+      @media (max-width: 1100px) {
+        .layout {
+          grid-template-columns: 55px 1fr 1fr 48px;
+        }
+        .paper {
+          padding: 45px;
+        }
+        .formgrid {
+          grid-template-columns: 1fr 1fr;
+        }
+        .field:nth-child(3n) {
+          border-right: 1px solid var(--line);
+        }
+        .field:nth-child(2n) {
+          border-right: 0;
+        }
+        .tab {
+          font-size: 10px;
+        }
+      }
+      .importback {
+        position: fixed;
+        inset: 0;
+        background: rgba(255, 255, 255, 0.84);
+        backdrop-filter: blur(2px);
+        display: grid;
+        place-items: center;
+        z-index: 30;
+      }
+      .importback.off {
+        display: none;
+      }
+      .importdlg {
+        width: 640px;
+        background: #fff;
+        border: 1px solid #d6d6d6;
+        box-shadow: 0 8px 28px #0003;
+      }
+      .importdlg header {
+        height: 62px;
+        display: flex;
+        align-items: center;
+        padding: 0 22px;
+        border-bottom: 1px solid var(--line);
+        font-size: 20px;
+        font-weight: 600;
+      }
+      .importdlg main {
+        padding: 24px;
+      }
+      .importdrop {
+        border: 2px dashed #aaa;
+        background: #fafafa;
+        min-height: 185px;
+        display: grid;
+        place-items: center;
+        text-align: center;
+        padding: 25px;
+        cursor: pointer;
+      }
+      .importdrop.over {
+        border-color: var(--blue);
+        background: #eef8fd;
+      }
+      .importdrop .up {
+        font-size: 42px;
+        color: var(--blue);
+      }
+      .importdrop h2 {
+        font-size: 19px;
+        font-weight: 400;
+        margin: 8px 0 4px;
+      }
+      .importfile {
+        display: none;
+        margin-top: 15px;
+        border: 1px solid var(--line);
+        padding: 12px 14px;
+        align-items: center;
+        gap: 12px;
+      }
+      .importfile.on {
+        display: flex;
+      }
+      .fileico {
+        width: 38px;
+        height: 46px;
+        background: #ef5360;
+        color: #fff;
+        display: grid;
+        place-items: center;
+        font-size: 11px;
+        font-weight: bold;
+      }
+      .importfile .meta {
+        flex: 1;
+      }
+      .importfile .name {
+        font-weight: 600;
+      }
+      .importdlg footer {
+        padding: 12px 20px;
+        border-top: 1px solid var(--line);
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        background: #fafafa;
+      }
+      .previewwait {
+        height: 100%;
+        display: grid;
+        place-items: center;
+        text-align: center;
+        color: #666;
+        background: #fafafa;
+      }
+      .previewwait .loader {
+        width: 38px;
+        height: 38px;
+        border: 3px solid #d7d7d7;
+        border-top-color: var(--blue);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        margin: 0 auto 13px;
+      }
+      .propertieswait {
+        padding: 35px 25px;
+        text-align: center;
+        color: #777;
+      }
+      .propertieswait .big {
+        font-size: 34px;
+        color: #aaa;
+        margin-bottom: 10px;
+      }
+      .processhead {
+        padding: 18px 20px 5px;
+      }
+      .processhead h2 {
+        font-size: 20px;
+        font-weight: 400;
+        margin: 0 0 5px;
+      }
+      .processid {
+        font:
+          12px Consolas,
+          monospace;
+        color: #777;
+      }
+      .step.wait {
+        opacity: 0.42;
+      }
+      .step .status {
+        font-size: 12px;
+        color: #777;
+      }
+      .step.done .status {
+        color: #188b68;
+      }
+      .viewer.disabled .vtop,
+      .viewer.disabled .toolbar {
+        opacity: 0.35;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="top">
+      <button class="icon grid9">⠿</button><button class="icon back">‹</button>
+      <div class="title" id="pageTitle">
+        Details: DocExtract – Rechnung Muster AG
+      </div>
+      <div class="stretch"></div>
+      <button class="icon">♢</button><button class="icon">?</button>
+      <div class="avatar">JS</div>
+      <button class="icon">⋮</button>
+    </header>
+    <div class="layout">
+      <aside class="left-rail">
+        <button class="railbtn">▣</button
+        ><button class="railbtn active">▤</button>
+      </aside>
+      <section class="viewer disabled" id="viewer">
+        <div class="vtop">
+          <div class="dot4"><i></i><i></i><i></i><i></i></div>
+          <div class="docbadge">DX</div>
+          <span>⌄</span><span class="pdf">▣</span><span>⌄</span>
+          <div class="stretch"></div>
+          <button class="icon">⛶</button
+          ><button class="icon" style="background: #e6f3fa; color: #008bd2">
+            ▤</button
+          ><button class="icon">↻</button>
+        </div>
+        <div class="toolbar">
+          <span>▣</span>
+          <div class="stretch"></div>
+          <span>⌃</span><span>⌄</span><input class="pagebox" value="1" /> /
+          <span>1</span><span>109%⌄</span><span>⚙</span><span>▤</span>
+          <div class="stretch"></div>
+          <span>◧</span><span>⌕</span><span>⋮</span>
+        </div>
+        <div class="paperarea" id="paperarea">
+          <div class="paper">
+            <div style="display: flex; justify-content: space-between">
+              <div>
+                <h1 data-src="lieferant">Muster AG</h1>
+                Bahnhofstrasse 10<br />8001 Zürich
+              </div>
+              <div class="invoice">RECHNUNG</div>
+            </div>
+            <div style="margin: 55px 0 25px">
+              adeon AG<br />Kreditorenbuchhaltung<br />Postfach, 8021 Zürich
+            </div>
+            <table>
+              <tr>
+                <td>Rechnungsnummer</td>
+                <td data-src="rechnungsnr"><b>RE-2026-0815</b></td>
+              </tr>
+              <tr>
+                <td>Rechnungsdatum</td>
+                <td data-src="datum">14.09.2026</td>
+              </tr>
+              <tr>
+                <td>Fällig bis</td>
+                <td>14.10.2026</td>
+              </tr>
+            </table>
+            <table>
+              <tr>
+                <th>Pos.</th>
+                <th>Beschreibung</th>
+                <th class="r">Betrag</th>
+              </tr>
+              <tr>
+                <td>1</td>
+                <td>Beratung Juli/August</td>
+                <td class="r">1'560.00</td>
+              </tr>
+              <tr>
+                <td>2</td>
+                <td>Spesen</td>
+                <td class="r">154.95</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td>MWST 8.1 %</td>
+                <td class="r">132.40</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td><b>Total CHF</b></td>
+                <td class="r" data-src="betrag"><b>1'847.35</b></td>
+              </tr>
+            </table>
+            <p style="margin-top: 30px">
+              Bankverbindung: ZKB · IBAN
+              <span data-src="iban">CH93 0076 2011 6238 5295 7</span>
+            </p>
+          </div>
+        </div>
+      </section>
+      <section class="details">
+        <div class="dhead">
+          Details zum Dokument
+          <div class="stretch"></div>
+          <button class="icon">⇱</button><button class="icon">×</button>
+        </div>
+        <nav class="tabs">
+          <button class="tab active" data-tab="props">
+            <b>♧</b>EIGENSCHAFTEN</button
+          ><button class="tab" data-tab="similar"><b>▧</b>ÄHNLICHE (5)</button
+          ><button class="tab" data-tab="audit"><b>≡</b>PROTOKOLL</button
+          ><button class="tab" data-tab="activity"><b>◷</b>AKTIVITÄTEN</button>
+        </nav>
+        <div class="pane" id="pane"></div>
+        <div class="bottom" id="bottom"></div>
+      </section>
+      <aside class="right-rail">
+        <button class="railbtn">◧</button><button class="railbtn">♧</button
+        ><button class="railbtn">☆</button><button class="railbtn">⇩</button
+        ><button class="railbtn">⌯</button><button class="railbtn">✦</button
+        ><button class="railbtn">✎</button><button class="railbtn">⌘</button
+        ><button class="railbtn">↔</button><button class="railbtn">⋮</button>
+      </aside>
+    </div>
+    <div class="mockbar">
+      <b>Mock</b
+      ><select id="scenario">
+        <option value="e1">E-1 Rechnung</option>
+        <option value="e2">E-2 Scan / niedrige Konfidenz</option>
+        <option value="e3">E-3 Lieferschein</option>
+        <option value="e4">E-4 Vertrag</option>
+        <option value="e5">E-5 unbekannt</option>
+        <option value="upload">Upload</option></select
+      ><button class="btn" id="run">Neu starten</button>
+    </div>
+    <div class="importback" id="importDialog">
+      <div class="importdlg">
+        <header>Dokument importieren</header>
+        <main>
+          <p style="margin-top: 0">
+            Wählen Sie ein Dokument für DocExtract aus. Nach dem Import startet
+            die Verarbeitung im Backend. Vorschau und Eigenschaften werden erst
+            angezeigt, wenn die entsprechenden Prozessschritte abgeschlossen
+            sind.
+          </p>
+          <div class="importdrop" id="importDrop">
+            <div>
+              <div class="up">⇧</div>
+              <h2>Dokument hierher ziehen</h2>
+              <div>
+                oder
+                <button class="btn" id="chooseFile" type="button">
+                  Datei auswählen
+                </button>
+              </div>
+              <p>
+                <small>PDF, DOCX, XLSX, TIFF, PNG, JPG · maximal 50 MB</small>
+              </p>
+            </div>
+          </div>
+          <input
+            type="file"
+            id="importInput"
+            accept=".pdf,.docx,.xlsx,.tif,.tiff,.png,.jpg,.jpeg"
+            style="display: none"
+          />
+          <div class="importfile" id="importFile">
+            <div class="fileico">PDF</div>
+            <div class="meta">
+              <div class="name" id="importName">Rechnung_Muster_AG.pdf</div>
+              <small id="importMeta">188 KB · bereit für den Import</small>
+            </div>
+            <button class="icon" id="removeFile" title="Entfernen">×</button>
+          </div>
+        </main>
+        <footer>
+          <button class="btn" id="cancelImport">Abbrechen</button
+          ><button class="btn primary" id="confirmImport" disabled>
+            Importieren
+          </button>
+        </footer>
+      </div>
+    </div>
+    <div class="modalback" id="modal">
+      <div class="modal">
+        <header>Ablage im DMS freigeben</header>
+        <main>
+          <p>
+            Die geprüften Eigenschaften werden in d.velop documents geschrieben.
+            Erst danach werden die vorhandenen Embeddings von <b>PENDING</b> auf
+            <b>APPROVED</b> gesetzt.
+          </p>
+          <label
+            ><input type="checkbox" id="consent" /> Ich habe die Werte geprüft
+            und gebe die Ablage ausdrücklich frei.</label
+          >
+          <p>
+            <label
+              ><input type="checkbox" checked /> Als herkunftsmarkierte Vorlage
+              verwenden</label
+            >
+          </p>
+        </main>
+        <footer>
+          <button class="btn" onclick="closeModal()">Abbrechen</button
+          ><button class="btn primary" id="write" disabled>
+            Ins DMS schreiben
+          </button>
+        </footer>
+      </div>
+    </div>
+    <script>
+      const $ = (s) => document.querySelector(s),
+        $$ = (s) => document.querySelectorAll(s);
+      let state = { scenario: "e1", tab: "props", phase: "ready" };
+      const fields = {
+        e1: [
+          ["lieferant", "Lieferant", "Muster AG", 96, "Werteliste"],
+          ["rechnungsnr", "Rechnungsnummer", "RE-2026-0815", 98, "STRING"],
+          ["datum", "Rechnungsdatum", "14.09.2026", 97, "DATE", "kritisch"],
+          ["betrag", "Betrag brutto", "1'847.35", 95, "CURRENCY", "kritisch"],
+          ["waehrung", "Währung", "CHF", 99, "Werteliste"],
+          [
+            "iban",
+            "IBAN",
+            "CH93 0076 2011 6238 5295 7",
+            93,
+            "STRING",
+            "kritisch",
+          ],
+        ],
+        e2: [
+          ["lieferant", "Lieferant", "Druckerei Limmat GmbH", 84, "Werteliste"],
+          ["rechnungsnr", "Rechnungsnummer", "HD-44I7", 58, "STRING"],
+          ["datum", "Rechnungsdatum", "03.09.2026", 66, "DATE", "kritisch"],
+          ["betrag", "Betrag brutto", "2'310.00", 71, "CURRENCY", "kritisch"],
+          ["iban", "IBAN", "unbekannt", 0, "STRING", "kritisch"],
+        ],
+        e3: [
+          ["lieferant", "Lieferant", "Alpen Logistik AG", 95, "Werteliste"],
+          ["rechnungsnr", "Lieferscheinnummer", "LS-90412", 97, "STRING"],
+          ["datum", "Lieferdatum", "22.09.2026", 94, "DATE", "kritisch"],
+          ["positionen", "Positionen", "3 Positionen", 86, "TABLE"],
+        ],
+        e4: [
+          [
+            "partner",
+            "Vertragspartner",
+            "Northwind Services Ltd.",
+            95,
+            "STRING",
+          ],
+          ["art", "Vertragsart", "Dienstleistungsvertrag", 90, "Werteliste"],
+          ["datum", "Vertragsdatum", "01.09.2026", 92, "DATE", "kritisch"],
+          ["laufzeit", "Laufzeit", "36 Monate", 89, "STRING"],
+          ["sprache", "Sprache", "Deutsch/Englisch", 83, "Werteliste"],
+        ],
+        e5: [],
+      };
+      function render() {
+        if (state.phase === "upload") {
+          renderUpload();
+          return;
+        }
+        if (state.phase === "progress") {
+          renderProgress();
+          return;
+        }
+        if (state.tab === "props") renderProps();
+        else if (state.tab === "similar") renderSimilar();
+        else renderAudit();
+      }
+      function renderUpload() {
+        $("#pane").innerHTML =
+          `<div class="upload"><div class="drop"><div style="font-size:45px">⇧</div><h2>Dokument hierher ziehen</h2><p>oder <button class="btn" onclick="startProcess()">Datei auswählen</button></p><small>PDF, DOCX, XLSX, TIFF, PNG, JPG · maximal 50 MB</small></div><div class="banner"><b>Human-in-the-Loop:</b> Es wird nichts ohne ausdrückliche Freigabe ins DMS geschrieben.</div></div>`;
+        $("#bottom").innerHTML = "";
+      }
+      function startProcess() {
+        state.phase = "progress";
+        render();
+        let i = 0;
+        const timer = setInterval(() => {
+          i++;
+          document
+            .querySelectorAll(".step")
+            .forEach(
+              (e, j) =>
+                (e.className =
+                  "step " + (j < i ? "done" : j === i ? "run" : "")),
+            );
+          if (i >= 5) {
+            clearInterval(timer);
+            setTimeout(() => {
+              state.phase = "ready";
+              state.tab = "props";
+              render();
+            }, 500);
+          }
+        }, 650);
+      }
+      function renderProgress() {
+        let s = [
+          "Upload & Eingangsprüfung",
+          "PDF-Vorschau bereit",
+          "Strukturierung mit docling",
+          "Ähnlichkeitssuche mit ACL-Pre-Filter",
+          "KI-Attributvorschläge",
+        ];
+        $("#pane").innerHTML =
+          `<div class="progress"><h2 style="font-weight:400">Dokument wird verarbeitet</h2><p class="banner">Verarbeitung lokal · kein Egress · Fortschritt via SSE</p>${s.map((x, i) => `<div class="step ${i ? "" : "run"}"><span class="circle">${i + 1}</span><div><b>${x}</b><br><small>${i === 3 ? "nur APPROVED · Tenant/ACL-Filter" : i === 4 ? "schema-constrained JSON" : "Prozessschritt wird protokolliert"}</small></div><small>${i ? "" : "läuft…"}</small></div>`).join("")}</div>`;
+        $("#bottom").innerHTML = "";
+      }
+      function renderProps() {
+        let fs = fields[state.scenario] || [];
+        let unknown = !fs.length;
+        $("#pane").innerHTML =
+          `<div class="prophead">▤ <span>${unknown ? "Dokument prüfen" : state.scenario === "e3" ? "Lieferschein" : state.scenario === "e4" ? "Vertrag" : "Eingangsrechnung"}</span><div class="stretch"></div>≡ ✎</div>${unknown ? '<div class="banner warn"><b>Kein passender Dokumenttyp erkannt.</b> Das Modell gibt «unbekannt» zurück, statt Werte zu erfinden. Bitte Kategorie wählen oder ablehnen.</div>' : '<div class="banner"><b>KI-Vorschläge prüfen.</b> Quellen und Konfidenzen dienen als Entscheidungshilfe. Kein automatischer DMS-Write.</div>'}<div class="section"><div class="section-title">Erweiterte Eigenschaften <span style="margin-left:auto">⌃</span></div><div class="formgrid"><div class="field"><div class="label">Dokumenttyp</div><select id="cat"><option>${unknown ? "— unbekannt —" : state.scenario === "e3" ? "Lieferschein" : state.scenario === "e4" ? "Vertrag" : "Eingangsrechnung"}</option><option>Eingangsrechnung</option><option>Lieferschein</option><option>Vertrag</option></select></div>${fs.map((f) => `<div class="field ${f[3] && f[3] < 70 ? "low" : ""}" data-key="${f[0]}"><div class="label">${f[1]} ${f[5] ? '<span class="critical">' + f[5] + "</span>" : ""}</div><div class="conf">${f[3] ? f[3] + " %" : "–"}</div><input value="${f[2]}"><div class="source" onclick="highlight('${f[0]}')">Quelle · Seite 1 anzeigen</div></div>`).join("")}</div><label class="checkrow"><input type="checkbox" checked> Leere anzeigen</label></div><div class="section"><div class="section-title">Allgemeine Eigenschaften <span style="margin-left:auto">⌄</span></div></div>`;
+        $("#bottom").innerHTML =
+          `<div class="summary"><b>${fs.length} Eigenschaften</b><span>${fs.filter((f) => f[5]).length} kritisch</span><span>${fs.filter((f) => f[3] < 70).length} zu prüfen</span></div><div class="actions"><button class="btn danger" onclick="reject()">Ablehnen</button><div class="stretch"></div><button class="btn primary" ${unknown ? "disabled" : ""} onclick="openModal()">Bestätigen & ins DMS schreiben</button></div>`;
+      }
+      function renderSimilar() {
+        $("#pane").innerHTML =
+          `<div class="prophead">Ähnliche Dokumente</div><div class="banner">Nur freigegebene Dokumente nach Mandant-/ACL-Pre-Filter. Metadaten werden live aus dem DMS geladen.</div><div class="similar">${["Rechnung Muster AG · RE-2026-0712", "Rechnung Muster AG · RE-2026-0639", "Rechnung Helvetia Bürobedarf", "Gutschrift Muster AG", "Rechnung Office World"].map((x, i) => `<div class="sim"><div class="rank">${i + 1}</div><div><b>${x}</b><br><small>DMS-ID D0012${731 - i} · Eingangsrechnung</small></div><b>${[94, 91, 83, 79, 72][i]} %</b></div>`).join("")}</div>`;
+        $("#bottom").innerHTML = "";
+      }
+      function renderAudit() {
+        $("#pane").innerHTML =
+          `<div class="prophead">Protokoll</div><div class="audit"><p>Audit-Angaben enthalten keine Roh-PII.</p><div class="log">09:41:12  PROCESS_CREATED   process=7c7d2ec7\n09:41:13  PREVIEW_READY     bytes=188416\n09:41:15  STRUCTURED        chunks=6 (in-memory)\n09:41:17  RETRIEVED         top=5 filter=tenant+acl+APPROVED\n09:41:22  LLM_CALL          model=qwen3 tokens=4598 schema=valid\n09:41:22  EXTRACTED         awaiting_consent=true</div></div>`;
+        $("#bottom").innerHTML = "";
+      }
+      function highlight(k) {
+        $$("[data-src]").forEach((e) =>
+          e.classList.toggle("hl", e.dataset.src === k),
+        );
+        const n = $(`[data-src="${k}"]`);
+        if (n) n.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      function openModal() {
+        $("#modal").classList.add("on");
+      }
+      function closeModal() {
+        $("#modal").classList.remove("on");
+      }
+      function reject() {
+        alert(
+          "Vorschlag abgelehnt. PENDING-Embeddings und temporäre Blobs werden gelöscht.",
+        );
+        state.phase = "upload";
+        render();
+      }
+      $("#consent").onchange = (e) =>
+        ($("#write").disabled = !e.target.checked);
+      $("#write").onclick = () => {
+        closeModal();
+        alert(
+          "Dokument finalisiert. Embeddings PENDING → APPROVED. Audit-Eintrag geschrieben.",
+        );
+        state.phase = "upload";
+        render();
+      };
+      $$(".tab").forEach(
+        (b) =>
+          (b.onclick = () => {
+            $$(".tab").forEach((x) => x.classList.remove("active"));
+            b.classList.add("active");
+            state.tab = b.dataset.tab;
+            render();
+          }),
+      );
+      $("#run").onclick = () => {
+        state.scenario = $("#scenario").value;
+        if (state.scenario === "upload") {
+          state.phase = "upload";
+        } else {
+          state.phase = "progress";
+        }
+        render();
+        if (state.phase === "progress") startProcess();
+      };
+      render();
+    </script>
+    <script>
+      const backendPaper = $("#paperarea").innerHTML;
+      const backendSteps = [
+        [
+          "Upload & Eingangsprüfung",
+          "Datei validieren, ORIGINAL-Blob speichern und DMS-Chunk hochladen",
+        ],
+        [
+          "Vorschau generieren",
+          "Native PDFs direkt bereitstellen, andere Formate im Backend konvertieren",
+        ],
+        [
+          "Dokument strukturieren",
+          "docling und HybridChunker, Chunks nur im Arbeitsspeicher",
+        ],
+        [
+          "Ähnliche Dokumente suchen",
+          "Nur APPROVED, mit Mandant- und ACL-Pre-Filter",
+        ],
+        ["Eigenschaften extrahieren", "Lokales LLM, schema-constrained JSON"],
+      ];
+      let importFile = null,
+        importProcess = null,
+        processStep = 0,
+        processTimer = null;
+      function formatBytes(b) {
+        return b > 1048576
+          ? (b / 1048576).toFixed(1) + " MB"
+          : Math.max(1, Math.round(b / 1024)) + " KB";
+      }
+      function showImport() {
+        clearInterval(processTimer);
+        $("#importDialog").classList.remove("off");
+        $("#viewer").classList.add("disabled");
+        $("#paperarea").innerHTML =
+          '<div class="previewwait"><div><div style="font-size:42px;color:#aaa">▧</div><h2 style="font-weight:400">Noch kein Dokument importiert</h2><p>Die Vorschau wird nach dem Import vom Backend erzeugt.</p></div></div>';
+        $("#pane").innerHTML =
+          '<div class="propertieswait"><div class="big">▤</div><h2 style="font-weight:400">Keine Eigenschaften verfügbar</h2><p>Importieren Sie zuerst ein Dokument.</p></div>';
+        $("#bottom").innerHTML = "";
+      }
+      function chooseImportFile(f) {
+        if (!f) return;
+        if (f.size > 50 * 1024 * 1024) {
+          alert("Die Datei ist grösser als 50 MB und wurde nicht übernommen.");
+          return;
+        }
+        importFile = f;
+        $("#importName").textContent = f.name;
+        $("#importMeta").textContent =
+          formatBytes(f.size) + " · bereit für den Import";
+        $("#importFile").classList.add("on");
+        $("#confirmImport").disabled = false;
+      }
+      function renderBackendProcess() {
+        let d = processStep;
+        $("#pane").innerHTML =
+          `<div class="processhead"><h2>Dokument wird importiert</h2><div class="processid">processId: ${importProcess}</div></div><div class="banner"><b>Backend-Prozess aktiv.</b> Vorschau erscheint mit <code>preview_ready</code>. Eigenschaften erscheinen erst mit <code>extracted</code>.</div><div class="progress">${backendSteps.map((x, i) => `<div class="step ${i < d ? "done" : i === d ? "run" : "wait"}"><span class="circle">${i < d ? "✓" : i + 1}</span><div><b>${x[0]}</b><br><small>${x[1]}</small></div><span class="status">${i < d ? "abgeschlossen" : i === d ? "läuft …" : "wartet"}</span></div>`).join("")}</div>`;
+        $("#bottom").innerHTML =
+          `<div class="summary"><span>Fortschritt via Server-Sent Events</span><span class="processid">${importProcess}</span></div>`;
+      }
+      function beginBackendImport() {
+        if (!importFile) return;
+        $("#importDialog").classList.add("off");
+        state.scenario =
+          $("#scenario").value === "upload" ? "e1" : $("#scenario").value;
+        importProcess = "p-" + Math.random().toString(16).slice(2, 10);
+        processStep = 0;
+        $("#pageTitle").textContent = "Import: " + importFile.name;
+        $("#viewer").classList.add("disabled");
+        $("#paperarea").innerHTML =
+          `<div class="previewwait"><div><div class="loader"></div><h2 style="font-weight:400">Vorschau wird im Backend generiert</h2><p>Warten auf Prozessereignis <code>preview_ready</code>.</p><div class="processid">${importProcess}</div></div></div>`;
+        renderBackendProcess();
+        const waits = [900, 1200, 950, 1000, 1200];
+        function go() {
+          if (processStep >= backendSteps.length) {
+            state.tab = "props";
+            renderProps();
+            $("#pageTitle").textContent = "Details: " + importFile.name;
+            return;
+          }
+          setTimeout(() => {
+            if (processStep === 1) {
+              $("#paperarea").innerHTML = backendPaper;
+              $("#viewer").classList.remove("disabled");
+            }
+            processStep++;
+            renderBackendProcess();
+            go();
+          }, waits[processStep]);
+        }
+        go();
+      }
+      $("#chooseFile").onclick = () => $("#importInput").click();
+      $("#importInput").onchange = (e) => chooseImportFile(e.target.files[0]);
+      $("#removeFile").onclick = () => {
+        importFile = null;
+        $("#importFile").classList.remove("on");
+        $("#confirmImport").disabled = true;
+        $("#importInput").value = "";
+      };
+      $("#confirmImport").onclick = beginBackendImport;
+      $("#cancelImport").onclick = () => {};
+      const idrop = $("#importDrop");
+      idrop.ondragover = (e) => {
+        e.preventDefault();
+        idrop.classList.add("over");
+      };
+      idrop.ondragleave = () => idrop.classList.remove("over");
+      idrop.ondrop = (e) => {
+        e.preventDefault();
+        idrop.classList.remove("over");
+        chooseImportFile(e.dataTransfer.files[0]);
+      };
+      $("#run").onclick = () => {
+        importFile = {
+          name: $("#scenario").selectedOptions[0].text + ".pdf",
+          size: 188416,
+        };
+        $("#importName").textContent = importFile.name;
+        $("#importMeta").textContent = "184 KB · Demo-Dokument";
+        $("#importFile").classList.add("on");
+        $("#confirmImport").disabled = false;
+        showImport();
+      };
+      showImport();
+    </script>
+  </body>
+</html>

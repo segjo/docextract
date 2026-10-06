@@ -1,7 +1,7 @@
 package ch.adeon.apps.docextract.retrieval.adapter.out.dms;
 
-import ch.adeon.apps.docextract.retrieval.application.DmsObjectMetadataPort;
-import ch.adeon.apps.docextract.retrieval.application.ValueListPort;
+import ch.adeon.apps.docextract.retrieval.port.DmsObjectMetadataPort;
+import ch.adeon.apps.docextract.retrieval.port.ValueListPort;
 import ch.adeon.apps.docextract.retrieval.domain.DmsDocumentMetadata;
 import ch.adeon.apps.docextract.retrieval.domain.DmsDocumentType;
 import ch.adeon.apps.docextract.retrieval.domain.DmsProperty;

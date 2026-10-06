@@ -1,727 +1,674 @@
 # ARCHITECTURE — DocExtract
 
 **KI-gestützte Dokumenterfassung & -verschlagwortung für d.velop documents**
-Architektur-Kontext-Dokument (KI-Rahmen) · Gliederung in Anlehnung an **arc42** · Diagramme in **C4 (Mermaid)**
-Bezugsdokument: [SPEC.md](SPEC.md) · Blockplanung: [PROJEKTPLAN.md](PROJEKTPLAN.md) · Entscheidungen: § 9 (ADRs)
-**Stand:** 09/2026 · **Status:** lebendes Dokument, versioniert pro Block (v0.1 → v1.0)
+Architektur-Dokument · Gliederung nach **arc42** · Diagramme in **C4 (Mermaid)**
+Bezug: [SPEC.md](SPEC.md) · Blockplanung: [PROJEKTPLAN.md](PROJEKTPLAN.md) · Entscheidungen: § 9 (ADRs)
+**Stand:** 09/2026 · **Status:** lebendes Dokument, versioniert pro Block
 
 ---
 
-## 0. Wie dieses Dokument das Bewertungsraster bedient (Traceability)
+## 0. Traceability zum Bewertungsraster
 
-Dieses Kapitel ist die Landkarte für Korrektur und Präsentation. Es bildet die relevanten Rasterkriterien auf die Abschnitte ab, damit jede geforderte Perspektive nachweisbar ist.
-
-| Rasterkriterium (Gruppe)                                             | Erwartung                             | Abschnitt in diesem Dokument                                           |
-| -------------------------------------------------------------------- | ------------------------------------- | ---------------------------------------------------------------------- |
-| **Entwurf (4)** Lösungsansatz/Architektur bildlich + textuell        | C4-Sichten + Prosa                    | § 3 (Kontext L1), § 5 (Container L2 + Paketstruktur), § 7 (Deployment) |
-| **Entwurf (5)** Perspektiven Struktur · Verhalten · Interaktion      | Alle drei sichtbar                    | § 5 (Struktur), § 6 (Verhalten/Runtime), § 3 (Interaktion/Kontext)     |
-| **Entwurf (6)** Datenmodell spezifiziert                             | ER-/Schemamodell                      | § 8.4 (Datenmodell + Migrationen)                                      |
-| **Programmierung (7)** Schichten/Module, Verantwortlichkeiten        | Hexagonal + Modulschnitt              | § 4, § 5.2, § 5.3                                                      |
-| **Programmierung (8)** Framework-Konzepte (DI, REST, Config, Fehler) | Spring-Boot-Idiome                    | § 8.1–8.3                                                              |
-| **Validierung (12)** Test-/Sicherheitsstrategie                      | Teststufen + Threat-Mitigation        | § 10                                                                   |
-| **KI & Architektur (16)** substanzielle KI-Funktion abgesichert      | Retrieval + Extraktion + Guardrails   | § 6.2, § 8.5, § 10.3                                                   |
-| **KI & Architektur (17)** Modulgrenzen, containerlauffähig           | Modularer Monolith, Compose           | § 4, § 5, § 7                                                          |
-| **KI & Architektur (18)** Reflexion/Veto                             | 3 bewusst nicht delegierte Entscheide | § 9 (ADRs) + § 11                                                      |
-
-_Grundlage: Bewertungsraster (18 Kriterien / 100 Punkte) und Aufgabenstellung Projektarbeit (arc42 empfohlen, C4 L1/L2 Pflicht, ADRs für die wichtigsten Entscheidungen)._
+| Rasterkriterium                                            | Erwartung                           | Abschnitt            |
+| ---------------------------------------------------------- | ----------------------------------- | -------------------- |
+| **Entwurf (4)** Lösungsansatz bildlich + textuell          | C4-Sichten + Prosa                  | § 3, § 5, § 7        |
+| **Entwurf (5)** Struktur · Verhalten · Interaktion         | alle drei Perspektiven              | § 5 · § 6 · § 3      |
+| **Entwurf (6)** Datenmodell                                | ER-Modell                           | § 8.4                |
+| **Programmierung (7)** Schichten/Module                    | Hexagonal + Modulschnitt            | § 4, § 5.4, § 5.5    |
+| **Programmierung (8)** Framework-Konzepte                  | DI, REST, Config, Fehler            | § 5.3, § 8.1         |
+| **Validierung (12)** Test-/Sicherheitsstrategie            | Teststufen + Threat-Mitigation      | § 10                 |
+| **KI & Architektur (16)** abgesicherte KI-Funktion         | Retrieval + Extraktion + Guardrails | § 6.1, § 8.5, § 10.3 |
+| **KI & Architektur (17)** Modulgrenzen, containerlauffähig | Modularer Monolith, Compose         | § 4, § 5, § 7        |
+| **KI & Architektur (18)** Reflexion/Veto                   | bewusst nicht delegierte Entscheide | § 9, § 11            |
 
 ---
 
-## 1. Einführung und Ziele (arc42 §1)
+## 1. Einführung und Ziele
 
-DocExtract erfasst und verschlagwortet eingehende Dokumente **ohne manuelles Abtippen** und legt sie nach menschlicher Freigabe im DMS (d.velop documents) ab — schnell, nachvollziehbar, datensouverän. Fachliche Vision, Stakeholder und Kernfunktionen sind in [SPEC.md § 1 / § 5.1](SPEC.md) definiert; dieses Dokument beschreibt **wie** die Lösung strukturell, verhaltensseitig und im Betrieb aufgebaut ist.
+DocExtract liest eingehende Dokumente, schlägt Kategorie und Eigenschaftswerte vor und legt sie **nach menschlicher Freigabe** im DMS (d.velop documents) ab. Fachliche Vision, Stakeholder und Anforderungen stehen in [SPEC.md § 1–5](SPEC.md); dieses Dokument beschreibt, **wie** die Lösung aufgebaut ist.
 
-### 1.1 Wichtigste Qualitätsziele (verkürzt, Details SPEC § 3)
+### 1.1 Wichtigste Qualitätsziele (Details SPEC § 3)
 
-| Prio | Qualitätsziel                             | Architektonischer Treiber                                            |
-| ---- | ----------------------------------------- | -------------------------------------------------------------------- |
-| 1    | **Datensouveränität** (NfA-5, C-1)        | Alle Verarbeitung innerhalb der Vertrauensgrenze; Egress unterbunden |
-| 2    | **Mandanten-/ACL-Isolation** (NfA-4, T-3) | Berechtigungs-Pre-Filter im Retrieval, aus Session abgeleitet        |
-| 3    | **Extraktionsgüte** (NfA-1)               | Schema-constrained Decoding, Retrieval-gestützte Prompts             |
-| 4    | **Effizienz p95** (NfA-2)                 | Pipeline mit Stufen-Timeouts, cluster-fähiger, zustandsloser Kern    |
-| 5    | **Nachvollziehbarkeit** (C-4)             | Append-only Audit-Log ohne roh-PII                                   |
+| Prio | Qualitätsziel                                 | Architektonischer Treiber                                                        |
+| ---- | --------------------------------------------- | -------------------------------------------------------------------------------- |
+| 1    | **Extraktionsgüte** (NfA-1)                   | Retrieval-gestützter Prompt, Schema-Validierung, „unbekannt" statt Halluzination |
+| 2    | **Mandanten-Isolation** (NfA-4)               | `tenant_id` als Pre-Filter in jeder Vektor-Query                                 |
+| 3    | **Austauschbarkeit** (NfA-8)                  | Produktneutraler Kern, Adapterwahl per Konfiguration, Contract-Tests je Port     |
+| 4    | **Zuverlässigkeit** (NfA-3)                   | Timeouts je Stufe/Adapter, definierte Fehlerzustände, Lease-Recovery             |
+| 5    | **Effizienz** (NfA-2)                         | Ein Embedding je Dokument, kein Chunking, In-Process-Pipeline                    |
+| 6    | **Nachvollziehbarkeit & Kosten** (C-4, NfA-7) | Append-only Audit mit Anbieter, Modell-ID, Token-Verbrauch                       |
 
-### 1.2 Architektonisch relevante Stakeholder
+### 1.2 Architekturprinzipien
 
-Sachbearbeiter:in (UI-Pfad), Agent (MCP-Pfad), Records-/DMS-Owner, IT-Betrieb/Datenschutz, d.velop als Plattform — Interessen siehe [SPEC.md § 1](SPEC.md).
-
----
-
-## 2. Randbedingungen (arc42 §2)
-
-| Typ         | Randbedingung                                                                                                                               | Quelle                     |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| Technisch   | Java 21 · Spring Boot 4 · Angular (iframe) · pgvector/PostgreSQL · docling · Ollama · Docker Compose                                        | SPEC § 4 (Empfehlung)      |
-| Integration | App läuft **als iframe hinter d.velop Reverse Proxy** auf lokalem HTTP-Endpunkt; AuthN via **d.velop-Cookie/Session** (keine Impersonation) | SPEC § 4                   |
-| Betrieb     | Reproduzierbar per `docker compose up` auf Linux **und** Windows/WSL2; **Cluster-Modus** (mehrere Instanzen, gemeinsame Datenhaltung)       | SPEC § 5.2 C-6             |
-| Fachlich    | **Maximale Dokumentgrösse 50 MB** je Upload (hart abgewiesen bei Überschreitung); dimensioniert den Postgres-Blobstore (ADR-008) und begrenzt DoS-Fläche (T-4) | SPEC § 5.2, ADR-008        |
-| Sicherheit  | Egress technisch unterbunden + CI-Egress-Test; Least Privilege; Digest-Pinning; append-only Audit                                           | SPEC § 5.2 C-1/C-3/C-4/C-5 |
-| Prozess     | Projekt-Kontext-Dokument versioniert; ADRs für Grundentscheide; arc42 empfohlen                                                             | Projektarbeit Block 1–5    |
+1. **Ports & Adapter überall:** Der Kern kennt nur Schnittstellen und ein neutrales Datenformat. Gotenberg, PDFBox, Tika, Docling, LLM-Runtimes oder pgvector sind **austauschbare Referenzadapter** (C-8).
+2. **Konfiguration statt Code:** Adapterwechsel, egal ob lokal oder extern, erfolgt ausschliesslich per Konfiguration.
+3. **Mensch entscheidet:** Kein DMS-Write, keine Korpus-Aufnahme, keine Vorlage ohne explizite Freigabe (C-2).
+4. **Datenminimierung:** Extrahierter Text wird nie persistiert; Embeddings bleiben bis zur Freigabe in Quarantäne (C-7).
 
 ---
 
-## 3. Kontextabgrenzung — C4 Level 1 (arc42 §3 / Perspektive: Interaktion)
+## 2. Randbedingungen
 
-**Textuell:** Die Sachbearbeiter:in bedient DocExtract ausschliesslich im Browser über das **d.velop-Frontend**, das die App als iframe einbettet; der **Reverse Proxy** routet auf den lokalen HTTP-Endpunkt. Ein zweiter Konsument, ein **Agent**, nutzt denselben Kern über ein **MCP-Tool** — mit identischen Guardrails. Parsing, Chunking, Embedding und Inferenz bleiben lokal. Der Original-Chunk-Upload zur DMS-API ist **write-only** (die hochgeladenen Bytes sind vor der Finalisierung nicht rücklesbar); deshalb liegen Roh- und Preview-Bytes während der Verarbeitung **TTL-begrenzt im lokalen Postgres-Blobstore** (ADR-008). Original-Bytes dürfen zielgebunden an die autorisierte DMS-API übertragen werden; Embeddings, Chunks, Prompts und LLM-Kontexte verlassen die KI-Verarbeitungsgrenze nie (C-1).
+| Typ         | Randbedingung                                                                                                   | Quelle           |
+| ----------- | --------------------------------------------------------------------------------------------------------------- | ---------------- |
+| Technisch   | Java 21 · Spring Boot 4 · Angular (iframe) · Spring AI · PostgreSQL · Docker Compose (Empfehlung, kein Zwang)   | SPEC § 4         |
+| Integration | App als **iframe hinter d.velop Reverse Proxy**; AuthN über d.velop-Session-Cookie; `tenant_id` aus der Session | SPEC § 4         |
+| Betrieb     | `docker compose up` auf Linux und Windows/WSL2; mehrere Backend-Instanzen mit gemeinsamer DB                    | SPEC C-6         |
+| Fachlich    | Harte, konfigurierbare Limits (Default: 50 MB, Seitenzahl, Timeouts je Stufe)                                   | SPEC FR-1, T-4   |
+| Sicherheit  | Least Privilege, Modell-Pinning, append-only Audit                                                              | SPEC C-3/C-4/C-5 |
+| Prozess     | Versioniertes Architektur-Dokument, ADRs für Grundentscheide                                                    | Projektarbeit    |
+
+---
+
+## 3. Kontextabgrenzung — C4 Level 1 (Interaktion)
+
+Die Sachbearbeiter:in nutzt DocExtract im **d.velop-Frontend** (iframe); der Reverse Proxy routet auf den HTTP-Endpunkt. Ein **Agent** nutzt denselben Kern über ein **MCP-Tool** mit identischen Guardrails. LLM und Embedding werden über offene Schnittstellen angebunden. Sie laufen entweder auf einer **lokalen Runtime** oder bei einem **vom Kunden konfigurierten externen Anbieter**.
 
 ```mermaid
 C4Context
     title C4 L1 — Systemkontext DocExtract
-     UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
-        Person(sb, "Sachbearbeiter:in", "Erfasst & verschlagwortet Dokumente im Browser")
-        System_Ext(agent, "Agent (Redmine-/CI-Assistent)", "Konsumiert Extraktion via MCP")
+    UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
 
+    Person(sb, "Sachbearbeiter:in", "Erfasst & verschlagwortet Dokumente")
+    System_Ext(agent, "Agent", "Konsumiert Extraktion/Retrieval via MCP")
 
     Enterprise_Boundary(dv, "d.velop Plattform") {
-        System_Ext(dvfe, "d.velop Frontend + Reverse Proxy", "Bettet DocExtract als iframe ein, routet HTTP")
-        System_Ext(idp, "d.velop Identity Provider", "Cookie-basierte AuthN, Tenant/ACL")
-        System_Ext(dms, "d.velop DMS-API", "Dokumente hochladen / Metadaten lesen / bestätigte Attribute zurückschreiben")
-
-
+        System_Ext(dvfe, "d.velop Frontend + Reverse Proxy", "Bettet DocExtract als iframe ein")
+        System_Ext(idp, "d.velop Identity Provider", "Cookie-AuthN, tenant_id")
+        System_Ext(dms, "d.velop DMS-API", "objdef, Metadaten, Upload, Rückschreiben")
     }
 
-    System_Boundary(tb, "KI-Verarbeitungsgrenze (lokal; Egress-Allowlist)") {
-        System(docx, "DocExtract", "Extraktion, Retrieval, Validierung, Rückschreiben")
-    }
+    System(docx, "DocExtract", "Vorschau, Textextraktion, Retrieval, KI-Vorschläge, Validierung")
 
+    System_Ext(ai, "LLM-/Embedding-Anbieter", "lokal oder extern, austauschbar per Konfiguration")
     System_Ext(tpa, "Third-Party-App (optional)", "Wertelisten per JIT-Webhook")
 
-    UpdateElementStyle(tb, $borderColor="red")
-
-    Rel(sb, dvfe, "bedient (HTTPS)")
-    UpdateRelStyle(sb, dvfe, $offsetY="-40", $offsetX="0")
-    Rel(dvfe, docx, "routet iframe-Requests + Session-Cookie", "HTTP localhost")
-    UpdateRelStyle(dvfe, docx, $offsetY="-60", $offsetX="-230")
-    Rel(agent, docx, "ruft Extraktion/Retrieval", "MCP")
-    UpdateRelStyle(agent, docx, $offsetY="-300", $offsetX="-20")
-
-    Rel(docx, idp, "validiert Session, leitet Tenant/ACL ab")
-    UpdateRelStyle(docx, idp, $offsetY="-100", $offsetX="80")
-
-    Rel(docx, dms, "lädt Dokument als Chunk hoch (write-only → Location) / liest ähnliche Metadaten / schreibt Attribute nach Freigabe an Location")
-    UpdateRelStyle(docx, dms, $offsetY="-30", $offsetX="20")
-
+    Rel(sb, dvfe, "bedient", "HTTPS")
+    Rel(dvfe, docx, "routet Requests + Session-Cookie", "HTTP")
+    Rel(agent, docx, "ruft Tools", "MCP")
+    Rel(docx, idp, "validiert Session")
+    Rel(docx, dms, "liest objdef/Metadaten, schreibt nach Freigabe")
+    Rel(docx, ai, "Embedding / Attributvorschlag", "HTTP(S)")
     Rel(docx, tpa, "holt Wertelisten (JIT)")
-    UpdateRelStyle(docx, tpa, $offsetY="-240", $offsetX="170")
-
 ```
-
-> **KI-Verarbeitungsgrenze (rot):** Parsing, Chunking, Embeddings, LLM-Inferenz und pgvector bleiben lokal. Kontrollierter Ausgang nur zu IdP, DMS-API und Wertelisten-Webhook. Dokument-Bytes dürfen ausschliesslich zur DMS-API übertragen werden; Preview-Bytes verlassen die Grenze gar nicht (ADR-008).
 
 ### 3.1 Externe Schnittstellen
 
-| Nachbarsystem                        | Richtung   | Protokoll                                      | Zweck                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Sicherheitsnote                                                                                                                                     |
-| ------------------------------------ | ---------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| d.velop Frontend/Proxy               | in         | HTTP (iframe)                                  | UI-Auslieferung + REST                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Session-Cookie durchgereicht                                                                                                                        |
-| d.velop Frontend/Proxy (Fortschritt) | out (Push) | HTTP/SSE (`GET /processes/{processId}/events`) | Asynchroner Fortschritts-Push je Prozess: `preview_ready`, `structured`, `retrieved`, `extracted`, `failed`                                                                                                                                                                                                                                                                                                                                                                    | **Nur Metadaten** (`processId`, `step`, `status`) — **keine PII**; cluster-weiter Fan-out via Postgres `LISTEN/NOTIFY`, Catch-up aus `PROCESS_STEP` |
-| d.velop IdP                          | out        | HTTP                                           | Session → Tenant/ACL-Prädikate                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Basis für NfA-4                                                                                                                                     |
-| d.velop DMS-API                      | in/out     | HTTP                                           | Zweiphasig: (1) Dokument-Chunk hochladen → `Location` im Response-Header, (2) nach Freigabe Attribute an diese `Location` schreiben (finalisiert Dokument, DMS-`document_id` wird bekannt). **Lesen:** Objektdefinitionen (`/r/{repositoryId}/objdef`) und Metadaten ähnlicher Dokumente per `document_id` (`/dms/r/{repositoryId}/o2/{document_id}/`). Der Chunk-Upload ist **write-only** — hochgeladene Bytes sind vor der Finalisierung nicht rücklesbar, daher **kein** Einsatz als Zwischenspeicher (ADR-008) | Finaler Write **nur** nach Consent (C-2); `Location` serverseitig vorgehalten; unbestätigte Chunks verfallen DMS-seitig                          |
-| Third-Party-App                      | out        | Webhook (JIT)                                  | Wertelisten                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Client-only, kein Import                                                                                                                            |
-| Agent                                | in         | MCP                                            | Extraktion/Retrieval                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Minimal-Scopes (C-3), Consent (T-6)                                                                                                                 |
+| Nachbarsystem           | Richtung | Protokoll                            | Zweck                                                                                                                                                                                     | Hinweis                                 |
+| ----------------------- | -------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| d.velop Frontend/Proxy  | in       | HTTP (iframe, REST)                  | UI + API                                                                                                                                                                                  | Session-Cookie durchgereicht            |
+| d.velop Frontend/Proxy  | out      | SSE `GET /processes/{id}/events`     | Fortschritt: `preview_ready`, `text_extracted`, `retrieved`, `extracted`, `failed`                                                                                                        | Nur Metadaten, keine PII                |
+| d.velop IdP             | out      | HTTP                                 | Session → `tenant_id`                                                                                                                                                                     | Basis für NfA-4                         |
+| d.velop DMS-API         | in/out   | HTTP                                 | Lesen: `/r/{repositoryId}/objdef`, `/dms/r/{repositoryId}/o2/{document_id}/` (live, kein Cache). Schreiben: Chunk-Upload → `Location`, Finalisierung mit Attributen **nur nach Freigabe** | Chunk-Upload ist write-only (→ ADR-008) |
+| LLM-/Embedding-Anbieter | out      | HTTP(S), z. B. OpenAI-kompatible API | Embedding, Attributvorschlag                                                                                                                                                              | lokal oder extern per Konfiguration     |
+| Third-Party-App         | out      | Webhook (JIT)                        | Wertelisten                                                                                                                                                                               | Client-only, kein Import                |
+| Agent                   | in       | MCP                                  | Extraktion/Retrieval                                                                                                                                                                      | Minimale Scopes, Consent (T-6)          |
 
 ---
 
-## 4. Lösungsstrategie (arc42 §4)
+## 4. Lösungsstrategie
 
-| Qualitätsziel                             | Lösungsansatz                                                                                                                                                                                                                                  | Muster                                   |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| Wartbarkeit, klare Verantwortlichkeiten   | **Modularer Monolith** mit **Hexagonaler Architektur** (Ports & Adapters); Fachmodule mit expliziten Verträgen                                                                                                                                 | Ports & Adapters, DDD-Schnitt            |
-| Datensouveränität (C-1)                   | Alle KI-/Datenpfade in lokalen Containern; Egress-Policy + CI-Test                                                                                                                                                                             | Deployment-Isolation                     |
-| ACL-Isolation (NfA-4)                     | Berechtigungs-**Pre-Filter** als Query-Prädikat, nicht Post-Filter                                                                                                                                                                             | Security-in-depth                        |
-| Skalierung (Cluster)                      | Kein dauerhafter instanzgebundener Fachzustand; laufende Jobs besitzen transienten In-Memory-Zustand und sind instanzgebunden                                                                                                                  | Shared-Data, Stateless-App               |
-| Agent-Konsum ohne UI-Bruch                | Fachlogik hinter Inbound-Ports; **REST-Adapter** und **MCP-Adapter** teilen denselben Application-Service                                                                                                                                      | Adapter-Symmetrie                        |
-| Fortschritts-Feedback (Async, ADR-004)    | Nicht-blockierender Upload (`202 + processId`); **SSE** je `processId`; cluster-weiter Event-Fan-out via Postgres `LISTEN/NOTIFY`; durable `PROCESS_STEP` (PII-frei) für Catch-up (NfA-3)                                                      | Event-Push, kein externer Broker         |
-| Zustandslose Vorschau (ADR-008)           | Roh- und Preview-Bytes als **gechunkte `BYTEA`-Seiten in Postgres** (`DOCUMENT_BLOB` / `DOCUMENT_BLOB_PAGE`, TTL-begrenzt); native PDFs direkt gestreamt, Nicht-PDFs via Gotenberg — DMS-Chunk-Upload ist write-only                            | DB als transienter Blobstore             |
-| **Datenminimierung (ADR-006, NfA-5/C-4)** | Chunks bleiben ausschliesslich in-memory. Bereits erzeugte Dokument-Embeddings werden temporär als nicht retrievalfähige `PENDING`-Einträge mit TTL in pgvector gespeichert; nach Consent ohne Neuberechnung atomar aktiviert, sonst gelöscht. | Privacy-by-Design, Quarantine-by-Default |
-| **Retrieval-Qualität (ADR-007, NfA-6)**   | **docling-natives Chunking** auf dem `DoclingDocument` (struktur- + token-basiert, kontextualisiert) statt Post-Export-Splitting von Markdown                                                                                                  | Struktur-treue Chunks                    |
+| Qualitätsziel                 | Lösungsansatz                                                                                                                               | Muster                     |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| Wartbarkeit, Austauschbarkeit | **Modularer Monolith** mit **Hexagonaler Architektur**; jeder externe Baustein hinter einem Port                                            | Ports & Adapters           |
+| Offenheit für beliebige LLMs  | LLM-/Embedding-Port mit **Capability-Modell** (Structured Output, Eingabeform); Referenzprotokoll OpenAI-kompatibel, weitere über Spring AI | Adapter + Capabilities     |
+| Mandanten-Isolation           | `tenant_id` als **Pre-Filter** in der Vektor-Query                                                                                          | Security-in-depth          |
+| Effizienz, Einfachheit        | **Ein Embedding je Dokument** aus den ersten _N_ Wörtern, kein Chunking                                                                     | Minimal Pipeline           |
+| Cluster-Betrieb               | Gemeinsame Datenhaltung in PostgreSQL; laufende Jobs transient instanzgebunden                                                              | Shared-Data, Stateless-App |
+| Agent-Konsum                  | REST- und MCP-Adapter teilen dieselben Application-Services                                                                                 | Adapter-Symmetrie          |
+| Fortschritts-Feedback         | 202 + `processId`, SSE, Fan-out über Postgres LISTEN/NOTIFY                                                                                 | Event-Push ohne Broker     |
+| Korpus-Integrität             | Embeddings als `PENDING` mit TTL, Aktivierung erst nach Freigabe                                                                            | Quarantine-by-Default      |
 
-**Grundentscheid (siehe ADR-001):** kein Microservice-Split — keine nichtfunktionale Anforderung (Last, unabhängige Deploybarkeit, Team-Topologie) rechtfertigt die Verteilungskosten. Cluster-Betrieb wird durch gemeinsame dauerhafte Datenhaltung und instanzgebundene transiente Jobs erreicht, nicht durch Service-Zerlegung.
-
-**Skalierungsmodell & Job-Affinität:** Modultrennung ist **logisch** (eigene Ports/Verträge, per ArchUnit erzwungen), **nicht distributiv**. Alle Fachmodule laufen im selben JVM-Prozess; der Handoff `structuring → retrieval → extraction` ist ein **In-Process-Aufruf** (kein Netz-Hop, NfA-2). Die Skalierungseinheit ist das **Dokument (Request-Level)**: verschiedene Dokumente laufen parallel auf verschiedenen Instanzen (Ende-zu-Ende je Instanz). Cluster-weit geteilt wird nur, was mehrere Instanzen brauchen — Fortschritt (`PROCESS_STEP`), Korpus (Embeddings), Roh-/Preview-Bytes (Postgres-Blobstore, ADR-008) — **nicht** die transienten Chunks eines Jobs.
+**Skalierungsmodell:** Die Modultrennung ist **logisch** (Ports, ArchUnit), nicht verteilt. Ein Dokument-Job läuft Ende-zu-Ende auf einer Instanz (In-Process-Aufrufe); verschiedene Dokumente laufen parallel auf verschiedenen Instanzen. Geteilt werden nur Fortschritt, Korpus und transiente Bytes.
 
 ---
 
-## 5. Bausteinsicht — C4 Level 2 (arc42 §5 / Perspektive: Struktur)
+## 5. Bausteinsicht — C4 Level 2 (Struktur)
 
-### 5.1 Container-Diagramm (L2)
+### 5.1 Container-Diagramm
 
 ```mermaid
 C4Container
-    title C4 L2 — Container DocExtract (modularer Monolith)
+    title C4 L2 — Container DocExtract
+    UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
+
     Person(sb, "Sachbearbeiter:in")
-    System_Ext(agent, "Agent", "via MCP")
+    System_Ext(agent, "Agent", "MCP")
     System_Ext(dms, "d.velop DMS-API")
     System_Ext(idp, "d.velop IdP")
     System_Ext(tpa, "Wertelisten-Webhook")
-       UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
+    System_Ext(extai, "Externer LLM-/Embedding-Anbieter", "optional")
 
-    System_Boundary(tb, "KI-Verarbeitungsgrenze — lokal, Egress-Allowlist") {
-        Container(ng, "Angular Frontend", "Angular/SSR-CSR", "Upload, PDF-Vorschau, Validierungs-UI (iframe)")
-        Container(app, "DocExtract Backend", "Java 21 / Spring Boot 4", "Hexagonaler Kern: Ingest, Structuring, Retrieval, Extraction, Validation, Process, Audit; REST- + MCP- + SSE-Inbound; kein dauerhafter instanzgebundener Zustand; Jobs transient instanzgebunden")
-        Container(prev, "Preview-Service", "Gotenberg/LibreOffice", "Nur Nicht-PDF → PDF für visuelle Kontrolle; Quelle und Ziel sind Postgres-Blob-Seiten")
-        Container(doc, "docling", "Container", "Dokument → strukturierte, kontextualisierte Chunks (transient, in-memory)")
-        Container(llm, "Ollama", "Qwen 3, lokal", "Embeddings (Query + Korpus) + schema-constrained Extraktion")
-        ContainerDb(pg, "PostgreSQL + pgvector", "RDBMS", "Metadaten, Vektoren (Korpus), Audit-Log, Process-State (LISTEN/NOTIFY), transienter Blobstore (Roh-/Preview-Bytes, gechunkt, TTL, max. 50 MB) — KEIN Roh-Text")
+    System_Boundary(sys, "DocExtract (docker compose)") {
+        Container(ng, "Angular Frontend", "Angular", "Upload, PDF-Vorschau, Validierungs-UI")
+        Container(app, "DocExtract Backend", "Java 21 / Spring Boot 4", "Hexagonaler Kern + Adapter (REST, MCP, SSE); Textextraktion in-process (z. B. PDFBox)")
+        Container(prev, "Vorschau-Service", "z. B. Gotenberg", "Nicht-PDF → PDF")
+        Container(rt, "Lokale KI-Runtime", "optional, z. B. vLLM / llama.cpp / Ollama", "LLM + Embedding über offene API")
+        ContainerDb(pg, "PostgreSQL + pgvector", "RDBMS", "Metadaten, Embeddings, Audit, Prozess-State, transiente Blobs")
     }
 
     Rel(sb, ng, "bedient")
-    UpdateRelStyle(sb, ng, $offsetY="-140", $offsetX="0")
-
-    Rel(ng, app, "REST (Session-Cookie)")
-    UpdateRelStyle(ng, app, $offsetY="-80", $offsetX="-80")
-
-    Rel(app, ng, "SSE-Fortschritts-Events (processId, PII-frei)")
-    UpdateRelStyle(app, ng, $offsetY="40", $offsetX="-190")
-
+    Rel(ng, app, "REST / SSE")
     Rel(agent, app, "MCP")
-        UpdateRelStyle(agent, app, $offsetY="-180", $offsetX="-10")
-
-    Rel(app, prev, "Konvertierung (nur Nicht-PDF)")
-        UpdateRelStyle(app, prev, $offsetY="-90", $offsetX="0")
-
-    Rel(app, doc, "Strukturierung + Chunking (Chunks nur in-memory)")
-        UpdateRelStyle(app, doc, $offsetY="0", $offsetX="-270")
-
-    Rel(app, llm, "Embeddings / Extraktion; kein direkter DB-/DMS-Zugriff")
-        UpdateRelStyle(app, llm, $offsetY="170", $offsetX="-140")
-
-    Rel(app, pg, "R/W (JPA/pgvector) + Blob-Seiten (Roh-/Preview-Bytes, TTL)")
-        UpdateRelStyle(app, pg, $offsetY="0", $offsetX="0")
-
-    Rel(app, idp, "Session-Validierung → Tenant/ACL")
-        UpdateRelStyle(app, idp, $offsetY="-60", $offsetX="-40")
-
-    Rel(app, dms, "Metadaten / Doc-Chunk (write-only) / Rückschreiben nach Consent")
-        UpdateRelStyle(app, dms, $offsetY="0", $offsetX="0")
-
-    Rel(app, tpa, "Wertelisten (JIT)")
-        UpdateRelStyle(app, tpa, $offsetY="-190", $offsetX="-120")
-
-
-
-    UpdateElementStyle(tb, $borderColor="red")
+    Rel(app, prev, "Konvertierung")
+    Rel(app, rt, "Embedding / LLM (lokaler Adapter)")
+    Rel(app, extai, "Embedding / LLM (externer Adapter)")
+    Rel(app, pg, "JDBC / pgvector")
+    Rel(app, idp, "Session → tenant_id")
+    Rel(app, dms, "objdef, Metadaten, Upload, Rückschreiben")
+    Rel(app, tpa, "Wertelisten")
 ```
 
-### 5.2 Fachmodule (Bausteine der Ebene 3)
+### 5.2 Ports & Adapter
 
-| Modul                      | Verantwortung                                                                                                                                                                                                                                                                                                             | Inbound-Port                                              | Wichtigste Outbound-Ports                                                           |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| **ingest**                 | Upload (max. 50 MB), Limits, synchrone Ablage der Roh-Bytes im Postgres-Blobstore **und** Original-Chunk-Upload ins DMS vor `202 Accepted`; Bereitstellung der Vorschau per Range-fähigem Streaming — Preview nur bei Nicht-PDF, native PDFs ohne Render (FR-1, ADR-008)                                                  | `IngestDocument`, `StreamPreview`                         | `DocumentBlobPort`, `PreviewPort`, `DmsChunkUploadPort`                             |
-| **structuring**            | docling-Aufbereitung → **kontextualisierte Chunks** (`HybridChunker` auf dem `DoclingDocument`, struktur- + token-basiert, mit Überschriften-Kontext); Chunks bleiben **transient (in-memory)** — **nicht persistiert** (FR-2, ADR-006/-007). Chunking-Parameter (Tokenizer, `max_tokens`) werden von `retrieval` bezogen | `StructureDocument`                                       | `StructuringPort`, `ChunkingConfigPort` (holt Tokenizer/`max_tokens` aus retrieval) |
-| **retrieval**              | Embedding der Chunks via Ollama; temporäres Staging als `PENDING` mit TTL; Ähnlichkeitssuche ausschliesslich über `APPROVED`-Vektoren mit Tenant-/ACL-Pre-Filter; stellt die Chunking-Config bereit (FR-3, NfA-4/-6, C-7)                                                                                                 | `FindSimilar`, `ProvideChunkingConfig`, `StageEmbeddings` | `EmbeddingPort`, `VectorSearchPort`, `PendingEmbeddingPort`, `AuthContextPort`      |
-| **extraction**             | Schema-constrained LLM-Attributvorschläge inkl. knapper Quell-Exzerpte; stützt sich auf Objektdefinitionen (Kategorien/Eigenschaften), Metadaten der 5 ähnlichsten Dokumente (per `document_id`) und Wertelisten (FR-4, T-1)                                                                                              | `ExtractAttributes`                                       | `LlmPort`, `ValueListPort`, `ObjDefPort`, `DmsMetadataPort`                         |
-| **validation**             | Human-in-the-Loop und finales DMS-Rückschreiben; aktiviert vorhandene `PENDING`-Embeddings nach Consent atomar als `APPROVED`; löscht sie bei Ablehnung (FR-5, C-2, C-7)                                                                                                                                                  | `ConfirmAndWriteBack`, `RejectSuggestion`                 | `DmsWritePort`, `CorpusPromotionPort`, `PendingEmbeddingDeletePort`                 |
-| **agentgateway**           | MCP-Tool, teilt Application-Services (FR-6, T-6)                                                                                                                                                                                                                                                                          | `McpTool`                                                 | dieselben wie UI-Pfad                                                               |
-| **process** (Querschnitt)  | Async-Orchestrierung; SSE; PII-freier Prozess-/Schritt-State mit Lease und Heartbeat; Recovery verwaister Jobs                                                                                                                                                                                                            | `SubscribeProgress (SSE)`                                 | `ProcessStatePort`, `JobLeasePort`, `EventPublishPort`, `EventListenPort`           |
-| **audit** (Querschnitt)    | Append-only Protokoll, Token-/Kosten-Erfassung (C-4, NfA-7)                                                                                                                                                                                                                                                               | —                                                         | `AuditLogPort`                                                                      |
-| **security** (Querschnitt) | Session→Tenant/ACL-Auflösung, Consent-Gate                                                                                                                                                                                                                                                                                | `AuthContextPort`                                         | —                                                                                   |
-|                            |
+Der Kern hängt ausschliesslich von diesen Ports ab. Jeder Adapter muss die **Contract-Test-Suite** seines Ports bestehen (NfA-8, C-8).
 
-### 5.3 Paketstruktur (Perspektive: Struktur, textuell)
+| Port                              | Vertrag (Mindestanforderung)                                                                                                 | Referenzadapter                             | Mögliche Alternativen                                                         |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ----------------------------------------------------------------------------- |
+| **PreviewPort**                   | Dokument → PDF-Vorschau; Limits & Timeout einhaltbar                                                                         | Gotenberg                                   | JODConverter/LibreOffice headless, Aspose, …                                  |
+| **TextExtractionPort** (nur FR-3) | Dokument → Klartext der ersten _N_ Wörter; leerer/zu kurzer Text wird gemeldet                                               | Apache PDFBox (in-process)                  | Apache Tika (Library/Server), Docling                                         |
+| **DocumentContentPort** (FR-4)    | Dokument → konfigurierte Repräsentation (`FULLTEXT`, `MARKDOWN`, `PAGE_IMAGES`) passend zu den Capabilities des LLM-Adapters | Volltext via PDFBox                         | Markdown via Docling, Seitenbilder via PDFBox-Rendering                       |
+| **LlmPort**                       | Prompt + JSON-Schema (+ Repräsentation) → Antwort; liefert Anbieter, Modell-ID, Token-Verbrauch; deklariert Capabilities     | OpenAI-kompatibler Adapter (lokale Runtime) | beliebige OpenAI-kompatible Runtime oder Anbieter, weitere Spring-AI-Provider |
+| **EmbeddingPort**                 | Text → Vektor + Embedding-Modell-ID + Dimension                                                                              | OpenAI-kompatibler Adapter (lokale Runtime) | wie LlmPort                                                                   |
+| **VectorSearchPort**              | Nur lesend: Ähnlichkeitssuche mit **Pre-Filter** (`tenant_id`, `status`, `embedding_model`, `extraction_source`)             | pgvector                                    | Qdrant, OpenSearch (sofern Pre-Filter garantiert)                             |
 
+**Weitere, interne Outbound-Ports** (nicht produktgebunden), bewusst schmal statt eines einzelnen breiten Ports (C-3 Least Privilege): `PendingEmbeddingPort` (retrieval: `PENDING` stagen), `CorpusPromotionPort` (validation: `PENDING → APPROVED` promoten — einzige Schreibberechtigung auf `status`), `PendingEmbeddingDeletePort` (validation/Cleanup: Ablehnung/TTL löschen), `DmsObjectDefinitionPort` (`GET .../objdef`), `DmsObjectMetadataPort` (`GET .../o2/{document_id}/`), `DmsWritePort`, `DmsChunkUploadPort`, `ValueListPort`, `DocumentBlobPort`, `ProcessStatePort`, `AuditLogPort`, `AuthContextPort`.
+
+**Neutrales Datenformat im Kern (Auszug):** `DocumentRef`, `ExtractedText`, `DocumentContent`, `EmbeddingVector(modelId, dim, values)`, `ExtractionRequest`, `ExtractionResponse`, `ExtractedAttribute(propertyId, value, values, confidence, sourceExcerpt)`, `ModelInfo(provider, modelId)`, `LlmCapabilities(structuredOutput: NATIVE|NONE, inputs: TEXT|IMAGES)`.
+
+### 5.3 Adapterwahl per Konfiguration
+
+Adapter werden über `@ConditionalOnProperty` aktiviert; es ist immer genau ein Adapter je Port geladen. Ein Wechsel erfordert keinen Code im Kern.
+
+```yaml
+docextract:
+  adapters:
+    preview: gotenberg # gotenberg | jodconverter | …
+    text-extraction: pdfbox # pdfbox | tika | docling
+    document-content: fulltext # fulltext | markdown | page-images
+    vector-store: pgvector # wählt den Adapter für VectorSearchPort/PendingEmbeddingPort/CorpusPromotionPort/PendingEmbeddingDeletePort
+    llm:
+      type: openai-compatible # openai-compatible | <spring-ai-provider>
+      base-url: ${LLM_BASE_URL} # lokale Runtime oder externer Endpunkt
+      model-id: ${LLM_MODEL_ID} # explizit versioniert, kein "latest" (C-5)
+      api-key: ${LLM_API_KEY:}
+      api-version: # optional, Microsoft-Foundry/Azure-OpenAI api-version
+      timeout: 60s
+      max-retries: 1
+    embedding:
+      type: openai-compatible
+      base-url: ${EMBEDDING_BASE_URL}
+      model-id: ${EMBEDDING_MODEL_ID}
+  text-extraction:
+    max-words: 5000 # ≤ Kontextfenster des Embedding-Modells
+  limits:
+    max-file-size: 50MB
+    max-pages: 200
+    stage-timeout: 30s
 ```
 
+**Regeln:** Secrets nur über Umgebungsvariablen. Beim Start wird geprüft, ob `max-words` in das Kontextfenster des Embedding-Modells passt und ob die gewählte `document-content`-Repräsentation zu den Capabilities des LLM-Adapters passt. Ein Wechsel des Embedding-Modells löst eine Re-Indexierung aus (§ 8.5).
+
+### 5.4 Fachmodule
+
+| Modul            | Verantwortung                                                                                            | Inbound-Port                      | Wichtigste Outbound-Ports                               |
+| ---------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------- | ------------------------------------------------------- |
+| **ingest**       | Upload, Limits, Ablage der Roh-Bytes, DMS-Chunk-Upload, Vorschau-Streaming (FR-1)                        | `IngestDocument`, `StreamPreview` | `DocumentBlobPort`, `PreviewPort`, `DmsChunkUploadPort` |
+| **content**      | Textextraktion der ersten _N_ Wörter (FR-2) und Dokumentrepräsentation für FR-4; nichts wird persistiert | `ExtractText`, `ProvideContent`   | `TextExtractionPort`, `DocumentContentPort`             |
+| **retrieval**    | Ein Embedding je Dokument, Staging als `PENDING`, Top-5-Suche mit Pre-Filter (FR-3)                      | `FindSimilar`                     | `EmbeddingPort`, `VectorStorePort`, `AuthContextPort`   |
+| **extraction**   | KI-Attributvorschläge mit objdef, Top-5-Metadaten, Wertelisten; Schema-Validierung, Retry (FR-4)         | `ExtractAttributes`               | `LlmPort`, `DmsReadPort`, `ValueListPort`               |
+| **validation**   | Freigabe, DMS-Rückschreiben, Promotion `PENDING → APPROVED`, separater Vorlagen-Consent (FR-5)           | `Confirm`, `Reject`               | `DmsWritePort`, `VectorStorePort`                       |
+| **agentgateway** | MCP-Tool, nutzt dieselben Application-Services (FR-6)                                                    | `McpTool`                         | wie UI-Pfad                                             |
+| **process**      | Async-Orchestrierung, SSE, Lease/Heartbeat, Recovery                                                     | `SubscribeProgress`               | `ProcessStatePort`                                      |
+| **audit**        | Append-only Protokoll, Token/Kosten (C-4, NfA-7)                                                         | —                                 | `AuditLogPort`                                          |
+| **security**     | Session → `tenant_id`, Consent-Gate                                                                      | `AuthContextPort`                 | —                                                       |
+
+### 5.5 Paketstruktur
+
+```
 ch.adeon.apps.docextract
 ├─ ingest
-│ ├─ domain # DocumentUpload, SizeLimit (50 MB), ValidationResult, DmsLocation, MediaType, BlobRef, PageRange
-│ ├─ application # IngestDocumentService (Blob-Ablage → DMS-Chunk → 202), PreviewStreamService (Branch: PDF→direkt / Nicht-PDF→Gotenberg→PREVIEW-Blob)
-│ └─ adapter
-│ ├─ in.rest # UploadController (POST /documents → 202 + processId), PreviewController (GET .../preview → Range-Stream aus Blob-Seiten)
-│ ├─ out.preview # GotenbergPreviewAdapter (nur Nicht-PDF; liest/schreibt Blob-Seiten)
-│ ├─ out.blob # PgDocumentBlobAdapter (DOCUMENT_BLOB + DOCUMENT_BLOB_PAGE, 1-MiB-Seiten, Range-Read über segment_no)
-│ └─ out.dms # DmsChunkUploadAdapter (POST Doc-Chunk → liest Location-Header; write-only)
-├─ structuring
-│ ├─ domain # DocChunk (Text + Kontext-Metadaten), ChunkingConfig (Tokenizer, max_tokens)
-│ ├─ application # StructureDocumentService (Chunks nur in-memory, KEIN Persist — ADR-006)
-│ └─ adapter.out.docling # DoclingHybridChunkerAdapter (chunk() auf DoclingDocument, contextualize())
+│  ├─ domain        # DocumentUpload, Limits, BlobRef, DmsLocation
+│  ├─ application   # IngestDocumentService, PreviewStreamService
+│  ├─ port          # PreviewPort, DocumentBlobPort, DmsChunkUploadPort
+│  └─ adapter
+│     ├─ in.rest    # UploadController (202 + processId), PreviewController (Range)
+│     ├─ out.preview # GotenbergPreviewAdapter (Paketname folgt dem Port, nicht dem Produkt)
+│     ├─ out.blob   # PgDocumentBlobAdapter
+│     └─ out.dms
+├─ content
+│  ├─ domain        # ExtractedText, DocumentContent, Representation
+│  ├─ application   # ExtractTextService (erste N Wörter), ContentService
+│  ├─ port          # TextExtractionPort, DocumentContentPort
+│  └─ adapter.out   # pdfbox | tika | docling
 ├─ retrieval
-│ ├─ domain # SimilarityQuery, AclPredicate, RetrievalResult, EmbeddingModelSpec (Tokenizer)
-│ ├─ application # FindSimilarService, StagePendingEmbeddingsService, ChunkingConfigProvider
-│ └─ adapter.out # OllamaEmbeddingAdapter, PgVectorSearchAdapter, PgPendingEmbeddingAdapter
+│  ├─ domain        # SimilarityQuery, TenantFilter, EmbeddingSpec, DmsDocumentMetadata
+│  ├─ application   # FindSimilarService, StagePendingService, ReindexService
+│  ├─ port          # EmbeddingPort, VectorSearchPort, PendingEmbeddingPort, DmsObjectDefinitionPort, DmsObjectMetadataPort, ValueListPort
+│  └─ adapter.out   # openai-compatible | springai.* | pgvector | dms (DmsObjectDefinitionAdapter, DmsObjectMetadataAdapter)
 ├─ extraction
-│ ├─ domain # AttributeSchema, ExtractionResult, Confidence, SourceExcerpt
-│ ├─ application # ExtractAttributesService (schema-constrained)
-│ └─ adapter.out # OllamaLlmAdapter, ValueListWebhookAdapter, DmsObjDefAdapter (/r/{repositoryId}/objdef), DmsObjectMetadataAdapter (/dms/r/{repositoryId}/o2/{document_id}/)
+│  ├─ domain        # AttributeSchema, ExtractionResult, Confidence, ModelInfo, ExtractedAttribute(sourceExcerpt)
+│  ├─ application   # ExtractAttributesService (Schema-Validierung, Retry)
+│  ├─ port          # LlmPort
+│  └─ adapter.out   # openai-compatible | springai.*
 ├─ validation
-│ ├─ domain # ConfirmedAttributes, Provenance
-│ ├─ application # ConfirmAndWriteBackService (Consent-Gate; PENDING → APPROVED), RejectSuggestionService
-│ └─ adapter.out # DmsWriteAdapter, CorpusPromotionAdapter, PendingEmbeddingDeleteAdapter
-├─ agentgateway
-│ └─ adapter.in.mcp # McpToolServer (teilt application-Services)
-├─ process # Async-Orchestrierung + Fortschritts-Push (ADR-004)
-│ ├─ domain # ProcessId, ProcessStatus, ProcessStep, StepStatus, JobLease
-│ ├─ application # ProcessOrchestrator, ProgressPublisher, StaleJobRecovery
-│ └─ adapter
-│ ├─ in.sse # SseController (GET /processes/{processId}/events)
-│ └─ out.pg # PgProcessStateAdapter (PROCESS_STEP), PgNotifyAdapter (LISTEN/NOTIFY)
-├─ audit # append-only, ohne roh-PII (C-4)
-├─ security # AuthContext, TenantAclResolver, ConsentGuard
-└─ shared # Fehlerbehandlung, Config, Observability, In-Memory-Job-Context (transiente Chunks), BlobTtlCleanupJob (gemeinsam mit ADR-006)
+│  ├─ domain        # ConfirmationCommand, ConfirmationResult
+│  ├─ application   # ConfirmAndWriteBackService (Consent-Gate, Saga), RejectService
+│  ├─ port          # DmsWritePort, CorpusPromotionPort, PendingEmbeddingDeletePort
+│  └─ adapter.out   # dms | postgres
+├─ agentgateway     # adapter.in.mcp
+├─ process          # Orchestrator, SSE, PgNotify, StaleJobRecovery
+├─ audit            # append-only, ohne Roh-PII
+├─ security         # AuthContext, TenantResolver, ConsentGuard
+└─ shared           # Fehler, Config, Observability, TtlCleanupJob
 ```
 
-**Verantwortlichkeitsprinzip:** Domäne kennt keine Frameworks; Adapter kennen keine Fachregeln; die `security`- und `audit`-Querschnitte werden über Spring-DI und Aspekte eingezogen, sodass jeder Inbound-Pfad (REST **und** MCP) dieselben Guardrails durchläuft.
+**Verantwortlichkeitsprinzip:** `domain`, `application` und `port` enthalten **keine Produkt- oder Framework-Typen**. Produktspezifischer Code liegt ausschliesslich in `adapter.*`. Security und Audit werden per DI/Aspekten eingezogen, damit REST und MCP dieselben Guardrails durchlaufen. Erzwungen per ArchUnit (§ 10.1).
 
 ---
 
-## 6. Laufzeitsicht (arc42 §6 / Perspektive: Verhalten & Interaktion)
+## 6. Laufzeitsicht (Verhalten & Interaktion)
 
-### 6.1 Happy-Path — synchroner Übergabepunkt, danach asynchrone Verarbeitung (UI)
+### 6.1 Happy Path: Upload bis Vorschläge
 
-Der HTTP-Request wird erst mit `202 Accepted + processId` beantwortet, nachdem die Roh-Bytes synchron in den **Postgres-Blobstore** geschrieben und das Original als Chunk ins DMS hochgeladen wurde. Der **Blobstore ist der cluster-sichtbare Übergabepunkt** für den Async-Job (der DMS-Chunk ist write-only und nicht rücklesbar); die DMS-`Location` ist das spätere Finalisierungsziel. Der Async-Job läuft auf einer Instanz und hält das `DoclingDocument` und die Chunks nur transient; die daraus erzeugten Dokument-Embeddings werden als `PENDING` mit TTL gespeichert. Eine Lease mit Heartbeat ermöglicht die Erkennung verwaister Jobs.
+Der Request wird mit `202 + processId` beantwortet, sobald die Roh-Bytes im Blobstore liegen und das Original als Chunk ins DMS geladen ist. Danach läuft die Pipeline asynchron auf einer Instanz.
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor SB as Sachbearbeiter:in
     participant FE as Angular
-    participant API as Backend
-    participant SEC as security
+    participant API as Backend (ingest/process)
+    participant BLB as Blobstore (Postgres, TTL)
     participant DMS as d.velop DMS-API
-    participant PRC as process
-    participant ING as ingest
-    participant BLB as Postgres-Blobstore (DOCUMENT_BLOB, TTL)
-    participant JOB as In-Memory-Job-Context (Chunks transient)
-    participant STR as structuring (docling + HybridChunker)
-    participant RET as retrieval
-    participant OLL as Ollama (Embedding + LLM)
-    participant VDB as pgvector (Korpus)
-    participant EXT as extraction
-    participant DMS as d.velop DMS-API
+    participant CNT as content (TextExtractionPort / DocumentContentPort)
+    participant RET as retrieval (EmbeddingPort / VectorStorePort)
+    participant EXT as extraction (LlmPort)
     participant AUD as audit
 
     SB->>FE: Dokument hochladen
     FE->>API: POST /documents
-    API->>SEC: Session validieren, Tenant + Berechtigungen ableiten
-    API->>ING: Limits prüfen (max. 50 MB, Medientyp)
-    ING->>BLB: Roh-Bytes als ORIGINAL-Blob in 1-MiB-Seiten schreiben (expires_at)
-    BLB-->>ING: blob_id
-    ING->>DMS: Original als Chunk streamen (write-only)
-    DMS-->>ING: dms_location
-    API->>PRC: PROCESS + Lease anlegen, Job nach Commit planen
+    API->>API: Session → tenant_id, Limits prüfen
+    API->>BLB: ORIGINAL-Blob schreiben
+    API->>DMS: Original als Chunk (write-only)
+    DMS-->>API: Location
     API-->>FE: 202 + processId
     FE->>API: SSE abonnieren
     alt PDF
-        PRC-->>FE: preview_ready (Stream aus ORIGINAL-Blob, Range-fähig)
+        API-->>FE: preview_ready (Stream aus ORIGINAL)
     else Nicht-PDF
-        PRC->>BLB: Original-Seiten lesen
-        PRC->>ING: mit Gotenberg rendern
-        ING->>BLB: PREVIEW-Blob schreiben (expires_at)
-        PRC-->>FE: preview_ready (Stream aus PREVIEW-Blob)
+        API->>API: PreviewPort → PREVIEW-Blob
+        API-->>FE: preview_ready
     end
-
-    Note over STR,RET: Chunking bei docling (ADR-007), Tokenizer-Config kommt aus retrieval
-    RET-->>STR: ChunkingConfig (Tokenizer, max_tokens des Embedding-Modells)
-    API->>BLB: ORIGINAL-Blob lesen (Seiten streamen)
-    API->>STR: Dokument → DoclingDocument → HybridChunker.chunk() + contextualize()
-    STR->>JOB: kontextualisierte Chunks im Job-Context halten (transient, KEIN Persist)
-    STR-->>PRC: structured
-
-    Note over RET,VDB: Vektorisierung + Ähnlichkeitssuche (hier entstehen die Embeddings!)
-    API->>RET: FindSimilar(Chunks aus Job-Context, AuthContext)
-    RET->>OLL: Embed(Chunks) [Embedding-Modell]
-    OLL-->>RET: Dokument-Embeddings
-    RET->>VDB: als PENDING mit process_id + expires_at speichern
-    RET->>VDB: ANN-Suche nur in APPROVED mit Tenant-/ACL-Pre-Filter [NfA-4/C-7]
-    VDB-->>RET: Top-5 ähnlichste (document_id, repository_id)
-    RET-->>PRC: retrieved (Precision@3)
-
-    API->>EXT: ExtractAttributes(Chunks, Top-5)
-    EXT->>DMS: objdef (Kategorien/Eigenschaften) + o2-Metadaten je document_id
-    DMS-->>EXT: Kategorie + Eigenschaftswerte (Position/Format)
-    EXT->>EXT: Wertelisten je Eigenschaft (JIT-Webhook)
-    EXT->>OLL: LLM-Call (Extraktion) [schema-constrained, T-1]
-    OLL-->>EXT: JSON-Vorschlag + Konfidenz (+ knappe Quell-Exzerpte)
-    API->>AUD: LLM-Call protokollieren (Token, Hash, ohne PII) [C-4/NfA-7]
-    EXT-->>PRC: extracted
-    API->>JOB: Job-Context verwerfen → `DoclingDocument` + Chunks weg
-    Note over BLB: Blobs bleiben bis Consent/Ablehnung/TTL — Preview wird in der Validierungs-UI benötigt
-    PRC-->>FE: SSE: extracted → Validierungs-UI
-    FE-->>SB: Vorschläge anzeigen (Quellprüfung am PDF-Preview)
+    API->>CNT: ExtractText(erste N Wörter)
+    CNT-->>API: Text (transient) oder "leer/zu kurz"
+    API-->>FE: text_extracted
+    API->>RET: FindSimilar(Text, tenant_id)
+    RET->>RET: EmbeddingPort → 1 Vektor
+    RET->>RET: als PENDING speichern (TTL)
+    RET->>RET: Suche: tenant_id ∧ APPROVED ∧ gleiches Modell/Quelle
+    RET-->>API: Top-5 (document_id, repository_id)
+    API-->>FE: retrieved
+    API->>EXT: ExtractAttributes(Content, Top-5)
+    EXT->>DMS: objdef + Metadaten Top-5 (live)
+    EXT->>EXT: Wertelisten (JIT)
+    EXT->>EXT: LlmPort (Schema-constrained, falls unterstützt)
+    EXT->>EXT: Server-seitige Schema-Validierung (+ Retry)
+    EXT->>AUD: Anbieter, Modell-ID, local/external, HMAC, Token, Status
+    API-->>FE: extracted → Validierungs-UI
+    FE-->>SB: Vorschläge mit Konfidenz, Quellen, Modellinfo
 ```
 
-> **Wo entstehen die Vektoren?** docling liefert Struktur und kontextualisierte Chunks; die Vektorisierung passiert im `retrieval`-Modul via Ollama. Die erzeugten Dokument-Embeddings werden sofort als `PENDING` mit TTL in pgvector gespeichert. Sie sind nicht retrievalfähig. Nach Consent werden dieselben Vektoren ohne Neuberechnung zu `APPROVED` hochgestuft (§ 6.2, T-2/C-7). Rohtext wird nicht persistiert (ADR-006).
-
-### 6.2 Freigabe, Rückschreiben und atomare Korpus-Aktivierung (C-2/C-7)
+### 6.2 Freigabe und Korpus-Promotion (C-2, C-7)
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor SB as Sachbearbeiter:in
     participant FE as Angular
-    participant API as Backend
     participant VAL as validation
     participant DMS as d.velop DMS-API
-    participant VDB as pgvector
-    participant BLB as Postgres-Blobstore
+    participant VDB as VectorStore
+    participant BLB as Blobstore
     participant AUD as audit
 
-    SB->>FE: korrigiert / bestätigt Attribute
-    FE->>API: POST /documents/{id}/confirm
-    API->>VAL: ConfirmAndWriteBack(bestätigte Attribute)
-    VAL->>VDB: PENDING-Embeddings sperren und Gültigkeit prüfen
-    VDB-->>VAL: vorhanden, nicht abgelaufen, gleicher Tenant/Prozess
-    VAL->>DMS: Attribute an Location schreiben und Dokument finalisieren
-    DMS-->>VAL: ok (document_id)
-    VAL->>VDB: atomar PENDING → APPROVED
-    VAL->>VDB: dms_document_id + Provenance setzen, expires_at entfernen
-    VAL->>BLB: ORIGINAL- + PREVIEW-Blob löschen (Bytes liegen nun final im DMS)
-    VAL->>AUD: Consent-, DMS-Write- und Promotion-Ereignis
-    API-->>FE: bestätigt
+    SB->>FE: bestätigt / korrigiert (+ optional Vorlagen-Consent)
+    FE->>VAL: POST /documents/{id}/confirm
+    VAL->>VDB: PENDING prüfen (vorhanden, gültig, gleicher Tenant)
+    VAL->>DMS: Attribute an Location schreiben (Finalisierung)
+    DMS-->>VAL: document_id
+    VAL->>VDB: PENDING → APPROVED + document_id, repository_id
+    VAL->>BLB: Blobs löschen
+    VAL->>AUD: Consent-, Write- und Promotion-Ereignis
 ```
 
-**Keine erneute Vektorisierung:** Die beim ursprünglichen Extraktionslauf erzeugten Embeddings werden in pgvector als `PENDING` zwischengespeichert. Bis zur Freigabe sind sie durch das zwingende Retrieval-Prädikat `status = APPROVED` unsichtbar. Nach erfolgreichem DMS-Write werden dieselben Vektoren atomar auf `APPROVED` gesetzt und die dabei bekannt gewordene DMS-`document_id` (samt `repository_id`) am Embedding hinterlegt. Bei Ablehnung, endgültigem Prozessfehler oder Ablauf von `expires_at` werden die `PENDING`-Einträge gelöscht.
+**Konsistenz (Saga):** Zuerst DMS-Finalisierung, dann Promotion. Schlägt die Promotion fehl, bleibt der Prozess in `FINALIZED_INDEX_PENDING`; ein idempotenter Retry promotet erneut. Der TTL-Cleanup überspringt diesen Zustand.
+**Ablehnung/Abbruch/TTL-Ablauf:** `PENDING`-Embedding und Blobs werden gelöscht.
+**Vorlage:** Nur mit separatem, explizitem Consent (FR-5), herkunftsmarkiert.
 
-**Blob-Lebensende:** Die Roh- und Preview-Blobs werden im selben Schritt gelöscht — nach erfolgreicher Finalisierung liegt das Original im DMS, die Vorschau wird nicht mehr gebraucht. Ablehnung, endgültiger Abbruch und TTL-Ablauf löschen sie ebenfalls; der Cleanup ist derselbe Mechanismus wie für `PENDING`-Embeddings (ADR-006/-008) und respektiert `FINALIZED_INDEX_PENDING`.
+### 6.3 Agent-Pfad (MCP)
 
-**Konsistenzregel:** DMS-Write und PostgreSQL-Promotion können keine gemeinsame ACID-Transaktion bilden. Der Validierungsvorgang wird deshalb idempotent als kleine Saga ausgeführt: Zuerst wird das DMS-Dokument finalisiert, danach werden die Embeddings promotet. Schlägt die Promotion fehl, bleibt der Prozess in `FINALIZED_INDEX_PENDING`. Ein Retry führt ausschliesslich die idempotente Promotion erneut aus. Der TTL-Cleanup überspringt Einträge dieses Recovery-Zustands.
+Das MCP-Tool ruft dieselben Services (`FindSimilar`, `ExtractAttributes`) mit minimalen Scopes auf. Ein DMS-Write ist auch hier nur nach expliziter menschlicher Freigabe möglich (C-2, T-6). Alle Tool-Calls werden auditiert.
 
-### 6.3 Agent-Pfad (MCP) — gleiche Guardrails
+### 6.4 Fortschritt im Cluster (ADR-004)
 
-Der Agent ruft dasselbe `ExtractAttributes`/`FindSimilar` über den **MCP-Adapter**. Kritische Aktionen (DMS-Write) sind auch hier **consent-pflichtig** (T-6): Das MCP-Tool liefert Vorschläge, ein Schreibvorgang erfordert einen expliziten Freigabeschritt und minimale Scopes (C-3). Fehlerinjektion (ungültiges LLM-JSON, docling-Absturz) endet in einem **protokollierten, sauberen Fehlerzustand** (NfA-3).
+Die SSE-Verbindung kann auf einer beliebigen Instanz landen. Jede Stufe schreibt einen PII-freien Eintrag in `PROCESS_STEP` und sendet `NOTIFY`. Die SSE-haltende Instanz hört per `LISTEN` mit und lädt bei einem Reconnect verpasste Schritte aus `PROCESS_STEP` nach.
 
-### 6.4 Fortschritts-Push im Cluster — SSE + Postgres `LISTEN/NOTIFY` (ADR-004)
+### 6.5 Fehlerpfade (NfA-3)
 
-Die `SSE`-Verbindung landet über den Reverse Proxy auf **einer beliebigen** Instanz — nicht zwingend der, die das Dokument verarbeitet. Damit die haltende Instanz die Fortschritts-Events sieht, läuft der Fan-out über Postgres **`NOTIFY`**; jede Instanz hält ein `LISTEN`. Verpasste Events (Reconnect) werden aus der durable, **PII-freien** Tabelle `PROCESS_STEP` nachgeladen (NfA-3). Der Payload trägt **nur** `processId`/`step` — nie Dokumentinhalt.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant FE as Angular (iframe)
-    participant BE1 as Backend (ohne Dokument-Job) #1 (hält SSE)
-    participant PG as PostgreSQL (PROCESS_STEP + LISTEN/NOTIFY)
-    participant BE2 as Backend (Verarbeitende Instanz) #2 (verarbeitet Dokument-Job)
-
-    FE->>BE1: GET /processes/{processId}/events (SSE)
-    BE1->>PG: LISTEN docext_process
-    BE1->>PG: SELECT * FROM PROCESS_STEP (Catch-up)
-    PG-->>BE1: aktueller State (PII-frei)
-    BE1-->>FE: SSE: Replay erreichter Schritte
-
-    Note over BE2: docling/retrieval fertig (verarbeitende Instanz)
-    BE2->>PG: INSERT PROCESS_STEP(processId,'structured') + NOTIFY docext_process
-    PG-->>BE1: Notification (payload: processId,'structured')
-    BE1-->>FE: SSE: structured
-
-    Note over FE,BE1: Verbindungsabbruch → Reconnect
-    FE->>BE1: GET /processes/{processId}/events (Reconnect)
-    BE1->>PG: SELECT * FROM PROCESS_STEP (verpasste Events aufholen)
-    PG-->>BE1: State inkl. 'structured'
-    BE1-->>FE: SSE: lückenloser Stand
-```
-
-> **Warum kein externer Broker:** Kafka/Rabbit erzeugten Betriebskosten ohne NfA-Nutzen (analog ADR-001). Postgres ist bereits gemeinsame Datenhaltung; `LISTEN/NOTIFY` + `PROCESS_STEP` decken Fan-out **und** Catch-up ab — und da nur Fortschritts-Metadaten transportiert werden, bleibt die PII-freie Zusicherung erhalten.
+| Fehler                                                   | Verhalten                                                                                              | Endzustand                              |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------- |
+| Limit überschritten                                      | Abweisung vor Verarbeitung                                                                             | `413`/`422` ProblemDetail               |
+| Leerer/zu kurzer Text (z. B. Scan ohne Textlayer)        | Retrieval übersprungen, Hinweis im UI; FR-4 nur, wenn Repräsentation dies erlaubt (z. B. Seitenbilder) | `failed` oder Vorschlag ohne Referenzen |
+| Adapter-Absturz/Timeout (Vorschau, Text, LLM, Embedding) | Timeout je Adapter, begrenzter Retry                                                                   | `failed` + Audit                        |
+| Ungültiges LLM-JSON                                      | Retry gemäss Konfiguration, dann Abbruch                                                               | `failed` + Audit                        |
+| Externer Anbieter nicht erreichbar                       | wie Timeout; kein automatischer Wechsel auf einen anderen Anbieter                                     | `failed` + Audit                        |
+| Instanzausfall                                           | Lease läuft ab → Recovery wiederholt aus ORIGINAL-Blob (solange TTL gültig)                            | definiert beendet oder neu gestartet    |
 
 ---
 
-## 7. Verteilungssicht (arc42 §7 / Deployment)
+## 7. Verteilungssicht
 
 ```mermaid
 flowchart TB
-    subgraph host["Host — docker compose (Linux / Windows-WSL2)"]
-      direction TB
-      subgraph tb["KI-Verarbeitungsgrenze — Egress-Allowlist (C-1), CI-Test"]
-        fe["angular-frontend"]
-        be1["docextract-backend #1"]
-        be2["docextract-backend #2  (Cluster)"]
-        prev["preview (Gotenberg/LibreOffice)"]
-        doc["docling"]
-        llm["ollama (Qwen3, Digest-gepinnt C-5)"]
-        db[("postgres + pgvector\nMetadaten · Vektoren (Korpus) · Audit\nProcess-State (LISTEN/NOTIFY)\ntransienter Blobstore (Roh-/Preview-Bytes, TTL) — kein Roh-Text")]
-              end
-    end
     proxy["d.velop Reverse Proxy"] --> fe
-    fe --> be1
-    fe --> be2
-    be1 --> prev & doc & llm & db
-    be2 --> prev & doc & llm & db
-    be1 -. "Metadaten + Doc-Chunk (write-only) + Finalisierung" .-> dms["d.velop DMS-API"]
-    be1 -. "Session" .-> idp["d.velop IdP"]
-
-    classDef tb fill:#fff3f3,stroke:#c0392b,stroke-width:2px;
-    class tb tb;
+    subgraph host["Host — docker compose (Linux / Windows-WSL2)"]
+      fe["angular-frontend"]
+      be1["docextract-backend #1"]
+      be2["docextract-backend #N"]
+      prev["preview (z. B. Gotenberg)"]
+      rt["ki-runtime (optional, Profil 'local-ai')<br/>OpenAI-kompatibel, Modell gepinnt"]
+      db[("postgres + pgvector")]
+    end
+    fe --> be1 & be2
+    be1 & be2 --> prev & db
+    be1 & be2 -. "lokaler Adapter" .-> rt
+    be1 & be2 -. "externer Adapter (optional)" .-> ext["Externer LLM-/Embedding-Anbieter"]
+    be1 & be2 -.-> dms["d.velop DMS-API"] & idp["d.velop IdP"]
 ```
 
-- **Cluster-fähig:** N Backend-Instanzen hinter dem Proxy, gemeinsame DB; keine Sticky Sessions für HTTP/SSE; laufende Jobs bleiben instanzgebunden. SSE-Fortschritt cluster-weit via Postgres `LISTEN/NOTIFY` + `PROCESS_STEP` (ADR-004); Roh- und Preview-Bytes im transienten Postgres-Blobstore, damit jede Instanz die Vorschau ausliefern kann (ADR-008).
-- **Job-Affinität:** Die Verarbeitung _eines_ Dokuments läuft als Async-Task auf der annehmenden Instanz (`DoclingDocument` und Chunks nur in-memory; Dokument-Embeddings als `PENDING` mit TTL in pgvector, ADR-006). Bei Instanzausfall erkennt Recovery die abgelaufene Lease; der Job endet definiert oder wird aus dem `ORIGINAL`-Blob begrenzt wiederholt, solange dessen TTL nicht abgelaufen ist (NfA-3, ADR-008).
-- **Blobstore-Dimensionierung (ADR-008):** Bei 50 MB Maximalgrösse und ORIGINAL + PREVIEW je Dokument sind ≤ 100 MB pro laufendem Prozess einzuplanen; das Volumen ist über die TTL und die Anzahl paralleler Prozesse begrenzt, nicht über den Dokumentbestand. Blob-Tabellen in **eigenem Tablespace**, `ALTER TABLE ... ALTER COLUMN bytes SET STORAGE EXTERNAL` (PDFs sind bereits komprimiert), aggressiveres Autovacuum, erhöhtes WAL-/Backup-Volumen einkalkulieren.
-- **Reproduzierbar (C-6):** `docker compose up`, Basis-Images per **Digest** fixiert, Modelle per Digest-Pinning (T-5/C-5).
-- **CI-Gate:** Smoke- + **Egress-Allowlist-Test** (LLM als Mock), Security-Scan (SAST/Dependency/Image) vor Publish.
+- **Compose-Profile:** `local-ai` startet eine lokale KI-Runtime. Ohne dieses Profil zeigen die Adapter auf einen externen Endpunkt. Ein Profil `ci` nutzt Mocks und Contract-Stubs.
+- **Austausch von Diensten:** Der Vorschau-Container (z. B. Gotenberg) und die KI-Runtime sind reine Referenzbelegungen. Ein anderer Dienst wird eingesetzt, indem man Image und Adapter-Property ändert.
+- **Cluster:** N Backend-Instanzen, keine Sticky Sessions, gemeinsame DB. Jobs bleiben transient instanzgebunden (Lease + Heartbeat).
+- **Reproduzierbar (C-6):** Images per Digest fixiert, lokale Modelle per Digest und externe Modelle per versionierter Modell-ID gepinnt (C-5).
+- **Blobstore:** Pro laufendem Prozess höchstens 2 × Upload-Limit (ORIGINAL + PREVIEW). Das Volumen wird durch TTL und Parallelität begrenzt, eigener Tablespace, `STORAGE EXTERNAL`.
 
 ---
 
-## 8. Querschnittliche Konzepte (arc42 §8)
+## 8. Querschnittliche Konzepte
 
 ### 8.1 Framework-Konzepte (Spring Boot 4)
 
-- **Dependency Injection** trennt Ports von Adaptern; Querschnitte (`security`, `audit`) via DI/Aspekte an jedem Inbound-Pfad.
-- **REST**: Ressourcenorientierte Controller, OpenAPI-spezifiziert (Block 3), Fehlerfälle als `ProblemDetail` (RFC 9457).
-- **Konfiguration**: `application.yml` + Umgebungsprofile (`local`, `ci`, `cluster`); Secrets nie im Image. Chunking-/Embedding-Parameter (Modellname, Tokenizer, `max_tokens`) zentral konfiguriert.
-- **Fehlerbehandlung**: zentraler `@ControllerAdvice`; jede Pipeline-Stufe mit eigenem Timeout und definiertem Abbruch (T-4 → NfA-3).
+- **DI:** Ports als Interfaces, Adapter als bedingte Beans (`@ConditionalOnProperty`). Security und Audit werden per Aspekt eingezogen.
+- **REST:** OpenAPI-spezifiziert, Fehler als ProblemDetail (RFC 9457).
+- **Konfiguration:** `application.yml` + Profile (`local`, `local-ai`, `ci`, `cluster`), typisierte `@ConfigurationProperties` mit Validierung beim Start.
+- **Fehlerbehandlung:** zentraler `@ControllerAdvice`; Timeout und definierter Abbruch je Stufe und Adapter.
 
-### 8.2 Sicherheit (Überblick, Details § 10.3)
+### 8.2 Sicherheit & Datenschutz
 
-Session-basierte AuthN (d.velop-Cookie) → **Tenant/ACL-Auflösung** → Pre-Filter im Retrieval → Consent-Gate vor irreversiblen Aktionen → append-only Audit ohne roh-PII. Least Privilege: Ollama besitzt keinen direkten Zugriff auf PostgreSQL, pgvector oder die DMS-API; Datenzugriffe erfolgen über getrennte Backend-Ports und Rollen. **Datenminimierung (ADR-006/-008):** `DoclingDocument` und Chunks werden nie at-rest gehalten; Dokument-Embeddings liegen bis zur Freigabe ausschliesslich als nicht retrievalfähige `PENDING`-Einträge mit TTL vor. Roh- und Preview-**Bytes** liegen bewusst temporär im Postgres-Blobstore — TTL-begrenzt, tenant-gescoped und in die NfA-5-Löschkaskade eingebunden; die Zusicherung „kein Roh-**Text** in Postgres" bleibt unberührt, da keine extrahierten Textfragmente persistiert werden. Dauerhaft bleiben nur freigegebene Korpus-Embeddings, Metadaten und Audit-Hashes. Das reduziert die Rest-PII-Fläche (NfA-5) und ist konsistent mit C-4.
+- **AuthN/AuthZ:** d.velop-Session → `tenant_id` → Pre-Filter im Retrieval (NfA-4). Consent-Gate vor jeder irreversiblen Aktion (C-2).
+- **Least Privilege (C-3):** LLM- und Embedding-Adapter erhalten nur Eingabedaten und haben keinen Zugriff auf DB, Vektor-Store oder DMS. Nur der Validierungspfad setzt `APPROVED`. Das MCP-Tool hat minimale Scopes.
+- **Prompt Injection (T-1):** Der Dokumentinhalt wird im Prompt klar als _untrusted data_ abgegrenzt. Die Antwort wird immer serverseitig gegen das JSON-Schema validiert. Aus LLM-Ausgaben werden keine Tool-Calls abgeleitet.
+- **Datenminimierung (NfA-5):** Extrahierter Text und Dokumentrepräsentation leben nur im Job-Kontext. Persistiert werden ausschliesslich Embeddings (mit TTL bis zur Freigabe), Metadaten und Audit-Hashes. Roh-/Preview-Bytes liegen TTL-begrenzt im Blobstore. Die Löschkaskade umfasst Dokument, Blobs und Embeddings; Audit-Einträge bleiben ohne Roh-PII erhalten.
 
-### 8.3 Observability
+### 8.3 Observability & Audit
 
-Strukturiertes Logging pro Pipeline-Stufe (Latenz je Stufe → NfA-2), Metriken (Micrometer/Prometheus), Traces (OpenTelemetry). **KI-Betriebsdaten**: Modell-/Prompt-Version, Token/Kosten, Chunk-Anzahl/-Größe je Dokument, Eval-Resultat, Guardrail-Events.
+- Strukturiertes Logging mit Latenz je Stufe (NfA-2), Metriken (Micrometer/Prometheus), Traces (OpenTelemetry).
+- **Audit je LLM-/Tool-Call (C-4):** Anbieter, Modell-ID, Prompt-/Schema-Version, mandantenspezifischer HMAC des kanonisierten Prompts, Token (Prompt/Completion) bzw. LLM-Sekunden lokal, Konfidenz, Ergebnisstatus. Datenquelle für NfA-7.
+- **Betriebsmetriken:** Anzahl/Alter von `PENDING`-Einträgen und Blobs, Adapter-Fehlerraten je Anbieter.
 
-### 8.4 Datenmodell (arc42 / Krit. 6 — Perspektive: Struktur)
+### 8.4 Datenmodell
 
 ```mermaid
 erDiagram
+    DOCUMENT ||--o{ PROCESS : "Verarbeitung"
+    DOCUMENT ||--o{ DOCUMENT_BLOB : "transiente Bytes"
+    DOCUMENT_BLOB ||--o{ DOCUMENT_BLOB_PAGE : "Seiten à 1 MiB"
+    DOCUMENT ||--o| EMBEDDING : "1 Vektor je Dokument"
+    PROCESS ||--o{ PROCESS_STEP : "Fortschritt"
     DOCUMENT ||--o{ EXTRACTION_RUN : "erzeugt"
     EXTRACTION_RUN ||--|| ATTRIBUTE_SUGGESTION : "liefert"
     ATTRIBUTE_SUGGESTION ||--o| CONFIRMATION : "wird bestätigt"
-    DOCUMENT ||--o{ EMBEDDING : "Korpus (nur nach Freigabe, T-2)"
-    DOCUMENT ||--o{ PROCESS : "Verarbeitung"
-    DOCUMENT ||--o{ DOCUMENT_BLOB : "transiente Bytes (ADR-008)"
-    DOCUMENT_BLOB ||--o{ DOCUMENT_BLOB_PAGE : "Seiten à 1 MiB"
-    PROCESS ||--o{ PROCESS_STEP : "Fortschritt"
+    CONFIRMATION ||--o| TEMPLATE : "optional, separater Consent"
     EXTRACTION_RUN ||--o{ AUDIT_ENTRY : "protokolliert"
-    CONFIRMATION ||--o| TEMPLATE : "kann Vorlage werden"
 
     DOCUMENT {
         uuid id PK
-        string tenant_id "NfA-4: Mandant"
-        string acl_scope "normalisierte Berechtigungsgruppen/-referenz"
-        string repository_id "DMS-Repository, ab erstem Aufruf bekannt"
-        string dms_document_id "DMS-Objekt-ID; NULL bis zur Finalisierung, dann gesetzt"
-        string source_type "E-1..E-5"
-        string media_type "gilt PDF? → keine Konvertierung"
-        string status "workflow-state (M2)"
-        string dms_location "Location aus Dokument-Chunk-Upload (write-only), Ziel der Finalisierung"
-        timestamptz retention_until "NfA-5: Löschfrist"
+        string tenant_id
+        string repository_id
+        string dms_document_id "NULL bis Finalisierung"
+        string dms_location "Ziel der Finalisierung"
+        string media_type
+        string status
+        timestamptz retention_until "NfA-5"
     }
     EMBEDDING {
         uuid id PK
-        uuid document_id FK "app-interne Referenz statt Roh-Text (ADR-006)"
-        string repository_id "DMS-Repository, ab erstem Aufruf bekannt (Filter/Scope)"
-        string dms_document_id "DMS-Objekt-ID; NULL solange PENDING, wird mit APPROVE gesetzt"
-        int chunk_index "Position des Chunks im Dokument (docling HybridChunker)"
-        vector embedding "pgvector, ACL-pre-filterbar"
-        string tenant_id "Filterspalte"
-        string acl_ref "Filterspalte"
+        uuid document_id FK
+        string tenant_id "Pre-Filter"
+        string repository_id
+        string dms_document_id "gesetzt bei APPROVED"
+        vector embedding
+        string embedding_model "Pre-Filter"
+        string extraction_source "Pre-Filter, z. B. pdfbox:first-5000"
+        string document_hash "SHA-256 der Rohbytes, Duplikaterkennung"
         string status "PENDING|APPROVED"
-        string process_id "Extraktionslauf"
+        string process_id
         timestamptz expires_at "TTL für PENDING"
-        timestamptz approved_at "Consent-Zeitpunkt"
-        string provenance "Herkunft/Vertrauen"
+        timestamptz approved_at
+        string provenance
     }
     DOCUMENT_BLOB {
         uuid id PK
         uuid document_id FK
-        string tenant_id "Scope-/Filterspalte, Pflicht bei jedem Zugriff"
+        string tenant_id
         string kind "ORIGINAL|PREVIEW"
-        string media_type "Content-Type für den Stream"
-        bigint size_bytes "<= 52428800 (50 MB), per CHECK erzwungen"
-        int page_count "abgeleitet: ceil(size_bytes / page_size)"
-        int page_size "Seitengrösse in Bytes, Default 1048576"
-        string sha256 "Integritätsprüfung beim Streamen"
-        string process_id "Extraktionslauf"
-        timestamptz expires_at "TTL, gemeinsamer Cleanup mit ADR-006"
-        timestamptz created_at
+        string media_type
+        bigint size_bytes "≤ Limit (CHECK)"
+        string sha256
+        timestamptz expires_at
     }
     DOCUMENT_BLOB_PAGE {
-        uuid blob_id FK "Teil des PK"
-        int segment_no "Teil des PK; ermöglicht Range-Read ohne Materialisierung"
-        bytea bytes "STORAGE EXTERNAL, keine TOAST-Kompression"
+        uuid blob_id PK
+        int segment_no PK
+        bytea bytes
     }
     PROCESS {
         uuid id PK
         uuid document_id FK
-        string process_id
-        string status
+        string status "inkl. FINALIZED_INDEX_PENDING"
         string worker_id
         timestamptz lease_until
-        timestamptz heartbeat_at
         int retry_count
     }
     PROCESS_STEP {
         uuid id PK
-        uuid document_id FK
-        string process_id "SSE-Korrelation"
-        string step "preview_ready|structured|retrieved|extracted|failed"
-        string status "ok|error — PII-frei"
-        timestamptz created_at "append-only, Catch-up-Quelle (NfA-3)"
+        uuid process_id FK
+        string step
+        string status "PII-frei"
+        timestamptz created_at
     }
     EXTRACTION_RUN {
         uuid id PK
         uuid document_id FK
-        string model_version "C-5 Digest"
-        int token_count "NfA-7"
-        numeric confidence
+        string provider
+        string model_id
+        string prompt_version
+        string schema_version
+        int tokens_prompt
+        int tokens_completion
+        int duration_ms
     }
     ATTRIBUTE_SUGGESTION {
         uuid id PK
         uuid run_id FK
-        jsonb payload "schema-validiert (T-1), inkl. knapper Quell-Exzerpte"
+        jsonb payload "schema-validiert"
     }
     CONFIRMATION {
         uuid id PK
         uuid suggestion_id FK
         string confirmed_by
-        timestamptz confirmed_at "C-2 Consent"
+        boolean template_consent
+        timestamptz confirmed_at
     }
     TEMPLATE {
         uuid id PK
-        string provenance "Herkunftsmarkierung (T-2)"
+        string provenance
         boolean quarantined
     }
     AUDIT_ENTRY {
         uuid id PK
         uuid run_id FK
-        string prompt_template_version
-        string correlation_hmac "kein Volltext-Hash"
-        int token_count
         string event_type
+        string provider
+        string model_id
+        string prompt_hmac
+        int token_count
+        numeric confidence
+        string result_status
         timestamptz created_at "append-only"
     }
 ```
 
-**Migrationsstrategie:** versionierte SQL-Migrationen (Flyway/Liquibase); Blob-Tabellen mit `PRIMARY KEY (blob_id, segment_no)`, Index auf `expires_at` für den Cleanup und `STORAGE EXTERNAL` auf `bytes`; pgvector-Index (HNSW/IVFFlat) mit `tenant_id`/`acl_ref` als Filterspalten, damit der **Pre-Filter** Teil der Query, nicht ein Post-Filter ist. Löschpfad (NfA-5) kaskadiert Dokument + Embeddings; Audit bleibt referenzierend (Hashes) erhalten.
+**Migrationen:** Flyway. Der pgvector-Index (HNSW) wird mit `tenant_id`, `status` und `embedding_model` als Filterspalten gebaut. Die Vektor-Dimension hängt am Embedding-Modell; ein Modellwechsel erzeugt eine neue Index-Generation und startet die Re-Indexierung. Auf `expires_at` liegt ein Index für den Cleanup.
 
-**Speicher-Topologie (bewusste Trennung nach Lebensdauer & Natur):**
+### 8.5 KI-Integration
 
-| Klasse                       | Ort                                                                                                                             | Lebensdauer                                      | Zweck                                                                                                                          |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| **Durable relational**       | Postgres: `DOCUMENT`, `EMBEDDING` (Korpus), `EXTRACTION_RUN`, `ATTRIBUTE_SUGGESTION`, `CONFIRMATION`, `TEMPLATE`, `AUDIT_ENTRY` | Dokument-Lebenszyklus (NfA-5-Kaskade)            | Metadaten, Vektoren, Ergebnisse, Audit-Hashes — **kein Roh-Text**                                                              |
-| **Transient (flüchtig)**     | **In-Memory-Job-Context** der verarbeitenden Instanz                                                                            | nur während des Jobs, nach `extracted` verworfen | **Chunks** und `DoclingDocument` als flüchtige Pipeline-Zwischenprodukte; Embeddings separat als `PENDING` mit TTL in pgvector |
-| **Kurzlebige Binär-Objekte** | **Postgres-Blobstore** (lokal): `DOCUMENT_BLOB` + `DOCUMENT_BLOB_PAGE`, Seiten à 1 MiB, max. 50 MB je Blob                     | TTL-begrenzt; gelöscht bei Consent, Ablehnung, Abbruch oder Ablauf | Roh-Bytes & gerenderte Vorschau als cluster-sichtbarer Übergabepunkt und Quelle der Range-fähigen Vorschau (ADR-008)          |
-| **Prozess-/Event-State**     | Postgres: `PROCESS_STEP` (+ `LISTEN/NOTIFY`)                                                                                    | bis Prozessende, dann aufräumbar                 | Async-Fortschritt & SSE-Catch-up, **PII-frei** (ADR-004)                                                                       |
+Zwei getrennte Modellnutzungen, je über einen eigenen Port und unabhängig konfigurierbar:
 
-> **Datenminimierung (ADR-006):** Die **Chunks sind Volltext-Fragmente inkl. Roh-PII** und werden deshalb **nie persistiert** — weder relational noch im Blobstore. Sie leben nur im Arbeitsspeicher des Jobs (structuring → retrieval → extraction) und werden danach verworfen. Der Retrieval-Korpus besteht aus **Embeddings** (+ `tenant_id`/`acl_ref` + `repository_id`/`dms_document_id` + `chunk_index`), nicht aus Roh-Text vergangener Dokumente; Metadaten ähnlicher Dokumente kommen live per `document_id` aus der DMS-API (`/dms/r/{repositoryId}/o2/{document_id}/`). Die temporären Blobs (ADR-008) sind davon ausgenommen: sie tragen die Original-Bytes, sind aber weder durchsuchbar noch Teil des Korpus und unterliegen derselben TTL-Disziplin. Das minimiert Rest-PII (NfA-5) und hält C-4 konsistent.
+- **Retrieval (FR-2/FR-3):** Der TextExtractionPort liefert die ersten _N_ Wörter (Default 5 000). Der EmbeddingPort erzeugt daraus **einen Vektor je Dokument**, der als `PENDING` gespeichert wird. Die Suche liefert die Top-5 mit Pre-Filter auf `tenant_id`, `status = APPROVED` sowie dasselbe `embedding_model` und dieselbe `extraction_source`, damit nur vergleichbare Vektoren verglichen werden. Die Kennzahl ist Precision@3 (NfA-6).
+- **Duplikaterkennung:** Der SHA-256-Hash der rohen Upload-Bytes (`document_hash`) wird pro Prozess transient gehalten und bei jedem Embedding-Schritt mitgespeichert. Findet sich für denselben `tenant_id`/`embedding_model`/`extraction_source` bereits ein `APPROVED`-Eintrag mit identischem Hash, wird dessen Vektor wiederverwendet statt den EmbeddingPort erneut aufzurufen — spart Kosten/Latenz bei Mehrfach-Uploads desselben Dokuments (NfA-2/-7).
+- **Extraktion (FR-4):** Der LlmPort erhält (a) die konfigurierte Dokumentrepräsentation, (b) Kategorien und Eigenschaften aus objdef, (c) Kategorie und Werte der Top-5 live aus dem DMS sowie (d) Wertelisten. Unterstützt der Adapter Structured Output (`NATIVE`), wird schema-constrained Decoding genutzt. Die serverseitige Validierung erfolgt **immer**. Kann kein zulässiger Wert bestimmt werden, wird „unbekannt" zurückgegeben (E-5).
+- **Offenheit für offene LLMs:** Referenzprotokoll ist die verbreitete OpenAI-kompatible API. Damit sind lokale Runtimes mit offenen Modellen und gehostete Anbieter ohne neuen Code nutzbar. Anbieter ohne diese API werden über Spring-AI-Provider oder einen eigenen Adapter angebunden (ADR-009, ADR-011).
+- **Modellwechsel (C-5):** Nur per auditierter Konfigurationsänderung und mit Regressionslauf gegen das Eval-Set. Beim Embedding-Modell kommt eine Re-Indexierung hinzu.
 
-### 8.5 KI-Integration (Krit. 16 — substanzielle, abgesicherte KI-Funktion)
+---
 
-Die KI-Pipeline hat **zwei getrennte Modell-Nutzungen** auf demselben Ollama-Backend (unterschiedliche Modelle/Endpoints): ein **Embedding-Modell** (Vektorisierung) und ein **LLM** (Extraktion).
+## 9. Architekturentscheidungen (ADRs)
 
-- **Strukturierung + Chunking (FR-2, ADR-007):** docling parst das Dokument zu einem `DoclingDocument` und erzeugt daraus mit dem **`HybridChunker`** direkt **struktur- und token-basierte Chunks** (respektiert Überschriften/Tabellen/Lesereihenfolge, hält harte Token-Limits ein). `contextualize()` reichert jeden Chunk mit **Überschriften-Metadaten** an — das ist der Text, der eingebettet wird (bessere Retrieval-Qualität als roher Chunk-Text). Chunks sind transient (ADR-006).
-- **Tokenizer-Alignment (Design-Regel):** Der docling-Chunker braucht einen **Tokenizer, der zum Embedding-Modell passt** (`max_tokens` aus dem Tokenizer abgeleitet), sonst passen Chunk-Größen nicht zum Kontextfenster des Ollama-Embedders. Deshalb liefert **`retrieval` die `ChunkingConfig`** (Modellname, Tokenizer, `max_tokens`), die der `structuring`/docling-Adapter konsumiert. Die Chunk-Größe ist damit eine **Eigenschaft des Embedding-Modells**, nicht von docling.
-- **Retrieval (FR-3) — hier entstehen die Vektoren:**
-  1. **Embedding:** Jeder kontextualisierte Chunk wird über den `EmbeddingPort` (`OllamaEmbeddingAdapter`) einmalig zu einem Dokument-Embedding vektorisiert und als `PENDING` mit TTL gespeichert. Für die Ähnlichkeitssuche werden diese Vektoren im selben Lauf verwendet.
-  2. **Ähnlichkeitssuche:** `VectorSearchPort` (`PgVectorSearchAdapter`) sucht in pgvector **nach ACL-Pre-Filter** (`tenant_id`/`acl_ref` als Query-Prädikat) → die **5 ähnlichsten Dokumente** (Precision@3, NfA-6). Deren `APPROVED`-Embeddings tragen `repository_id` und DMS-`document_id`, über die Kategorie und Eigenschaftswerte live aus dem DMS geladen werden.
-- **Korpus-Aufbau (T-2/C-7):** Embeddings werden beim Extraktionslauf als `PENDING` gespeichert und treten erst durch die Consent-geschützte Promotion zu `APPROVED` dem aktiven Korpus bei. Rohtext wird nie abgelegt; gespeichert werden Vektor, app-interne Dokument-/Chunk-Referenz, `repository_id`, Tenant-/ACL-Scope, Prozessreferenz, Status, TTL und Provenance (ADR-006). Die DMS-`document_id` ist erst nach der Finalisierung im DMS bekannt und wird deshalb **mit dem Statuswechsel auf `APPROVED`** am Embedding hinterlegt.
-- **Extraktion (FR-4):** Das LLM wird durch drei Quellen gestützt: (a) **Objektdefinitionen** — mögliche Dokumentkategorien und Eigenschaften inkl. Datentyp aus `/r/{repositoryId}/objdef`; (b) **Metadaten der 5 ähnlichsten Dokumente** — Kategorie und Eigenschaftswerte per `document_id` aus `/dms/r/{repositoryId}/o2/{document_id}/`, um Position und Format der Vorschläge zu bestimmen; (c) **Wertelisten** je Eigenschaft per JIT-Webhook. Schema-constrained Decoding gegen JSON-Schema; „unbekannt" statt Halluzination (E-5); knappe Quell-Exzerpte für UI-Highlighting.
-- **Absicherung:** Dokument strikt als _untrusted data_ (T-1), keine ableitbaren Tool-Calls (C-2), Least Privilege (C-3), append-only Audit (C-4).
-
-> **PENDING- vs. APPROVED-Embedding:** Beide Zustände verwenden denselben, einmalig erzeugten Vektor. `PENDING` bedeutet temporär persistiert, durch TTL begrenzt und nicht retrievalfähig. `APPROVED` bedeutet durch expliziten Consent für den aktiven Korpus freigegeben. Die Promotion ändert Status, Provenance und Ablaufattribute, erzeugt aber keinen neuen Vektor.
-
-## 9. Architekturentscheidungen — ADRs (arc42 §9 / Krit. 18: bewusst nicht delegiert)
-
-**ADR-001 bis ADR-003** wurden **bewusst nicht an die KI delegiert** (Krit. 18: Entwerfen/Prüfen statt Implementieren). **ADR-004 bis ADR-008** ergänzen die Grundentscheide zu asynchroner Verarbeitung, Speicher-Topologie, Datenminimierung und Chunking, die sich aus den Cluster-/Async- und Datenschutz-Anforderungen ergeben. **ADR-005 wurde durch ADR-008 abgelöst**, nachdem sich die Write-only-Natur des DMS-Chunk-Uploads herausstellte — die Revision ist bewusst dokumentiert statt überschrieben (Krit. 18).
+ADR-001 bis ADR-003 wurden **bewusst nicht an die KI delegiert** (Krit. 18). Archiviert: ADR-005 (abgelöst durch ADR-008), ADR-007 (docling-Chunking, abgelöst durch ADR-012), ADR-010 (anbieterspezifischer Opt-in, aufgegangen in ADR-011).
 
 ### ADR-001 — Modularer Monolith statt Microservices
 
-- **Status:** akzeptiert · **Kontext:** Trennung von Frontend/Services/Persistenz gefordert, aber keine NfA zu unabhängiger Skalierung/Deployment.
-- **Entscheidung:** Ein deploybarer, **zustandsloser** Monolith mit hexagonalen Fachmodulen; Cluster über gemeinsame Datenhaltung.
-- **Begründung (gemessen an Qualität):** Wartbarkeit & Latenz (kein Netz-Hop zwischen Modulen, NfA-2) schlagen Verteilungsflexibilität; Microservices würden Betriebs-/Konsistenzkosten ohne NfA-Nutzen erzeugen.
-- **Konsequenz:** Modulgrenzen müssen im Code hart bleiben (Paketstruktur, Verträge), damit ein späterer Split möglich bliebe. **Modultrennung ist logisch (Verträge/ArchUnit), nicht distributiv** — ein Dokument-Job läuft Ende-zu-Ende auf einer Instanz (§ 4 Skalierungsmodell).
+- **Status:** akzeptiert
+- **Entscheidung:** Ein deploybarer Monolith mit hexagonalen Fachmodulen; Cluster über gemeinsame Datenhaltung.
+- **Begründung:** Keine NfA rechtfertigt Verteilungskosten. In-Process-Aufrufe halten die Latenz tief (NfA-2).
+- **Konsequenz:** Modulgrenzen werden per ArchUnit hart gehalten, damit ein späterer Split möglich bleibt.
 
-### ADR-002 — Berechtigungs-Pre-Filter im Retrieval (nicht Post-Filter)
+### ADR-002 — Mandanten-Pre-Filter im Retrieval
 
-- **Status:** akzeptiert · **Kontext:** Cross-Tenant-/Cross-ACL-Leak (T-3, NfA-4). Reine Vektorähnlichkeit kennt keine Berechtigung.
-- **Entscheidung:** Tenant/ACL-Prädikate aus der Session werden **als Filter in die Vektor-Query** eingebettet.
-- **Begründung:** Post-Filter kann Treffer bereits „gesehen" haben (Timing/Ranking-Leak); Pre-Filter garantiert **0 Fremdtreffer** und ist testbar (Cross-Tenant-Test).
-- **Konsequenz:** Embeddings tragen `tenant_id`/`acl_ref`; Index muss filterfähig sein.
+- **Status:** akzeptiert
+- **Entscheidung:** `tenant_id` aus der Session ist Prädikat der Vektor-Query, kein Post-Filter.
+- **Begründung:** Garantiert 0 Fremdtreffer und ist testbar (NfA-4, T-3).
+- **Konsequenz:** Jeder VectorStore-Adapter muss den Pre-Filter im Contract-Test nachweisen.
 
-### ADR-003 — Human-in-the-Loop mit hartem Consent-Gate (auch für MCP)
+### ADR-003 — Human-in-the-Loop mit hartem Consent-Gate (auch MCP)
 
-- **Status:** akzeptiert · **Kontext:** Irreversible DMS-Writes; Agent kann Aufrufe verketten (T-6).
-- **Entscheidung:** **Keine** LLM-Ausgabe löst selbsttätig einen Schreib-/Tool-Call aus; Write nur nach expliziter menschlicher Freigabe — UI **und** MCP identisch (C-2).
-- **Begründung:** Datenschutz/Integrität vor Komfort; ein einziger, gemeinsamer Application-Service erzwingt das Gate für beide Inbound-Pfade.
-- **Konsequenz:** Adapter-Symmetrie; DmsWriteAdapter ist der einzige Schreibpfad, separat authentifiziert (C-3). Der initiale Chunk-Upload beim Ingest (liefert Location) legt lediglich einen unbestätigten Rohdatensatz ohne Attribute an und gilt **nicht** als irreversibler Write; erst die attribut-tragende Finalisierung an dieser Location erfordert das Consent-Gate.
+- **Status:** akzeptiert
+- **Entscheidung:** Keine LLM-Ausgabe löst selbsttätig einen Write oder Tool-Call aus. DMS-Write, Promotion und Vorlagen-Aufnahme erfolgen nur nach expliziter Freigabe, in UI und MCP gleich.
+- **Konsequenz:** `DmsWritePort` ist der einzige Schreibpfad. Der initiale Chunk-Upload ohne Attribute gilt nicht als irreversibler Write.
 
-### ADR-004 — Asynchrone Pipeline mit SSE-Fortschritt über Postgres `LISTEN/NOTIFY`
+### ADR-004 — Asynchrone Pipeline mit SSE über Postgres LISTEN/NOTIFY
 
-- **Status:** akzeptiert · **Kontext:** Pipeline-Latenz bis 30–60 s (NfA-2); Frontend muss über Stufen-Abschluss informiert werden; Cluster-Betrieb ohne Sticky Sessions (ADR-001).
-- **Entscheidung:** Synchroner Original-Chunk-Upload als dauerhafter Übergabepunkt, danach `202 + processId`; Fortschritt via **Server-Sent Events** je `processId`; cluster-weiter Fan-out über Postgres **`LISTEN/NOTIFY`**; **durable `PROCESS_STEP`-Tabelle** (PII-frei) als Catch-up-Quelle.
-- **Begründung:** SSE ist unidirektional und genau der Bedarf (Server→Browser), leichter als WebSocket; Postgres ist bereits gemeinsame Datenhaltung → **kein externer Broker** ohne NfA-Nutzen (konsistent mit ADR-001). `PROCESS` und `PROCESS_STEP` machen Fortschritt, Lease-Recovery und Catch-up nachvollziehbar (NfA-3), da `NOTIFY` allein flüchtig ist.
-- **Konsequenz:** Kein dauerhafter instanzgebundener Fachzustand; laufende Jobs sind transient instanzgebunden. Jede Stufe schreibt State + `NOTIFY`; Recovery überwacht Job-Leases; SSE-haltende Instanz `LISTEN`t und leitet weiter. Payload nur `processId`/`step` (keine PII).
+- **Status:** akzeptiert
+- **Entscheidung:** 202 + `processId`, SSE je Prozess, Fan-out via LISTEN/NOTIFY, durable `PROCESS_STEP` für Catch-up.
+- **Begründung:** Kein zusätzlicher Broker nötig; Postgres ist bereits gemeinsame Basis.
+- **Konsequenz:** Payload nur `processId`/`step`; Heartbeat gegen Proxy-Timeouts.
 
-### ADR-005 — Kurzlebige Binär-Objekte über DMS-Chunk-Upload statt eigenem Objektspeicher
+### ADR-006 — Text flüchtig, Embeddings in Quarantäne
 
-- **Status:** **abgelöst durch ADR-008** · **Kontext:** Kein gemeinsamer Object Storage (S3/NFS) verfügbar; PDF-Vorschau muss für **alle** Cluster-Instanzen sichtbar sein; Instanzen zustandslos. Der DMS-Chunk-Upload liefert bereits eine `Location`, an der unfinalisierte Bytes vorgehalten werden.
-- **Ursprüngliche Entscheidung:** Der DMS-Chunk-Store dient als kurzlebiger Objektspeicher; native PDFs werden direkt aus der Dokument-`Location` gestreamt, Nicht-PDF-Vorschauen als separater, unfinalisierter Preview-Chunk abgelegt. Kein Postgres-Blobstore.
-- **Grund der Ablösung:** Die Annahme, dass hochgeladene Chunks rücklesbar sind, trifft nicht zu — der **DMS-Chunk-Upload ist write-only**. Vor der Finalisierung lassen sich die Bytes weder für die Vorschau streamen noch vom Async-Job erneut lesen. Damit fehlt der Entscheidung ihre technische Grundlage; sie wird durch ADR-008 ersetzt.
+- **Status:** akzeptiert (aktualisiert: Chunks entfallen)
+- **Entscheidung:** Extrahierter Text und Dokumentrepräsentation bleiben im Job-Kontext. Das Embedding wird als `PENDING` mit TTL gespeichert und nach Freigabe ohne Neuberechnung promotet, sonst gelöscht.
+- **Begründung:** Keine doppelte Vektorisierung, kein Rohtext at-rest, ungeprüfte Dokumente beeinflussen den Korpus nicht (T-2).
+- **Konsequenz:** TTL-Cleanup, Schutz von `FINALIZED_INDEX_PENDING`, Tests gegen `PENDING`-Treffer.
 
-### ADR-006 — Chunks flüchtig, Embeddings temporär in Quarantäne
+### ADR-008 — Transienter Postgres-Blobstore (gechunktes BYTEA)
 
-- **Status:** akzeptiert · **Kontext:** Docling-Chunks enthalten Volltext und Roh-PII und sollen nicht at-rest gespeichert werden. Eine erneute Embedding-Berechnung nach Benutzerfreigabe verursacht dagegen unnötige Rechenzeit.
-- **Entscheidung:** Chunks und `DoclingDocument` bleiben ausschliesslich im In-Memory-Job-Context. Die im Extraktionslauf erzeugten Embeddings werden als `PENDING` mit `tenant_id`, ACL-Scope, `process_id` und `expires_at` in pgvector gespeichert. Retrieval-Abfragen enthalten obligatorisch `status = APPROVED`. Consent promotet dieselben Vektoren atomar; Ablehnung, endgültiger Abbruch oder TTL-Ablauf löscht sie.
-- **Begründung:** Vermeidet doppelte Vektorisierung, hält Rohtext aus der Datenbank fern und verhindert durch Quarantine-by-Default, dass ungeprüfte Dokumente den aktiven Korpus beeinflussen.
-- **Konsequenz:** Erforderlich sind ein TTL-Cleanup, ein Schutz für `FINALIZED_INDEX_PENDING`, Indizes auf Status/Ablaufzeit sowie Tests gegen versehentliche `PENDING`-Treffer. Embeddings unterliegen ebenfalls NfA-5.
+- **Status:** akzeptiert
+- **Kontext:** Der DMS-Chunk-Upload ist write-only; ein gemeinsamer Object Store ist nicht vorhanden.
+- **Entscheidung:** `DOCUMENT_BLOB` + `DOCUMENT_BLOB_PAGE` (1-MiB-Seiten) als cluster-sichtbare Quelle für Job und Range-fähige Vorschau.
+- **Begründung:** Range-Zugriff ohne Heap-Materialisierung; derselbe TTL-Cleanup wie für Embeddings. Large Objects hätten eine zweite Aufräumsemantik gebracht.
+- **Offene Grenze:** Bei deutlich höheren Limits oder hoher Parallelität wird ein Object Store hinter dem `DocumentBlobPort` eingesetzt.
 
-### ADR-007 — docling-natives Chunking statt Post-Export-Splitting
+### ADR-009 — Spring AI als technische KI-Integrationsschicht
 
-- **Status:** akzeptiert · **Kontext:** Für das Retrieval (FR-3, NfA-6) muss das Dokument in einbettbare Chunks zerlegt werden. Zwei Optionen: (a) docling → Markdown exportieren und **nachträglich** flach splitten, oder (b) den nativen **`HybridChunker` auf dem `DoclingDocument`** verwenden (struktur- + token-basiert, mit Kontextualisierung).
-- **Entscheidung:** **Option (b)** — docling-natives Chunking. Das Chunking wird **technisch im `structuring`/docling-Adapter** ausgeführt; die **Chunking-Config (Tokenizer, `max_tokens`) liefert `retrieval`**, weil die Chunk-Größe eine Eigenschaft des Embedding-Modells ist (Tokenizer-Alignment). `contextualize()` erzeugt die einzubettende Chunk-Repräsentation (mit Überschriften-Metadaten).
-- **Begründung:** Struktur-treue Chunks (Tabellen/Überschriften/Lesereihenfolge bleiben intakt) und heading-angereicherte Kontextualisierung verbessern die Retrieval-Güte gegenüber flachem Markdown-Splitting; harte Token-Limits verhindern Überlauf des Embedder-Kontextfensters. Nur eine Bibliothek (docling) für Parsing **und** Chunking reduziert Komplexität.
-- **Konsequenz:** `structuring` liefert **einen Strom kontextualisierter Chunks** (statt „nur Markdown"); der In-Memory-Typ im Job-Context ist `List<DocChunk>` (statt `String`). Bewusste, **dünne Config-Kopplung**: der docling-Adapter hängt am Tokenizer des Embedding-Modells (`ChunkingConfigPort`) — kein Fachwissen, nur Parametrisierung. ADR-006 bleibt unberührt (Chunks weiterhin transient).
+- **Status:** akzeptiert (aktualisiert: anbieterneutral)
+- **Entscheidung:** Spring AI wird **innerhalb der Adapter** für Chat, Embedding, Structured Output und MCP genutzt. Spring-AI-Typen verlassen die Adapter nie.
+- **Begründung:** Breite Provider-Abdeckung ohne eigene Integrationen; passt zum Spring-Stack.
+- **Abgrenzung:** Retrieval-Filter, Quarantäne, Consent, Audit und Prompt-/Schema-Versionierung bleiben in DocExtract. Der generische Spring-AI-`VectorStore` wird nicht verwendet, wenn er die Pre-Filter verdecken würde.
+- **Ausnahme:** Reicht Spring AI für eine Funktion nicht aus, darf ein Adapter die Anbieter-API direkt nutzen, gekapselt hinter demselben Port.
 
-### ADR-008 — Transienter Postgres-Blobstore mit gechunkten `BYTEA`-Seiten (ersetzt ADR-005)
+### ADR-011 — Offener, produktneutraler Adapter-Ansatz für alle externen Bausteine
 
-- **Status:** akzeptiert · **Kontext:** Der DMS-Chunk-Upload ist **write-only** — hochgeladene Bytes sind vor der Finalisierung nicht rücklesbar, weshalb ADR-005 nicht trägt. Es gibt keinen gemeinsamen Object Storage (S3/NFS), und ein zusätzlicher Container (z. B. MinIO) widerspräche der Betriebsökonomie von ADR-001. PostgreSQL ist bereits die einzige gemeinsame Datenbasis. Gebraucht werden: ein cluster-sichtbarer Übergabepunkt für den Async-Job und eine Range-fähige Quelle für die PDF-Vorschau.
-- **Betrachtete Optionen:** (a) einspaltiges `BYTEA` je Objekt, (b) PostgreSQL **Large Objects** (`lo`), (c) **gechunktes `BYTEA`** in Seiten fester Grösse.
-- **Entscheidung:** **Option (c).** `DOCUMENT_BLOB` (Kopfdaten: `kind ORIGINAL|PREVIEW`, `media_type`, `size_bytes`, `sha256`, `tenant_id`, `process_id`, `expires_at`) plus `DOCUMENT_BLOB_PAGE` (`PRIMARY KEY (blob_id, segment_no)`, `bytes` à **1 MiB**, `STORAGE EXTERNAL`). Der Upload ist auf **50 MB** begrenzt (`CHECK size_bytes <= 52428800`), also höchstens 50 Seiten je Blob. Native PDFs werden direkt aus dem `ORIGINAL`-Blob gestreamt; Nicht-PDFs rendert Gotenberg aus dem `ORIGINAL`-Blob in einen `PREVIEW`-Blob. Der DMS-Chunk-Upload bleibt erhalten, liefert aber ausschliesslich die `Location` als Finalisierungsziel.
-- **Begründung:** Option (a) zwingt bei jedem Zugriff den gesamten Blob in den Heap — bei 50 MB und mehreren parallelen Vorschauen untragbar und ohne HTTP-Range-Unterstützung. Option (b) beherrscht echtes Seek/Read, bringt aber mit `lo_unlink`, Orphan-LOs und `vacuumlo` eine **zweite Aufräum-Semantik** neben dem TTL-Cleanup aus ADR-006. Option (c) liefert dieselbe Range-Fähigkeit über einfache `segment_no`-Arithmetik, bleibt im normalen Tabellen- und Transaktionsmodell und nutzt **denselben `expires_at`-Cleanup** wie die `PENDING`-Embeddings — ein Aufräumpfad statt zwei. Das harte 50-MB-Limit macht Speicherbedarf, WAL-Volumen und Latenz vorhersagbar (≤ 100 MB je laufendem Prozess für `ORIGINAL` + `PREVIEW`).
-- **Konsequenz:** Neuer `DocumentBlobPort` im `ingest`-Modul (`write`, `readRange`, `delete`); `DOCUMENT.preview_location` entfällt, `dms_location` bleibt. Die Zusicherung „kein Roh-Text in Postgres" (ADR-006) gilt weiterhin für Chunks, wird aber für Roh-**Bytes** bewusst gelockert — begrenzt durch TTL, Tenant-Scope und NfA-5-Kaskade (§ 8.2). Betrieblich: eigener Tablespace, `STORAGE EXTERNAL` (PDFs sind bereits komprimiert, TOAST-Kompression kostet nur CPU), aggressiveres Autovacuum, grösseres WAL-/Backup-Volumen. Blobs werden bei Consent, Ablehnung, endgültigem Abbruch oder TTL-Ablauf gelöscht; der Cleanup respektiert `FINALIZED_INDEX_PENDING`. Metrik für Anzahl, Gesamtgrösse und Alter der Blobs ist Pflicht.
-- **Offene Grenze:** Ab deutlich grösseren Limits oder hohem Parallelitätsgrad kippt die Abwägung Richtung Large Objects oder eines echten Object Stores innerhalb der Vertrauensgrenze; bei 50 MB ist das nicht der Fall.
+- **Status:** akzeptiert
+- **Kontext:** SPEC C-8/NfA-8: Vorschau, Textextraktion, LLM, Embedding und Vektor-Store müssen per Konfiguration austauschbar sein. Die frühere Festlegung auf eine bestimmte lokale LLM-Runtime schränkte die Wahl offener Modelle und Anbieter ein.
+- **Entscheidung:** Jeder externe Baustein liegt hinter einem Port mit Contract-Test-Suite. Adapter werden per Property gewählt. Für LLM und Embedding ist ein **generischer OpenAI-kompatibler Adapter** die Referenz; er deckt lokale Runtimes mit offenen Modellen ebenso ab wie gehostete Anbieter. Ein Capability-Modell (Structured Output, Eingabeform) macht Unterschiede zwischen Modellen explizit.
+- **Begründung:** Kein Vendor-Lock-in; neue Modelle oder Runtimes brauchen in der Regel nur Konfiguration. Der Kern bleibt stabil.
+- **Konsequenz:** Contract-Tests in CI für alle Ports; LLM-Port mit mindestens zwei grünen Adaptern (1 lokal, 1 extern). Eval-Läufe und NfA-Werte werden je Adapter ausgewiesen. ArchUnit-Regel: keine Produkttypen im Kern.
 
-> Weitere ADRs pro Block: Präsentationsschicht (Block 2), Vektor-DB-Integration & Persistenzmuster (Block 4).
+### ADR-012 — Ein Embedding je Dokument aus den ersten _N_ Wörtern (statt Chunking)
 
----
-
-## 10. Test-, Sicherheits- und Betriebsstrategie (arc42 §11 / Raster Validierung)
-
-### 10.1 Teststrategie (Krit. 12/13)
-
-| Stufe             | Umfang                                                                                                                                         | Bezug               |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
-| Unit              | Domänenlogik (Limits, Schema-Validierung, ACL-Prädikat, ChunkingConfig-Ableitung)                                                              | FR-1/-3/-4          |
-| Integration       | Adapter (pgvector, docling `HybridChunker`, Ollama-Mock, DMS-Chunk)                                                                            | § 5.2               |
-| Chunking          | Tokenizer-Alignment (Chunk-`max_tokens` ↔ Embedding-Modell); Kontextualisierung enthält Überschriften                                          | ADR-007, NfA-6      |
-| Fehlerinjektion   | ungültiges LLM-JSON, docling-Absturz, OCR-Müll → sauberer Endzustand (Event `failed`)                                                          | NfA-3               |
-| Cross-Tenant/ACL  | automatisierter Zugriffstest, 0 Fremdtreffer                                                                                                   | NfA-4               |
-| Async/SSE         | Fortschritts-Events vollständig & geordnet; Reconnect-Catch-up; abgelaufene Lease wird atomar beendet oder begrenzt wiederholt                 | NfA-3, ADR-004      |
-| Preview-Branch    | PDF → kein Gotenberg-Render, Stream aus `ORIGINAL`-Blob; Nicht-PDF → `PREVIEW`-Blob, Stream daraus                                             | ADR-008             |
-| Blobstore         | Seiten-Round-Trip byte-identisch (`sha256`); Range-Request liest nur die betroffenen `segment_no`; Upload > 50 MB wird abgewiesen; Blob-Zugriff ohne passenden `tenant_id` liefert nichts | ADR-008, T-4, NfA-4 |
-| Blob-Lebensende   | Blobs nach Consent, Ablehnung und Abbruch gelöscht; TTL-Cleanup entfernt verwaiste Blobs und überspringt `FINALIZED_INDEX_PENDING`            | ADR-008, NfA-5      |
-| Datenminimierung  | Nach `extracted` keine Chunks oder Rohtexte at-rest; Embeddings nur als `PENDING` mit TTL; nach Ablehnung/Ablauf gelöscht                      | ADR-006, C-7, NfA-5 |
-| Korpus-Quarantäne | Retrieval liefert auch bei maximaler Ähnlichkeit niemals `PENDING`; Consent promotet ohne Neuberechnung; Cleanup entfernt abgelaufene Einträge | T-2, C-7, NfA-4     |
-| Eval (KI)         | Soll/Ist-JSON gegen Eval-Set (M2 provisorisch, M3 belastbar)                                                                                   | NfA-1/-2/-6/-7      |
-| Architektur       | **ArchUnit** — Paketabhängigkeiten/Modulgrenzen (Chunking-Ausführung in `structuring`, Config aus `retrieval`)                                 | Krit. 17            |
-
-**CI-Gate:** Smoke- + **Egress-Allowlist-Test** (LLM als Mock) + Security-Scan (SAST/Dependency/Secret/Image/IaC). Publish erst nach bestandenem Gate.
-
-### 10.2 Abnahmekriterien (Krit. 11)
-
-Pro Kernfunktion FR-1…FR-6 ein prüfbares Exit-Kriterium (siehe SPEC § 7 Meilensteine M1–M3); KI-Funktion zusätzlich mit Eval-Qualität, Latenz p95, Kostenindikator und Guardrail-Verhalten.
-
-### 10.3 Bedrohungsmodell (Zusammenfassung SPEC § 6)
-
-T-1 Prompt Injection → schema-constrained + untrusted data · T-2 Datenvergiftung → Freigabe + Herkunft/Quarantäne · T-3 ACL-Leak → Pre-Filter · T-4 DoS → Limits/Timeouts · T-5 Modellmanipulation → Digest-Pinning · T-6 MCP-Missbrauch → Consent + minimale Scopes.
-
-### 10.4 DevSecOps-Gate
-
-Mind. ein automatischer Security-Check (SAST/Dependency/Secret/Image/IaC) mit interpretiertem Befund; Publish erst nach bestandenem Gate.
+- **Status:** akzeptiert (ersetzt ADR-007)
+- **Kontext:** FR-3 braucht eine Ähnlichkeit auf Dokumentebene („ähnliche frühere Fälle"), keine Passage-Suche.
+- **Entscheidung:** Der TextExtractionPort liefert den Klartext der ersten _N_ Wörter (Default 5 000, ≤ Kontextfenster des Embedding-Modells). Daraus entsteht genau ein Vektor. Es gibt keine Struktur- oder Tabellenrekonstruktion.
+- **Begründung:** Einfacher, schneller (NfA-2), jeder Textextraktor ist als Adapter einsetzbar. Die FR-4-Qualität hängt nicht daran, weil FR-4 eine eigene Repräsentation nutzt.
+- **Konsequenz:** `extraction_source` und `embedding_model` werden als Filter geführt. Genügt Precision@3 nicht (NfA-6), sind _N_ und das Embedding-Modell die ersten Stellhebel.
+- **Re-Indexierung (Implementierungsstand):** Da Rohtext nie persistiert wird (ADR-006), kann `ReindexService` bestehende Dokumente nicht automatisch neu vektorisieren. Beim Start vergleicht er `docextract.retrieval.embedding-model` mit den in der Datenbank vorhandenen `embedding_model`-Werten und markiert `APPROVED`-Zeilen eines abgelösten Modells als `STALE` — dieser Status ist vom Retrieval-Prädikat `status = 'APPROVED'` bereits ausgeschlossen, ohne Codeänderung an der Suche. Betroffene Dokumente müssen erneut hochgeladen werden, um wieder im Korpus zu erscheinen; das ist eine Betriebs-Kennzahl (Anzahl `STALE`-Zeilen), kein automatischer Re-Ingest.
 
 ---
 
-## 11. Risiken & technische Schulden (arc42 §11)
+## 10. Test-, Sicherheits- und Betriebsstrategie
 
-- **iGPU-Inferenzlatenz** kann NfA-2 (p95) für E-4 gefährden → Modellwahl/Chunking als Stellhebel, in M2 messen.
-- **Self-Learning-Loop** (Ausbaustufe) birgt Datenvergiftungsrisiko → bewusst hinter Freigabe/Quarantäne, in Block-Iterationen verfeinern.
-- **Modulgrenzen im Monolith** können erodieren → ArchUnit-Tests zur Durchsetzung der Paketabhängigkeiten empfohlen.
-- **Tokenizer-Drift (ADR-007):** Wechsel des Embedding-Modells ohne Anpassung des docling-Tokenizers → falsche Chunk-Größen → Retrieval-Güte sinkt. Gegenmaßnahme: `ChunkingConfig` zentral aus dem Embedding-Modell ableiten, Alignment-Test (§ 10.1).
-- **SSE hinter Reverse Proxy:** Proxy-Buffering/Timeouts können den Event-Stream unterbrechen → Heartbeat/Keep-alive + Reconnect mit `PROCESS_STEP`-Catch-up (ADR-004); Proxy auf ungepuffertes Streaming konfigurieren.
-- **`LISTEN/NOTIFY`-Limits:** Payload-Grenze (8 kB) und flüchtige Zustellung → nur `processId`/`step` transportieren, Details aus `PROCESS_STEP`.
-- **Temporäre Embeddings (ADR-006/C-7):** Verwaiste `PENDING`-Einträge könnten Speicher belegen oder versehentlich sichtbar werden. Mitigation: obligatorischer `APPROVED`-Pre-Filter, kurze TTL, periodischer Cleanup, Metrik für Anzahl/Alter und Schutz des Recovery-Zustands `FINALIZED_INDEX_PENDING`.
-- **Blobstore-Wachstum (ADR-008):** Verwaiste Blobs belegen Speicher, treiben WAL- und Backup-Volumen und führen bei ausbleibendem Autovacuum zu Bloat → harter 50-MB-Deckel, kurze TTL, periodischer Cleanup im selben Job wie ADR-006, Metrik für Anzahl/Gesamtgrösse/Alter, eigener Tablespace.
-- **Skalierungsgrenze des DB-Blobstores:** Bei steigender Parallelität oder höherem Grössenlimit wird Postgres zum Engpass (WAL-Durchsatz, Backup-Fenster) → Schwellwert beobachten; Ausweichpfad ist ein Object Store innerhalb der Vertrauensgrenze (ADR-008, „Offene Grenze").
+### 10.1 Teststrategie
+
+| Stufe           | Umfang                                                                                                                              | Bezug           |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| Unit            | Limits, Wortbegrenzung, Schema-Validierung, Tenant-Filter, Retry-Regel                                                              | FR-1/-2/-4      |
+| **Contract**    | Abstrakte Test-Suite je Port; jeder Adapter (z. B. PDFBox, Tika, Docling, Gotenberg, OpenAI-kompatibel, pgvector) muss sie bestehen | NfA-8, C-8      |
+| Integration     | Adapter gegen echte Container (Testcontainers), DMS/Webhook als Stub                                                                | § 5.2           |
+| Architektur     | ArchUnit: keine Produkt-/Framework-Typen in `domain`/`application`/`port`; Modulgrenzen                                             | NfA-8, Krit. 17 |
+| Fehlerinjektion | ungültiges LLM-JSON, Adapter-Absturz, leerer Text, OCR-Müll, Timeout/Ausfall externer Anbieter                                      | NfA-3           |
+| Cross-Tenant    | automatisiert, 0 Fremdtreffer; Blob-Zugriff nur mit passender `tenant_id`                                                           | NfA-4           |
+| Quarantäne      | `PENDING` nie im Retrieval; Promotion ohne Neuberechnung; Cleanup                                                                   | C-7, T-2        |
+| Löschung        | Löschkaskade, Prüfung auf Rest-PII                                                                                                  | NfA-5           |
+| Async/SSE       | Reihenfolge, Reconnect-Catch-up, Lease-Recovery                                                                                     | ADR-004         |
+| Eval (KI)       | Soll/Ist-JSON und Precision@3 **je LLM-/Embedding-Adapter**; ≥ 100 Läufe für p95/Kosten                                             | NfA-1/-2/-6/-7  |
+| Egress          | Mit rein lokaler Konfiguration keine externen Verbindungen                                                                          | C-1             |
+
+**CI-Gate:** Unit + Contract + ArchUnit + Smoke (LLM gemockt, externe Anbieter als Stub) + Security-Scan (SAST, Dependencies, Secrets, Images). Nightly: echtes lokales Modell + Eval-Lauf.
+
+### 10.2 Abnahmekriterien
+
+Je FR ein prüfbares Exit-Kriterium gemäss SPEC § 7 (M1–M3). Die KI-Funktion wird zusätzlich über Eval-Güte, p95-Latenz, Kostenindikator und Guardrail-Verhalten abgenommen, je Adapter ausgewiesen.
+
+### 10.3 Bedrohungsmodell (SPEC § 6)
+
+T-1 Prompt Injection → untrusted data + Schema-Validierung · T-2 Datenvergiftung → Quarantäne, Consent, Herkunft · T-3 Cross-Tenant → Pre-Filter · T-4 DoS → Limits/Timeouts je Adapter · T-5 Modellmanipulation → Digest/versionierte Modell-ID · T-6 MCP-Missbrauch → Consent + minimale Scopes.
 
 ---
 
-## 12. Glossar (arc42 §12)
+## 11. Risiken & technische Schulden
 
-**ACL-Pre-Filter** – Berechtigungsprädikat als Teil der Vektor-Query · **HybridChunker** – docling-Chunker, der struktur- und token-basiert kontextualisierte Chunks auf dem `DoclingDocument` erzeugt (ADR-007) · **Kontextualisierung** – Anreicherung eines Chunks mit Überschriften-Metadaten (`contextualize()`) vor dem Embedding · **Tokenizer-Alignment** – Abstimmung des Chunker-Tokenizers auf das Embedding-Modell (`max_tokens`) · **PENDING-Embedding** – temporär persistierter, nicht retrievalfähiger Vektor mit TTL · **APPROVED-Embedding** – nach Consent aktivierter Korpus-Vektor · **Korpus-Promotion** – atomarer Statuswechsel `PENDING → APPROVED` ohne erneute Vektorisierung · **Guardrail** – unverhandelbare Leitplanke für den KI-Anteil · **Vertrauensgrenze** – lokale Betriebsgrenze ohne Egress (C-1) · **HITL** – Human-in-the-Loop · **MCP** – Model Context Protocol (Agent-Schnittstelle) · **In-Memory-Job-Context** – flüchtiger Arbeitsspeicher-Kontext eines Dokument-Jobs, hält das `DoclingDocument` und Chunks transient; Embeddings werden separat als `PENDING` gestaged (ADR-006) · **PROCESS_STEP** – durable, PII-freie Fortschrittstabelle für SSE-Catch-up (ADR-004) · **Blob-Seite** – 1 MiB grosses `BYTEA`-Fragment eines Dokuments in `DOCUMENT_BLOB_PAGE`; ermöglicht Range-Zugriff ohne Materialisierung des ganzen Objekts (ADR-008) · **Transienter Blobstore** – TTL-begrenzter Postgres-Speicher für Roh- und Preview-Bytes, cluster-sichtbarer Übergabepunkt des Async-Jobs (ADR-008). Weitere Begriffe siehe [SPEC.md](SPEC.md).
+- **Unterschiedliche Modellfähigkeiten:** Nicht jedes offene Modell bzw. jede Runtime unterstützt Structured Output oder Bildeingaben → Capability-Prüfung beim Start, immer serverseitige Validierung, Eval je Adapter.
+- **Latenz auf dem Referenz-Setup (iGPU):** kann NfA-2 für E-4 gefährden → Modellgrösse und Repräsentation als Stellhebel, Messung in M2.
+- **Retrieval-Güte mit erster-_N_-Wörter-Strategie:** kann bei Dokumenten mit langem Vorspann schwächeln → _N_ und Embedding-Modell tunen, NfA-6 beobachten.
+- **Embedding-Modellwechsel:** macht bestehende Vektoren unbrauchbar → Index-Generationen + Re-Indexierung, Filter auf `embedding_model`.
+- **Externe Anbieter:** Ausfälle, Rate-Limits, Preisänderungen → Timeouts, definierter Fehlerzustand, Kosten je Anbieter ausweisen (NfA-7).
+- **Erosion der Modul- und Portgrenzen** → ArchUnit im CI-Gate.
+- **SSE hinter Proxy / NOTIFY-Limits** → Heartbeat, ungepuffertes Streaming, nur IDs im Payload.
+- **Verwaiste `PENDING`-Einträge und Blobs** → kurze TTL, gemeinsamer Cleanup-Job, Metriken.
+- **Self-Learning-Loop (Ausbaustufe):** Vergiftungsrisiko → nur mit separatem Consent, Quarantäne und Rollback.
+
+---
+
+## 12. Offene Punkte (SPEC § 2)
+
+- Konkrete Dokumentrepräsentation für FR-4 je LLM-Adapter (Volltext, Markdown, Seitenbilder); wird pro Adapter dokumentiert.
+- Welche externen Anbieter über den Nachweis-Adapter (M2) hinaus unterstützt werden.
+- Ausgestaltung des Self-Learning-Loops (Kuratierung, Quarantäne, Rollback von Vorlagen).
+
+---
+
+## 13. Glossar
+
+**Port** – fachliche Schnittstelle des Kerns zu einem externen Baustein · **Adapter** – austauschbare, produktspezifische Implementierung eines Ports · **Contract-Test** – Test-Suite, die jeder Adapter eines Ports bestehen muss · **Capabilities** – deklarierte Fähigkeiten eines LLM-Adapters (Structured Output, Eingabeform) · **OpenAI-kompatible API** – verbreitetes HTTP-Protokoll für Chat/Embedding, das viele lokale Runtimes und Anbieter unterstützen · **Pre-Filter** – Filterprädikat als Teil der Vektor-Query · **PENDING-/APPROVED-Embedding** – quarantänierter bzw. nach Freigabe aktiver Korpus-Vektor · **Korpus-Promotion** – Statuswechsel `PENDING → APPROVED` ohne Neuberechnung · **extraction_source** – Kennung von Textextraktor und Wortlimit, mit der ein Vektor erzeugt wurde · **Blob-Seite** – 1-MiB-BYTEA-Segment für Range-Zugriff · **HITL** – Human-in-the-Loop · **MCP** – Model Context Protocol. Weitere Begriffe → [SPEC.md](SPEC.md).

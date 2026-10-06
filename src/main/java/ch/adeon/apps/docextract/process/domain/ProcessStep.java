@@ -5,7 +5,7 @@ public enum ProcessStep {
   BLOB_STORED,
   DMS_UPLOADED,
   PREVIEW,
-  STRUCTURED,
+  TEXT_EXTRACTED,
   RETRIEVED,
   EXTRACTED
 }

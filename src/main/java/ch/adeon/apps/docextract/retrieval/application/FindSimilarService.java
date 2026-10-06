@@ -8,6 +8,9 @@ import ch.adeon.apps.docextract.retrieval.domain.DmsDocumentMetadata;
 import ch.adeon.apps.docextract.retrieval.domain.EmbeddingVector;
 import ch.adeon.apps.docextract.retrieval.domain.RetrievalException;
 import ch.adeon.apps.docextract.retrieval.domain.RetrievalResult;
+import ch.adeon.apps.docextract.retrieval.port.DmsObjectDefinitionPort;
+import ch.adeon.apps.docextract.retrieval.port.DmsObjectMetadataPort;
+import ch.adeon.apps.docextract.retrieval.port.VectorSearchPort;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
 import ch.adeon.apps.docextract.security.domain.AuthContext;
 import ch.adeon.apps.docextract.security.domain.DvelopCredential;
@@ -16,6 +19,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,7 +28,7 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * Embeds+stages a process's chunks (in the same run, avoiding a second embedding call — §6.1/8.5)
- * and searches the {@code APPROVED} corpus with a mandatory tenant/ACL pre-filter (ADR-002, FR-3,
+ * and searches the {@code APPROVED} corpus with a mandatory tenant_id pre-filter (ADR-002, FR-3,
  * NfA-4/-6). Hits below the configurable minimum score are dropped before the result is reported.
  * Each remaining hit's DMS object properties are then looked up live and attached (FR-3, SPEC §3),
  * and the hits are narrowed down to the best-matched document type (see {@link
@@ -84,9 +88,9 @@ public class FindSimilarService implements FindSimilar {
     processEventPort.publish(
         new ProcessEvent(processId, ProcessStep.RETRIEVED, StepStatus.STARTED, null));
     try {
-      List<EmbeddingVector> vectors = stageEmbeddings.stage(processId);
-      if (vectors.isEmpty()) {
-        log.info("no chunks embedded for processId={}, skipping similarity search", processId);
+      Optional<EmbeddingVector> queryEmbeddingOpt = stageEmbeddings.stage(processId);
+      if (queryEmbeddingOpt.isEmpty()) {
+        log.info("no text embedded for processId={}, skipping similarity search", processId);
         retrievalResultPort.store(processId, List.of());
         stageDocumentTypeCandidates(processId, credential, List.of());
         processEventPort.publish(
@@ -94,10 +98,10 @@ public class FindSimilarService implements FindSimilar {
         return List.of();
       }
 
-      EmbeddingVector queryEmbedding = averageOf(vectors);
+      EmbeddingVector queryEmbedding = queryEmbeddingOpt.get();
       AuthContext auth = authContextPort.current();
       List<RetrievalResult> results =
-          vectorSearchPort.search(auth.tenantId(), auth.aclRef(), queryEmbedding, topK).stream()
+          vectorSearchPort.search(auth.tenantId(), queryEmbedding, topK).stream()
               .filter(result -> result.score() >= minScore)
               .map(result -> withDmsProperties(result, credential))
               .toList();
@@ -232,21 +236,5 @@ public class FindSimilarService implements FindSimilar {
       }
     }
     return List.copyOf(byDocumentTypeId.values());
-  }
-
-  /** Query vector representing the whole document: the mean of its chunk embeddings. */
-  private static EmbeddingVector averageOf(List<EmbeddingVector> vectors) {
-    int dimensions = vectors.get(0).dimensions();
-    float[] sum = new float[dimensions];
-    for (EmbeddingVector vector : vectors) {
-      float[] values = vector.values();
-      for (int i = 0; i < dimensions; i++) {
-        sum[i] += values[i];
-      }
-    }
-    for (int i = 0; i < dimensions; i++) {
-      sum[i] /= vectors.size();
-    }
-    return new EmbeddingVector(sum);
   }
 }
