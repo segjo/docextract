@@ -1,14 +1,14 @@
 package ch.adeon.apps.docextract.retrieval.adapter.out.postgres;
 
-import ch.adeon.apps.docextract.retrieval.application.VectorSearchPort;
 import ch.adeon.apps.docextract.retrieval.domain.EmbeddingVector;
 import ch.adeon.apps.docextract.retrieval.domain.RetrievalResult;
+import ch.adeon.apps.docextract.retrieval.port.VectorSearchPort;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 /**
- * ANN similarity search restricted to {@code APPROVED} embeddings, with the tenant/ACL predicate
+ * ANN similarity search restricted to {@code APPROVED} embeddings, with the tenant_id predicate
  * embedded directly in the query as a pre-filter — never applied as a post-filter (ADR-002,
  * NfA-4/T-3). {@code PENDING} rows are structurally unreachable, since {@code status = 'APPROVED'}
  * is a mandatory query predicate, not an optional one.
@@ -23,8 +23,7 @@ public class PgVectorSearchAdapter implements VectorSearchPort {
   }
 
   @Override
-  public List<RetrievalResult> search(
-      String tenantId, String aclRef, EmbeddingVector queryEmbedding, int topK) {
+  public List<RetrievalResult> search(String tenantId, EmbeddingVector queryEmbedding, int topK) {
     String queryVector = PgVectorLiteral.of(queryEmbedding.values());
     return jdbcTemplate.query(
         """
@@ -32,7 +31,6 @@ public class PgVectorSearchAdapter implements VectorSearchPort {
         FROM embedding
         WHERE status = 'APPROVED'
           AND tenant_id = ?
-          AND acl_ref = ?
         ORDER BY embedding <=> ?::vector
         LIMIT ?
         """,
@@ -44,7 +42,6 @@ public class PgVectorSearchAdapter implements VectorSearchPort {
                 null),
         queryVector,
         tenantId,
-        aclRef,
         queryVector,
         topK);
   }

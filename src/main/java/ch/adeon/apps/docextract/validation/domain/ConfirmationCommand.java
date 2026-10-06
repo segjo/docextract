@@ -2,5 +2,14 @@ package ch.adeon.apps.docextract.validation.domain;
 
 import java.util.Map;
 
-public record ConfirmationCommand(String documentId, boolean consentGiven, Map<String, Object> attributes) {
-}
+/**
+ * {@code templateConsent} is a separate, explicit opt-in for adopting the confirmed attributes as a
+ * herkunftsmarkierte Vorlage (FR-5) — it must never be implied by {@code consentGiven} alone.
+ */
+public record ConfirmationCommand(
+    String processId,
+    String documentId,
+    String repositoryId,
+    boolean consentGiven,
+    boolean templateConsent,
+    Map<String, Object> attributes) {}

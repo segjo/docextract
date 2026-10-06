@@ -7,7 +7,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Generic, TTL-bounded in-memory store for transient per-{@code processId} job state (e.g.
- * structuring chunks) that must never be persisted at rest (ADR-006). Entries older than {@code
+ * extracted text/content) that must never be persisted at rest (ADR-006). Entries older than {@code
  * ttl} are treated as absent and swept on access; there is no filesystem or database fallback by
  * design, since the values held here may carry raw document content/PII.
  */

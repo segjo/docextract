@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.0.0</version>
+        <version>4.1.1</version>
         <relativePath />
     </parent>
 
@@ -22,6 +22,9 @@
         <testcontainers.version>2.0.5</testcontainers.version>
         <!-- Override Spring Boot's managed version: fixes CVE-2026-42198/CVE-2026-54291 -->
         <postgresql.version>42.7.12</postgresql.version>
+        <!-- Spring AI 2.0.x supports Spring Boot 4.0.x/4.1.x (ADR-009) -->
+        <spring-ai.version>2.0.0</spring-ai.version>
+        <springdoc.version>3.0.1</springdoc.version>
     </properties>
 
     <dependencyManagement>
@@ -30,6 +33,13 @@
                 <groupId>org.testcontainers</groupId>
                 <artifactId>testcontainers-bom</artifactId>
                 <version>${testcontainers.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>${spring-ai.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -72,12 +82,31 @@
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
-        <!-- Fast-track PDF -> text conversion (structuring), kept as an alternative to the
-        docling adapter behind the same StructuringPort (see ADR-007). -->
+        <!-- Generates the OpenAPI 3 description of all @RestController endpoints at runtime
+        (/v3/api-docs, /v3/api-docs.yaml) + Swagger UI, so an Angular client/types can be
+        generated from the real controllers instead of being hand-maintained. -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>${springdoc.version}</version>
+        </dependency>
+
+        <!-- Fast-track PDF -> text conversion, kept as an alternative to the docling adapter
+        behind the same TextExtractionPort/DocumentContentPort (ADR-011/-012). -->
         <dependency>
             <groupId>org.apache.pdfbox</groupId>
             <artifactId>pdfbox</artifactId>
             <version>3.0.8</version>
+        </dependency>
+
+        <!-- Central KI-Integrationsschicht (ADR-009/-011): OpenAiChatModel/OpenAiEmbeddingModel
+        are used directly (not autoconfigured) so the generic OpenAI-compatible LLM/embedding
+        adapters can each point at an independently configured base-url (local runtime or
+        external provider). DocExtract's own ports/adapters wrap these; Spring AI types never
+        leave the infrastructure adapters (extraction/retrieval adapter.out.openai). -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-openai</artifactId>
         </dependency>
 
         <dependency>
@@ -193,6 +222,60 @@
                                 </configuration>
                             </execution>
                         </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- Regenerates doc/api/docextract-api-docs.json (own API contract, CONTEXT.md §0) from the
+        live /v3/api-docs endpoint: `mvn -Popenapi-spec verify`. Requires the app's runtime
+        dependencies (Postgres, see docker-compose.yml) to be reachable, since spring-boot:start
+        boots the full application context, and the `local` profile (springdoc enabled, see
+        application.yml). -->
+        <profile>
+            <id>openapi-spec</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.springframework.boot</groupId>
+                        <artifactId>spring-boot-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>pre-integration-test</id>
+                                <goals>
+                                    <goal>start</goal>
+                                </goals>
+                                <configuration>
+                                    <arguments>
+                                        <argument>--spring.profiles.active=ci</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>post-integration-test</id>
+                                <goals>
+                                    <goal>stop</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.springdoc</groupId>
+                        <artifactId>springdoc-openapi-maven-plugin</artifactId>
+                        <version>1.4</version>
+                        <executions>
+                            <execution>
+                                <phase>integration-test</phase>
+                                <goals>
+                                    <goal>generate</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <apiDocsUrl>http://localhost:8080/adeon-docextract/v3/api-docs</apiDocsUrl>
+                            <outputFileName>docextract-api-docs.json</outputFileName>
+                            <outputDir>${project.basedir}/doc/api</outputDir>
+                        </configuration>
                     </plugin>
                 </plugins>
             </build>

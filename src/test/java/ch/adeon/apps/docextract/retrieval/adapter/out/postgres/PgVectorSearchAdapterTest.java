@@ -55,15 +55,14 @@ class PgVectorSearchAdapterTest {
   }
 
   @Test
-  void finds_only_approved_embeddings_for_the_caller_s_tenant_and_acl() {
-    insertApproved("tenant-a", "acl-a", "repo-1", "doc-close", vectorOf(1f, 0f));
-    insertApproved("tenant-a", "acl-a", "repo-1", "doc-far", vectorOf(0f, 1f));
-    insertApproved("tenant-b", "acl-a", "repo-1", "doc-other-tenant", vectorOf(1f, 0f));
-    insertApproved("tenant-a", "acl-b", "repo-1", "doc-other-acl", vectorOf(1f, 0f));
-    insertPending("tenant-a", "acl-a", vectorOf(1f, 0f));
+  void finds_only_approved_embeddings_for_the_caller_s_tenant() {
+    insertApproved("tenant-a", "repo-1", "doc-close", vectorOf(1f, 0f));
+    insertApproved("tenant-a", "repo-1", "doc-far", vectorOf(0f, 1f));
+    insertApproved("tenant-b", "repo-1", "doc-other-tenant", vectorOf(1f, 0f));
+    insertPending("tenant-a", vectorOf(1f, 0f));
 
     List<RetrievalResult> results =
-        adapter.search("tenant-a", "acl-a", new EmbeddingVector(vectorOf(1f, 0f)), 5);
+        adapter.search("tenant-a", new EmbeddingVector(vectorOf(1f, 0f)), 5);
 
     assertThat(results)
         .extracting(RetrievalResult::documentId)
@@ -73,42 +72,39 @@ class PgVectorSearchAdapterTest {
   @Test
   void respects_the_topK_limit() {
     for (int i = 0; i < 3; i++) {
-      insertApproved("tenant-a", "acl-a", "repo-1", "doc-" + i, vectorOf(1f, 0f));
+      insertApproved("tenant-a", "repo-1", "doc-" + i, vectorOf(1f, 0f));
     }
 
     List<RetrievalResult> results =
-        adapter.search("tenant-a", "acl-a", new EmbeddingVector(vectorOf(1f, 0f)), 2);
+        adapter.search("tenant-a", new EmbeddingVector(vectorOf(1f, 0f)), 2);
 
     assertThat(results).hasSize(2);
   }
 
   private void insertApproved(
-      String tenantId, String aclRef, String repositoryId, String documentId, float[] vector) {
+      String tenantId, String repositoryId, String documentId, float[] vector) {
     jdbcTemplate.update(
         """
         INSERT INTO embedding
-            (process_id, chunk_index, embedding, tenant_id, acl_ref, status, repository_id,
+            (process_id, embedding, tenant_id, status, repository_id,
              dms_document_id, extraction_source, embedding_model)
-        VALUES ('p', 0, ?::vector, ?, ?, 'APPROVED', ?, ?, 'pdfbox-fast-track', 'qwen3-embedding:0.6b')
+        VALUES ('p', ?::vector, ?, 'APPROVED', ?, ?, 'pdfbox', 'qwen3-embedding:0.6b')
         """,
         PgVectorLiteral.of(vector),
         tenantId,
-        aclRef,
         repositoryId,
         documentId);
   }
 
-  private void insertPending(String tenantId, String aclRef, float[] vector) {
+  private void insertPending(String tenantId, float[] vector) {
     jdbcTemplate.update(
         """
         INSERT INTO embedding
-            (process_id, chunk_index, embedding, tenant_id, acl_ref, status, extraction_source,
-             embedding_model)
-        VALUES ('p', 0, ?::vector, ?, ?, 'PENDING', 'pdfbox-fast-track', 'qwen3-embedding:0.6b')
+            (process_id, embedding, tenant_id, status, extraction_source, embedding_model)
+        VALUES ('p', ?::vector, ?, 'PENDING', 'pdfbox', 'qwen3-embedding:0.6b')
         """,
         PgVectorLiteral.of(vector),
-        tenantId,
-        aclRef);
+        tenantId);
   }
 
   private static float[] vectorOf(float x, float y) {

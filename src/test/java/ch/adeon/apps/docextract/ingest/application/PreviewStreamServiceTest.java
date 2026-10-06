@@ -14,6 +14,8 @@ import ch.adeon.apps.docextract.ingest.domain.BlobKind;
 import ch.adeon.apps.docextract.ingest.domain.BlobRef;
 import ch.adeon.apps.docextract.ingest.domain.MediaType;
 import ch.adeon.apps.docextract.ingest.domain.PageRange;
+import ch.adeon.apps.docextract.ingest.port.DocumentBlobPort;
+import ch.adeon.apps.docextract.ingest.port.PreviewRenderPort;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
 import ch.adeon.apps.docextract.security.domain.AuthContext;
 import java.util.UUID;
@@ -21,7 +23,7 @@ import org.junit.jupiter.api.Test;
 
 class PreviewStreamServiceTest {
 
-  private static final AuthContext OWNER = new AuthContext("tenant-a", "acl", "user-1", "User One");
+  private static final AuthContext OWNER = new AuthContext("tenant-a", "user-1", "User One");
 
   private final DocumentBlobPort documentBlobPort = mock(DocumentBlobPort.class);
   private final PreviewRenderPort previewRenderPort = mock(PreviewRenderPort.class);
@@ -106,8 +108,7 @@ class PreviewStreamServiceTest {
   @Test
   void a_different_tenant_is_denied_as_if_the_blob_did_not_exist() {
     UUID originalBlobId = UUID.randomUUID();
-    when(authContextPort.current())
-        .thenReturn(new AuthContext("tenant-b", "acl", "user-1", "User One"));
+    when(authContextPort.current()).thenReturn(new AuthContext("tenant-b", "user-1", "User One"));
     when(documentBlobPort.describe(originalBlobId))
         .thenReturn(
             new BlobRef(
@@ -120,8 +121,7 @@ class PreviewStreamServiceTest {
   @Test
   void a_different_user_of_the_same_tenant_is_denied_as_if_the_blob_did_not_exist() {
     UUID originalBlobId = UUID.randomUUID();
-    when(authContextPort.current())
-        .thenReturn(new AuthContext("tenant-a", "acl", "user-2", "User Two"));
+    when(authContextPort.current()).thenReturn(new AuthContext("tenant-a", "user-2", "User Two"));
     when(documentBlobPort.describe(originalBlobId))
         .thenReturn(
             new BlobRef(

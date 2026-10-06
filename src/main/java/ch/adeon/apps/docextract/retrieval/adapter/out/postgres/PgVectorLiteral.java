@@ -20,4 +20,18 @@ final class PgVectorLiteral {
     }
     return sb.append(']').toString();
   }
+
+  /** Parses pgvector's textual {@code [0.1,0.2,...]} representation back into a float array. */
+  static float[] parse(String literal) {
+    String trimmed = literal.substring(1, literal.length() - 1);
+    if (trimmed.isBlank()) {
+      return new float[0];
+    }
+    String[] parts = trimmed.split(",");
+    float[] values = new float[parts.length];
+    for (int i = 0; i < parts.length; i++) {
+      values[i] = Float.parseFloat(parts[i]);
+    }
+    return values;
+  }
 }

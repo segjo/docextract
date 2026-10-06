@@ -4,6 +4,8 @@ import ch.adeon.apps.docextract.ingest.domain.BlobKind;
 import ch.adeon.apps.docextract.ingest.domain.BlobRef;
 import ch.adeon.apps.docextract.ingest.domain.MediaType;
 import ch.adeon.apps.docextract.ingest.domain.PageRange;
+import ch.adeon.apps.docextract.ingest.port.DocumentBlobPort;
+import ch.adeon.apps.docextract.ingest.port.PreviewRenderPort;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
 import ch.adeon.apps.docextract.security.domain.AuthContext;
 import java.util.Objects;

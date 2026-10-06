@@ -1,7 +1,7 @@
 package ch.adeon.apps.docextract.ingest.adapter.out.blob;
 
 import ch.adeon.apps.docextract.ingest.application.BlobNotFoundException;
-import ch.adeon.apps.docextract.ingest.application.DocumentBlobPort;
+import ch.adeon.apps.docextract.ingest.port.DocumentBlobPort;
 import ch.adeon.apps.docextract.ingest.domain.BlobKind;
 import ch.adeon.apps.docextract.ingest.domain.BlobRef;
 import ch.adeon.apps.docextract.ingest.domain.MediaType;

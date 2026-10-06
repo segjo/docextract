@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
  * document types/properties, live, independent of any process (SPEC §3). {@code POST
  * /value-lists/{propertyId}} — a single property's valid values, live, for frontend typeahead/"load
  * more" filtering via {@code searchTerm} (SPEC §3, {@link
- * ch.adeon.apps.docextract.retrieval.application.ValueListPort}).
+ * ch.adeon.apps.docextract.retrieval.port.ValueListPort}).
  */
 @RestController
 @RequestMapping("/api/v1")

@@ -3,7 +3,7 @@ package ch.adeon.apps.docextract.retrieval.domain;
 import java.util.List;
 
 /**
- * Result of a {@link ch.adeon.apps.docextract.retrieval.application.ValueListPort} lookup, capped
+ * Result of a {@link ch.adeon.apps.docextract.retrieval.port.ValueListPort} lookup, capped
  * to a configurable maximum (T-4: a value list can hold arbitrarily many entries). {@code hasMore}
  * is {@code true} when the webhook returned more values than fit into {@code values}.
  */
