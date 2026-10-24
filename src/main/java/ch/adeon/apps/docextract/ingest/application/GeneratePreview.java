@@ -2,6 +2,7 @@ package ch.adeon.apps.docextract.ingest.application;
 
 import ch.adeon.apps.docextract.ingest.domain.MediaType;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -22,4 +23,11 @@ public interface GeneratePreview {
    * Whether ingest can obtain a PDF preview for the given media type (native PDF, or renderable).
    */
   boolean supports(MediaType mediaType);
+
+  /**
+   * File extensions (with leading dot, e.g. {@code ".pdf"}) ingest can accept — native PDF plus
+   * whatever the configured preview adapter can render. Exposed to the import mask so the frontend
+   * doesn't hardcode a list that can drift from the actual server-side acceptance check.
+   */
+  Set<String> supportedFileExtensions();
 }

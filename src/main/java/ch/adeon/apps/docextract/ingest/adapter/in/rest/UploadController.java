@@ -38,10 +38,13 @@ public class UploadController {
   }
 
   @PostMapping(consumes = "multipart/form-data")
-  public ResponseEntity<IngestedDocument> upload(@RequestParam("file") MultipartFile file)
+  public ResponseEntity<IngestedDocument> upload(
+      @RequestParam("file") MultipartFile file,
+      @RequestParam(value = "repositoryId", required = false) String repositoryId)
       throws IOException {
     IngestCommand command =
-        IngestCommand.of(file.getOriginalFilename(), file.getContentType(), file.getBytes());
+        IngestCommand.of(
+            file.getOriginalFilename(), file.getContentType(), file.getBytes(), repositoryId);
     IngestedDocument ingested = ingestDocument.ingest(command);
     return ResponseEntity.accepted().body(ingested);
   }

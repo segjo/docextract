@@ -1,0 +1,45 @@
+.status-bar {
+  border-top: 1px solid var(--color-line);
+  padding: 10px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.status-bar__summary {
+  color: var(--color-grey-text);
+  font-size: 12px;
+  margin: 0;
+}
+
+.status-bar__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn {
+  border: 1px solid var(--color-input-border);
+  background: #fff;
+  color: var(--color-text);
+  border-radius: 2px;
+  padding: 9px 16px;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  &--secondary {
+    color: var(--color-red);
+    border-color: var(--color-danger-border);
+  }
+
+  &--primary {
+    background: var(--color-blue);
+    border-color: var(--color-blue);
+    color: #fff;
+  }
+}

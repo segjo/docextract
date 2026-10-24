@@ -1,0 +1,33 @@
+.viewer {
+  height: 100%;
+  min-height: 420px;
+  display: grid;
+  place-items: center;
+  background: var(--color-panel-bg);
+}
+
+.viewer__frame {
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+  border: 0;
+  background: #fff;
+}
+
+.viewer__placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 13px;
+  color: var(--color-grey-text);
+  text-align: center;
+}
+
+.viewer__loader {
+  width: 38px;
+  height: 38px;
+  border: 3px solid var(--color-loader-track);
+  border-top-color: var(--color-blue);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}

@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ch.adeon.apps.docextract.process.application.ProcessEventPort;
+import ch.adeon.apps.docextract.process.application.ProcessRepositoryPort;
 import ch.adeon.apps.docextract.process.domain.ProcessEvent;
 import ch.adeon.apps.docextract.process.domain.ProcessStep;
 import ch.adeon.apps.docextract.process.domain.StepStatus;
@@ -43,6 +44,7 @@ class FindSimilarServiceTest {
       mock(DmsObjectDefinitionPort.class);
   private final DocumentTypeCandidatesPort documentTypeCandidatesPort =
       mock(DocumentTypeCandidatesPort.class);
+  private final ProcessRepositoryPort processRepositoryPort = mock(ProcessRepositoryPort.class);
   private final ObjectMapper objectMapper = new ObjectMapper();
   private final DvelopCredential credential =
       new DvelopCredential("Authorization", "Bearer t", "de-CH");
@@ -56,6 +58,7 @@ class FindSimilarServiceTest {
           dmsObjectMetadataPort,
           dmsObjectDefinitionPort,
           documentTypeCandidatesPort,
+          processRepositoryPort,
           objectMapper,
           0.0,
           "repo-1");
@@ -127,6 +130,7 @@ class FindSimilarServiceTest {
             dmsObjectMetadataPort,
             dmsObjectDefinitionPort,
             documentTypeCandidatesPort,
+            processRepositoryPort,
             objectMapper,
             0.8,
             "repo-1");

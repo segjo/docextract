@@ -5,6 +5,7 @@ import ch.adeon.apps.docextract.ingest.application.DmsChunkUploadException;
 import ch.adeon.apps.docextract.ingest.application.PreviewRenderingException;
 import ch.adeon.apps.docextract.ingest.application.UploadRejectedException;
 import ch.adeon.apps.docextract.validation.application.ConsentRequiredException;
+import ch.adeon.apps.docextract.validation.application.InvalidAttributesException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ControllerAdvice;
@@ -17,6 +18,14 @@ public class GlobalExceptionHandler {
   public ProblemDetail handleConsentRequired(ConsentRequiredException ex) {
     ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
     problem.setTitle("Consent required");
+    return problem;
+  }
+
+  @ExceptionHandler(InvalidAttributesException.class)
+  public ProblemDetail handleInvalidAttributes(InvalidAttributesException ex) {
+    ProblemDetail problem =
+        ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+    problem.setTitle("Invalid attributes — validation must be repeated");
     return problem;
   }
 

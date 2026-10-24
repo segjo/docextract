@@ -20,6 +20,7 @@ import ch.adeon.apps.docextract.ingest.domain.ValidationResult;
 import ch.adeon.apps.docextract.ingest.port.DmsChunkUploadPort;
 import ch.adeon.apps.docextract.ingest.port.DocumentBlobPort;
 import ch.adeon.apps.docextract.process.application.ProcessEventPort;
+import ch.adeon.apps.docextract.process.application.ProcessRepositoryPort;
 import ch.adeon.apps.docextract.process.domain.ProcessEvent;
 import ch.adeon.apps.docextract.process.domain.ProcessStep;
 import ch.adeon.apps.docextract.process.domain.StepStatus;
@@ -70,6 +71,7 @@ public class IngestDocumentService implements IngestDocument {
   private final FindSimilar findSimilar;
   private final ExtractAttributes extractAttributes;
   private final DocumentHashStagingPort documentHashStagingPort;
+  private final ProcessRepositoryPort processRepositoryPort;
   private final int retrievalTopK;
   private final Limits limits;
   private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
@@ -87,6 +89,7 @@ public class IngestDocumentService implements IngestDocument {
       FindSimilar findSimilar,
       ExtractAttributes extractAttributes,
       DocumentHashStagingPort documentHashStagingPort,
+      ProcessRepositoryPort processRepositoryPort,
       @Value("${docextract.ingest.max-file-size-bytes:26214400}") long maxFileSizeBytes,
       @Value("${docextract.retrieval.top-k:5}") int retrievalTopK) {
     this.documentBlobPort = documentBlobPort;
@@ -101,6 +104,7 @@ public class IngestDocumentService implements IngestDocument {
     this.findSimilar = findSimilar;
     this.extractAttributes = extractAttributes;
     this.documentHashStagingPort = documentHashStagingPort;
+    this.processRepositoryPort = processRepositoryPort;
     this.retrievalTopK = retrievalTopK;
     this.limits = new Limits(maxFileSizeBytes);
   }
@@ -140,6 +144,12 @@ public class IngestDocumentService implements IngestDocument {
     // Hashes the raw upload bytes (not a conversion/preview derivative) so retrieval can recognize
     // a byte-identical re-upload and skip re-embedding it (CHANGES.md duplicate-detection step).
     documentHashStagingPort.stage(processId, Sha256.hex(upload.content()));
+    // Stages the user's chosen repository (import mask) so every later step of this same process
+    // (retrieval's object-definition fallback, extraction's value-list lookups) targets it instead
+    // of the globally configured default.
+    if (command.repositoryId() != null && !command.repositoryId().isBlank()) {
+      processRepositoryPort.stage(processId, command.repositoryId());
+    }
 
     CompletableFuture<BlobRef> blobFuture =
         CompletableFuture.supplyAsync(
@@ -155,7 +165,9 @@ public class IngestDocumentService implements IngestDocument {
 
     CompletableFuture<DmsLocation> dmsFuture =
         CompletableFuture.supplyAsync(
-            () -> dmsChunkUploadPort.upload(upload.content(), upload.mediaType(), credential),
+            () ->
+                dmsChunkUploadPort.upload(
+                    upload.content(), upload.mediaType(), command.repositoryId(), credential),
             executor);
 
     CompletableFuture<Optional<UUID>> previewFuture =

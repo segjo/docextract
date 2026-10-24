@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="de-CH">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>DocExtract – Farbpalette</title>
+    <style>
+      :root {
+        --blue: #008bd2;
+        --text: #424242;
+        --muted: #747474;
+        --soft: #f7f7f7;
+        --green: #39a94b;
+        --red: #c83f3f;
+        --amber: #b56b08;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 28px;
+        font:
+          14px/1.4 Arial,
+          Helvetica,
+          sans-serif;
+        color: var(--text);
+        background: #fff;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0 0 4px;
+      }
+      p.lead {
+        color: var(--muted);
+        margin: 0 0 28px;
+      }
+      h2 {
+        font-size: 15px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--muted);
+        border-bottom: 1px solid #eee;
+        padding-bottom: 6px;
+        margin: 32px 0 14px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+        gap: 14px;
+      }
+      .swatch {
+        border: 1px solid #eee;
+        border-radius: 4px;
+        overflow: hidden;
+        background: #fff;
+      }
+      .fill {
+        height: 64px;
+      }
+      .meta {
+        padding: 8px 10px;
+      }
+      .name {
+        font-weight: 700;
+      }
+      .hex {
+        font:
+          12px/1.4 Consolas,
+          monospace;
+        color: var(--muted);
+      }
+      .usage {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>DocExtract – Farbpalette</h1>
+    <p class="lead">
+      Extrahiert aus
+      <code>doc/frontend/docextract-dms-import-mock.html</code>.
+    </p>
+
+    <h2>Basis-Tokens (CSS-Variablen)</h2>
+    <div class="grid">
+      <div class="swatch">
+        <div class="fill" style="background: #008bd2"></div>
+        <div class="meta">
+          <div class="name">Blue</div>
+          <div class="hex">--blue · #008bd2</div>
+          <div class="usage">Primäraktionen, aktive Tabs/Icons</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #424242"></div>
+        <div class="meta">
+          <div class="name">Text</div>
+          <div class="hex">--text · #424242</div>
+          <div class="usage">Standard-Textfarbe</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #747474"></div>
+        <div class="meta">
+          <div class="name">Muted</div>
+          <div class="hex">--muted · #747474</div>
+          <div class="usage">Sekundärtext, Labels</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #f7f7f7"></div>
+        <div class="meta">
+          <div class="name">Soft</div>
+          <div class="hex">--soft · #f7f7f7</div>
+          <div class="usage">Dezente Flächen</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #39a94b"></div>
+        <div class="meta">
+          <div class="name">Green</div>
+          <div class="hex">--green · #39a94b</div>
+          <div class="usage">Erfolg / abgeschlossen</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #c83f3f"></div>
+        <div class="meta">
+          <div class="name">Red</div>
+          <div class="hex">--red · #c83f3f</div>
+          <div class="usage">Fehler, Ablehnen, kritisch</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #b56b08"></div>
+        <div class="meta">
+          <div class="name">Amber</div>
+          <div class="hex">--amber · #b56b08</div>
+          <div class="usage">Warnung, niedrige Konfidenz</div>
+        </div>
+      </div>
+    </div>
+
+    <h2>Akzent- &amp; Status-Flächen</h2>
+    <div class="grid">
+      <div class="swatch">
+        <div class="fill" style="background: #8f2a9d"></div>
+        <div class="meta">
+          <div class="name">Violet</div>
+          <div class="hex">#8f2a9d</div>
+          <div class="usage">Dokument-Badge (DX)</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #24713a"></div>
+        <div class="meta">
+          <div class="name">Avatar Green</div>
+          <div class="hex">#24713a</div>
+          <div class="usage">Avatar-Hintergrund</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #e94b55"></div>
+        <div class="meta">
+          <div class="name">PDF Red</div>
+          <div class="hex">#e94b55</div>
+          <div class="usage">PDF-Icon</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #ef5360"></div>
+        <div class="meta">
+          <div class="name">File Red</div>
+          <div class="hex">#ef5360</div>
+          <div class="usage">Datei-Icon (Import)</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #188b68"></div>
+        <div class="meta">
+          <div class="name">Done Green</div>
+          <div class="hex">#188b68</div>
+          <div class="usage">Prozessschritt abgeschlossen</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #18863d"></div>
+        <div class="meta">
+          <div class="name">Confidence Green</div>
+          <div class="hex">#18863d</div>
+          <div class="usage">Konfidenzwert hoch</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #ffe795"></div>
+        <div class="meta">
+          <div class="name">Highlight Yellow</div>
+          <div class="hex">#ffe795</div>
+          <div class="usage">Quelle-Highlight im Dokument</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #e6b600"></div>
+        <div class="meta">
+          <div class="name">Highlight Border</div>
+          <div class="hex">#e6b600</div>
+          <div class="usage">Rahmen des Highlights</div>
+        </div>
+      </div>
+    </div>
+
+    <h2>Banner- &amp; Flächenfarben</h2>
+    <div class="grid">
+      <div class="swatch">
+        <div class="fill" style="background: #eaf5fc"></div>
+        <div class="meta">
+          <div class="name">Info Banner</div>
+          <div class="hex">#eaf5fc</div>
+          <div class="usage">Hinweis-Banner (mit --blue Border)</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #fff6df"></div>
+        <div class="meta">
+          <div class="name">Warn Banner</div>
+          <div class="hex">#fff6df</div>
+          <div class="usage">Warn-Banner Hintergrund</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #d48b13"></div>
+        <div class="meta">
+          <div class="name">Warn Border</div>
+          <div class="hex">#d48b13</div>
+          <div class="usage">Warn-Banner Rahmen</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #fff8e8"></div>
+        <div class="meta">
+          <div class="name">Low-Confidence Field</div>
+          <div class="hex">#fff8e8</div>
+          <div class="usage">Feld mit niedriger Konfidenz</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #eef8fd"></div>
+        <div class="meta">
+          <div class="name">Dropzone Active</div>
+          <div class="hex">#eef8fd</div>
+          <div class="usage">Drag-over Fläche</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #e6f3fa"></div>
+        <div class="meta">
+          <div class="name">Active Icon BG</div>
+          <div class="hex">#e6f3fa</div>
+          <div class="usage">Aktiver Toolbar-Icon-Hintergrund</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #fafafa"></div>
+        <div class="meta">
+          <div class="name">Panel BG</div>
+          <div class="hex">#fafafa</div>
+          <div class="usage">Vorschau-/Upload-Flächen</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #e2a2a2"></div>
+        <div class="meta">
+          <div class="name">Danger Border</div>
+          <div class="hex">#e2a2a2</div>
+          <div class="usage">Rahmen Danger-Button</div>
+        </div>
+      </div>
+    </div>
+
+    <h2>Neutrale Grautöne &amp; Linien</h2>
+    <div class="grid">
+      <div class="swatch">
+        <div class="fill" style="background: #222"></div>
+        <div class="meta">
+          <div class="name">Mockbar BG</div>
+          <div class="hex">#222</div>
+          <div class="usage">Mock-Steuerleiste</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #202833"></div>
+        <div class="meta">
+          <div class="name">Log BG</div>
+          <div class="hex">#202833</div>
+          <div class="usage">Audit-Log Hintergrund</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #d9e4ed"></div>
+        <div class="meta">
+          <div class="name">Log Text</div>
+          <div class="hex">#d9e4ed</div>
+          <div class="usage">Audit-Log Textfarbe</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #444"></div>
+        <div class="meta">
+          <div class="name">Select BG (dark)</div>
+          <div class="hex">#444</div>
+          <div class="usage">Mockbar-Select Hintergrund</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #eee"></div>
+        <div class="meta">
+          <div class="name">Hover Grey</div>
+          <div class="hex">#eee</div>
+          <div class="usage">Icon-Hover</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #ddd"></div>
+        <div class="meta">
+          <div class="name">Border/Dot Grey</div>
+          <div class="hex">#ddd</div>
+          <div class="usage">Dot-Indikatoren, Tabellen-Trennlinien</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #ccc"></div>
+        <div class="meta">
+          <div class="name">Step Connector</div>
+          <div class="hex">#ccc</div>
+          <div class="usage">Verbindungslinie Prozessschritte</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #bbb"></div>
+        <div class="meta">
+          <div class="name">Input Border</div>
+          <div class="hex">#bbb</div>
+          <div class="usage">Eingabefeld-Unterstrich, Buttons</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #aaa"></div>
+        <div class="meta">
+          <div class="name">Dashed Border</div>
+          <div class="hex">#aaa</div>
+          <div class="usage">Upload-Dropzone Rahmen</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #d7d7d7"></div>
+        <div class="meta">
+          <div class="name">Loader Track</div>
+          <div class="hex">#d7d7d7</div>
+          <div class="usage">Spinner-Grundring</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #777"></div>
+        <div class="meta">
+          <div class="name">Grey Text</div>
+          <div class="hex">#777</div>
+          <div class="usage">Sekundärtext (z. B. Meta-Angaben)</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #666"></div>
+        <div class="meta">
+          <div class="name">Tab Grey</div>
+          <div class="hex">#666</div>
+          <div class="usage">Inaktive Tabs</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="fill" style="background: #555"></div>
+        <div class="meta">
+          <div class="name">Rail Icon Grey</div>
+          <div class="hex">#555</div>
+          <div class="usage">Seitenleisten-Icons</div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,62 @@
+/* Design tokens from doc/frontend/docextract-color-palette.html — keep in sync with that file. */
+:root {
+  --color-blue: #008bd2;
+  --color-text: #424242;
+  --color-muted: #747474;
+  --color-soft: #f7f7f7;
+  --color-green: #39a94b;
+  --color-red: #c83f3f;
+  --color-amber: #b56b08;
+  --color-line: #eeeeee;
+  --color-confidence-high: #18863d;
+  --color-step-done: #188b68;
+  --color-banner-bg: #eaf5fc;
+  --color-banner-warn-bg: #fff6df;
+  --color-banner-warn-border: #d48b13;
+  --color-field-low-bg: #fff8e8;
+  --color-dropzone-active-bg: #eef8fd;
+  --color-panel-bg: #fafafa;
+  --color-danger-border: #e2a2a2;
+  --color-step-connector: #ccc;
+  --color-input-border: #bbb;
+  --color-dashed-border: #aaa;
+  --color-loader-track: #d7d7d7;
+  --color-grey-text: #777;
+  --shadow: 0 2px 8px rgb(0 0 0 / 0.13);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 14px;
+  line-height: 1.35;
+  color: var(--color-text);
+  background: #fff;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-blue);
+  outline-offset: 1px;
+}

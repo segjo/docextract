@@ -13,5 +13,8 @@ public interface DmsChunkUploadPort {
 
   // Credential is passed explicitly (not read from SecurityContextHolder) because this runs on an
   // executor thread that doesn't inherit the request thread's ThreadLocal security context.
-  DmsLocation upload(byte[] content, MediaType mediaType, DvelopCredential credential);
+  // repositoryId may be null/blank (caller didn't offer a choice), in which case the adapter falls
+  // back to its configured default repository.
+  DmsLocation upload(
+      byte[] content, MediaType mediaType, String repositoryId, DvelopCredential credential);
 }

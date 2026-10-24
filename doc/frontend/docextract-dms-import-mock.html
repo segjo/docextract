@@ -9,7 +9,7 @@
         --blue: #008bd2;
         --text: #424242;
         --muted: #747474;
-        --line: #dedede;
+        --line: transparent;
         --soft: #f7f7f7;
         --green: #39a94b;
         --red: #c83f3f;
@@ -87,10 +87,9 @@
       .layout {
         height: calc(100% - 59px);
         display: grid;
-        grid-template-columns: 72px minmax(580px, 1fr) minmax(
-            610px,
-            0.96fr
-          ) 65px;
+        grid-template-columns:
+          72px minmax(580px, 1fr) minmax(610px, 0.96fr)
+          65px;
       }
       .left-rail,
       .right-rail {
@@ -189,8 +188,6 @@
         min-height: 900px;
         margin: 0 auto;
         background: white;
-        border: 1px solid #ddd;
-        box-shadow: 0 1px 3px #0001;
         padding: 72px 82px;
         position: relative;
         font-family: Georgia, serif;
@@ -598,7 +595,7 @@
       .importdlg {
         width: 640px;
         background: #fff;
-        border: 1px solid #d6d6d6;
+        border: 0;
         box-shadow: 0 8px 28px #0003;
       }
       .importdlg header {
@@ -998,7 +995,7 @@
       }
       function renderUpload() {
         $("#pane").innerHTML =
-          `<div class="upload"><div class="drop"><div style="font-size:45px">⇧</div><h2>Dokument hierher ziehen</h2><p>oder <button class="btn" onclick="startProcess()">Datei auswählen</button></p><small>PDF, DOCX, XLSX, TIFF, PNG, JPG · maximal 50 MB</small></div><div class="banner"><b>Human-in-the-Loop:</b> Es wird nichts ohne ausdrückliche Freigabe ins DMS geschrieben.</div></div>`;
+          `<div class="upload"><div class="drop"><div style="font-size:45px">⇧</div><h2>Dokument hierher ziehen</h2><p>oder <button class="btn" onclick="startProcess()">Datei auswählen</button></p><small>PDF, DOCX, XLSX, TIFF, PNG, JPG · maximal 50 MB</small></div></div>`;
         $("#bottom").innerHTML = "";
       }
       function startProcess() {
@@ -1027,26 +1024,26 @@
       function renderProgress() {
         let s = [
           "Upload & Eingangsprüfung",
-          "PDF-Vorschau bereit",
-          "Strukturierung mit docling",
-          "Ähnlichkeitssuche mit ACL-Pre-Filter",
-          "KI-Attributvorschläge",
+          "Vorschau generieren",
+          "Dokument strukturieren",
+          "Ähnliche Dokumente suchen",
+          "Eigenschaften extrahieren",
         ];
         $("#pane").innerHTML =
-          `<div class="progress"><h2 style="font-weight:400">Dokument wird verarbeitet</h2><p class="banner">Verarbeitung lokal · kein Egress · Fortschritt via SSE</p>${s.map((x, i) => `<div class="step ${i ? "" : "run"}"><span class="circle">${i + 1}</span><div><b>${x}</b><br><small>${i === 3 ? "nur APPROVED · Tenant/ACL-Filter" : i === 4 ? "schema-constrained JSON" : "Prozessschritt wird protokolliert"}</small></div><small>${i ? "" : "läuft…"}</small></div>`).join("")}</div>`;
+          `<div class="progress"><h2 style="font-weight:400">Dokument wird verarbeitet</h2>${s.map((x, i) => `<div class="step ${i ? "" : "run"}"><span class="circle">${i + 1}</span><div><b>${x}</b></div><small>${i ? "" : "läuft…"}</small></div>`).join("")}</div>`;
         $("#bottom").innerHTML = "";
       }
       function renderProps() {
         let fs = fields[state.scenario] || [];
         let unknown = !fs.length;
         $("#pane").innerHTML =
-          `<div class="prophead">▤ <span>${unknown ? "Dokument prüfen" : state.scenario === "e3" ? "Lieferschein" : state.scenario === "e4" ? "Vertrag" : "Eingangsrechnung"}</span><div class="stretch"></div>≡ ✎</div>${unknown ? '<div class="banner warn"><b>Kein passender Dokumenttyp erkannt.</b> Das Modell gibt «unbekannt» zurück, statt Werte zu erfinden. Bitte Kategorie wählen oder ablehnen.</div>' : '<div class="banner"><b>KI-Vorschläge prüfen.</b> Quellen und Konfidenzen dienen als Entscheidungshilfe. Kein automatischer DMS-Write.</div>'}<div class="section"><div class="section-title">Erweiterte Eigenschaften <span style="margin-left:auto">⌃</span></div><div class="formgrid"><div class="field"><div class="label">Dokumenttyp</div><select id="cat"><option>${unknown ? "— unbekannt —" : state.scenario === "e3" ? "Lieferschein" : state.scenario === "e4" ? "Vertrag" : "Eingangsrechnung"}</option><option>Eingangsrechnung</option><option>Lieferschein</option><option>Vertrag</option></select></div>${fs.map((f) => `<div class="field ${f[3] && f[3] < 70 ? "low" : ""}" data-key="${f[0]}"><div class="label">${f[1]} ${f[5] ? '<span class="critical">' + f[5] + "</span>" : ""}</div><div class="conf">${f[3] ? f[3] + " %" : "–"}</div><input value="${f[2]}"><div class="source" onclick="highlight('${f[0]}')">Quelle · Seite 1 anzeigen</div></div>`).join("")}</div><label class="checkrow"><input type="checkbox" checked> Leere anzeigen</label></div><div class="section"><div class="section-title">Allgemeine Eigenschaften <span style="margin-left:auto">⌄</span></div></div>`;
+          `<div class="prophead">▤ <span>${unknown ? "Dokument prüfen" : state.scenario === "e3" ? "Lieferschein" : state.scenario === "e4" ? "Vertrag" : "Eingangsrechnung"}</span><div class="stretch"></div>≡ ✎</div>${unknown ? '<div class="banner warn"><b>Kein passender Dokumenttyp erkannt.</b> Bitte Kategorie wählen oder ablehnen.</div>' : '<div class="banner">KI-Vorschläge prüfen. Quellen und Konfidenzen dienen als Entscheidungshilfe.</div>'}<div class="section"><div class="section-title">Erweiterte Eigenschaften <span style="margin-left:auto">⌃</span></div><div class="formgrid"><div class="field"><div class="label">Dokumenttyp</div><select id="cat"><option>${unknown ? "— unbekannt —" : state.scenario === "e3" ? "Lieferschein" : state.scenario === "e4" ? "Vertrag" : "Eingangsrechnung"}</option><option>Eingangsrechnung</option><option>Lieferschein</option><option>Vertrag</option></select></div>${fs.map((f) => `<div class="field ${f[3] && f[3] < 70 ? "low" : ""}" data-key="${f[0]}"><div class="label">${f[1]} ${f[5] ? '<span class="critical">' + f[5] + "</span>" : ""}</div><div class="conf">${f[3] ? f[3] + " %" : "–"}</div><input value="${f[2]}"><div class="source" onclick="highlight('${f[0]}')">Quelle · Seite 1 anzeigen</div></div>`).join("")}</div><label class="checkrow"><input type="checkbox" checked> Leere anzeigen</label></div><div class="section"><div class="section-title">Allgemeine Eigenschaften <span style="margin-left:auto">⌄</span></div></div>`;
         $("#bottom").innerHTML =
           `<div class="summary"><b>${fs.length} Eigenschaften</b><span>${fs.filter((f) => f[5]).length} kritisch</span><span>${fs.filter((f) => f[3] < 70).length} zu prüfen</span></div><div class="actions"><button class="btn danger" onclick="reject()">Ablehnen</button><div class="stretch"></div><button class="btn primary" ${unknown ? "disabled" : ""} onclick="openModal()">Bestätigen & ins DMS schreiben</button></div>`;
       }
       function renderSimilar() {
         $("#pane").innerHTML =
-          `<div class="prophead">Ähnliche Dokumente</div><div class="banner">Nur freigegebene Dokumente nach Mandant-/ACL-Pre-Filter. Metadaten werden live aus dem DMS geladen.</div><div class="similar">${["Rechnung Muster AG · RE-2026-0712", "Rechnung Muster AG · RE-2026-0639", "Rechnung Helvetia Bürobedarf", "Gutschrift Muster AG", "Rechnung Office World"].map((x, i) => `<div class="sim"><div class="rank">${i + 1}</div><div><b>${x}</b><br><small>DMS-ID D0012${731 - i} · Eingangsrechnung</small></div><b>${[94, 91, 83, 79, 72][i]} %</b></div>`).join("")}</div>`;
+          `<div class="prophead">Ähnliche Dokumente</div><div class="similar">${["Rechnung Muster AG · RE-2026-0712", "Rechnung Muster AG · RE-2026-0639", "Rechnung Helvetia Bürobedarf", "Gutschrift Muster AG", "Rechnung Office World"].map((x, i) => `<div class="sim"><div class="rank">${i + 1}</div><div><b>${x}</b><br><small>DMS-ID D0012${731 - i} · Eingangsrechnung</small></div><b>${[94, 91, 83, 79, 72][i]} %</b></div>`).join("")}</div>`;
         $("#bottom").innerHTML = "";
       }
       function renderAudit() {
@@ -1108,23 +1105,11 @@
     <script>
       const backendPaper = $("#paperarea").innerHTML;
       const backendSteps = [
-        [
-          "Upload & Eingangsprüfung",
-          "Datei validieren, ORIGINAL-Blob speichern und DMS-Chunk hochladen",
-        ],
-        [
-          "Vorschau generieren",
-          "Native PDFs direkt bereitstellen, andere Formate im Backend konvertieren",
-        ],
-        [
-          "Dokument strukturieren",
-          "docling und HybridChunker, Chunks nur im Arbeitsspeicher",
-        ],
-        [
-          "Ähnliche Dokumente suchen",
-          "Nur APPROVED, mit Mandant- und ACL-Pre-Filter",
-        ],
-        ["Eigenschaften extrahieren", "Lokales LLM, schema-constrained JSON"],
+        ["Upload & Eingangsprüfung", ""],
+        ["Vorschau generieren", ""],
+        ["Dokument strukturieren", ""],
+        ["Ähnliche Dokumente suchen", ""],
+        ["Eigenschaften extrahieren", ""],
       ];
       let importFile = null,
         importProcess = null,
@@ -1140,7 +1125,7 @@
         $("#importDialog").classList.remove("off");
         $("#viewer").classList.add("disabled");
         $("#paperarea").innerHTML =
-          '<div class="previewwait"><div><div style="font-size:42px;color:#aaa">▧</div><h2 style="font-weight:400">Noch kein Dokument importiert</h2><p>Die Vorschau wird nach dem Import vom Backend erzeugt.</p></div></div>';
+          '<div class="previewwait"><div><div style="font-size:42px;color:#aaa">▧</div><h2 style="font-weight:400">Noch kein Dokument importiert</h2><p>Die Vorschau wird nach dem Import erzeugt.</p></div></div>';
         $("#pane").innerHTML =
           '<div class="propertieswait"><div class="big">▤</div><h2 style="font-weight:400">Keine Eigenschaften verfügbar</h2><p>Importieren Sie zuerst ein Dokument.</p></div>';
         $("#bottom").innerHTML = "";
@@ -1161,7 +1146,7 @@
       function renderBackendProcess() {
         let d = processStep;
         $("#pane").innerHTML =
-          `<div class="processhead"><h2>Dokument wird importiert</h2><div class="processid">processId: ${importProcess}</div></div><div class="banner"><b>Backend-Prozess aktiv.</b> Vorschau erscheint mit <code>preview_ready</code>. Eigenschaften erscheinen erst mit <code>extracted</code>.</div><div class="progress">${backendSteps.map((x, i) => `<div class="step ${i < d ? "done" : i === d ? "run" : "wait"}"><span class="circle">${i < d ? "✓" : i + 1}</span><div><b>${x[0]}</b><br><small>${x[1]}</small></div><span class="status">${i < d ? "abgeschlossen" : i === d ? "läuft …" : "wartet"}</span></div>`).join("")}</div>`;
+          `<div class="processhead"><h2>Dokument wird importiert</h2><div class="processid">processId: ${importProcess}</div></div><div class="banner">Eigenschaften erscheinen erst nach der Extraktion.</div><div class="progress">${backendSteps.map((x, i) => `<div class="step ${i < d ? "done" : i === d ? "run" : "wait"}"><span class="circle">${i < d ? "✓" : i + 1}</span><div><b>${x[0]}</b></div><span class="status">${i < d ? "abgeschlossen" : i === d ? "läuft …" : "wartet"}</span></div>`).join("")}</div>`;
         $("#bottom").innerHTML =
           `<div class="summary"><span>Fortschritt via Server-Sent Events</span><span class="processid">${importProcess}</span></div>`;
       }
@@ -1175,7 +1160,7 @@
         $("#pageTitle").textContent = "Import: " + importFile.name;
         $("#viewer").classList.add("disabled");
         $("#paperarea").innerHTML =
-          `<div class="previewwait"><div><div class="loader"></div><h2 style="font-weight:400">Vorschau wird im Backend generiert</h2><p>Warten auf Prozessereignis <code>preview_ready</code>.</p><div class="processid">${importProcess}</div></div></div>`;
+          `<div class="previewwait"><div><div class="loader"></div><h2 style="font-weight:400">Vorschau wird generiert</h2><div class="processid">${importProcess}</div></div></div>`;
         renderBackendProcess();
         const waits = [900, 1200, 950, 1000, 1200];
         function go() {
@@ -1224,7 +1209,7 @@
           size: 188416,
         };
         $("#importName").textContent = importFile.name;
-        $("#importMeta").textContent = "184 KB · Demo-Dokument";
+        $("#importMeta").textContent = "184 KB";
         $("#importFile").classList.add("on");
         $("#confirmImport").disabled = false;
         showImport();

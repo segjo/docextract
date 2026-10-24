@@ -9,6 +9,7 @@
 @authHeader = Bearer {{$processEnv DMS_TEST_TOKEN}}
 
 @repositoryId = 7cd5d582-2b5d-5e56-9a15-619f94e6e3ed
+@documentPropertyValue = testvalue
 
 ### Show version
 GET {{baseUrl}}
@@ -25,15 +26,30 @@ Content-Type: application/octet-stream
 
 < ../../e2e/fixtures/letter.txt
 
-### Read back the chunk via the Location header — body must equal the uploaded fixture.
-GET {{host}}{{uploadChunk.response.headers.Location}}
+### Store the document with properties
+# @name storeDocument
+POST {{baseUrl}}/r/{{repositoryId}}/o2m/
+Accept: application/json
 Authorization: {{authHeader}}
-# NOTE: this returns 404. The temp blob/chunk location (doc/api/dvelop-dmsapp.yaml,
-# uploadBlobChunk) is write-only staging — it has no GET endpoint. It's only valid
-# as the "contentLocationUri" of a subsequent storeDmsObjectWithMapping (POST /o2m)
-# call. To verify the bytes round-trip, store a DMS object with this Location as
-# contentLocationUri, then GET its "_links.mainblobcontent" (MappingDmsObject schema).
+Content-Type: application/json
+Content-Language: de
 
+{
+  "filename": "testfile.pdf",
+  "sourceCategory": "DBUE",
+  "sourceId": "/dms/r/{{repositoryId}}/source",
+  "contentLocationUri": "{{uploadChunk.response.headers.Location}}",
+  "sourceProperties": {
+    "properties": [
+      {
+        "key": "1",
+        "values": [
+          "{{documentPropertyValue}}"
+        ]
+      }
+    ]
+  }
+}
 
 ### Read Object Definitions
 # See doc/api/dvelop-dmsapp.yaml, operationId: getObjectDefinitions.

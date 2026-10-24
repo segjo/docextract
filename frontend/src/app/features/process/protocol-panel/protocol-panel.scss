@@ -1,0 +1,98 @@
+.protocol {
+  padding: 18px 20px 5px;
+}
+
+.protocol__heading {
+  font-size: 20px;
+  font-weight: 400;
+  margin: 0 0 5px;
+}
+
+.protocol__process-id {
+  font:
+    12px Consolas,
+    monospace;
+  color: var(--color-grey-text);
+  margin: 0 0 20px;
+}
+
+.protocol__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.protocol__step {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  gap: 10px;
+  align-items: start;
+  padding: 12px 0;
+  position: relative;
+
+  &:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    left: 13px;
+    top: 40px;
+    bottom: -8px;
+    border-left: 2px solid var(--color-step-connector);
+  }
+}
+
+.protocol__step-circle {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid #aaa;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  color: var(--color-grey-text);
+}
+
+.protocol__step-label {
+  font-weight: 700;
+}
+
+.protocol__step-status {
+  font-size: 12px;
+  color: var(--color-grey-text);
+  white-space: nowrap;
+}
+
+.protocol__step--pending {
+  opacity: 0.42;
+}
+
+.protocol__step--running {
+  .protocol__step-circle {
+    border-color: var(--color-blue);
+    border-top-color: transparent;
+    animation: spin 0.8s linear infinite;
+  }
+}
+
+.protocol__step--done {
+  .protocol__step-circle {
+    background: var(--color-step-done);
+    color: #fff;
+    border-color: var(--color-step-done);
+  }
+
+  .protocol__step-status {
+    color: var(--color-step-done);
+  }
+}
+
+.protocol__step--error {
+  .protocol__step-circle {
+    border-color: var(--color-red);
+    color: var(--color-red);
+  }
+
+  .protocol__step-status {
+    color: var(--color-red);
+    font-weight: 600;
+  }
+}
