@@ -2,6 +2,7 @@ package ch.adeon.apps.docextract.validation.application;
 
 import ch.adeon.apps.docextract.audit.application.AuditPort;
 import ch.adeon.apps.docextract.audit.domain.AuditEvent;
+import ch.adeon.apps.docextract.security.application.AppConfigPort;
 import ch.adeon.apps.docextract.security.application.OutboundCredentialPort;
 import ch.adeon.apps.docextract.validation.domain.ConfirmationCommand;
 import ch.adeon.apps.docextract.validation.domain.ConfirmationResult;
@@ -24,7 +25,6 @@ public class ConfirmAndWriteBackService implements ConfirmAndWriteBack {
   private final CorpusPromotionPort corpusPromotionPort;
   private final OutboundCredentialPort outboundCredentialPort;
   private final AuditPort auditPort;
-  private final String origin;
   private final String sourceCategory;
   private final String filename;
 
@@ -32,6 +32,7 @@ public class ConfirmAndWriteBackService implements ConfirmAndWriteBack {
       DmsWritePort dmsWritePort,
       CorpusPromotionPort corpusPromotionPort,
       OutboundCredentialPort outboundCredentialPort,
+      AppConfigPort appConfigPort,
       AuditPort auditPort,
       @Value("${docextract.ingest.dms.origin}") String origin,
       @Value("${docextract.validation.dms.source-category}") String sourceCategory,
@@ -40,7 +41,6 @@ public class ConfirmAndWriteBackService implements ConfirmAndWriteBack {
     this.corpusPromotionPort = corpusPromotionPort;
     this.outboundCredentialPort = outboundCredentialPort;
     this.auditPort = auditPort;
-    this.origin = origin;
     this.sourceCategory = sourceCategory;
     this.filename = filename;
   }
@@ -56,7 +56,6 @@ public class ConfirmAndWriteBackService implements ConfirmAndWriteBack {
             "",
             command.attributes(),
             filename,
-            origin,
             sourceCategory,
             outboundCredentialPort.current());
     if (dmsDocumentId == null) {

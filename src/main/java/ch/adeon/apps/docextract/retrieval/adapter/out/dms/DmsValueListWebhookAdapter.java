@@ -1,7 +1,7 @@
 package ch.adeon.apps.docextract.retrieval.adapter.out.dms;
 
-import ch.adeon.apps.docextract.retrieval.port.ValueListPort;
 import ch.adeon.apps.docextract.retrieval.domain.DmsValueList;
+import ch.adeon.apps.docextract.retrieval.port.ValueListPort;
 import ch.adeon.apps.docextract.security.application.AppConfigPort;
 import ch.adeon.apps.docextract.security.domain.DvelopCredential;
 import ch.adeon.apps.docextract.shared.http.Http1RestClientFactory;
@@ -9,7 +9,6 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -29,16 +28,11 @@ public class DmsValueListWebhookAdapter implements ValueListPort {
   private final RestClient restClient;
   private final AppConfigPort appConfigPort;
   private final ObjectMapper objectMapper;
-  private final String origin;
 
-  public DmsValueListWebhookAdapter(
-      AppConfigPort appConfigPort,
-      ObjectMapper objectMapper,
-      @Value("${docextract.ingest.dms.origin}") String origin) {
+  public DmsValueListWebhookAdapter(AppConfigPort appConfigPort, ObjectMapper objectMapper) {
     this.restClient = Http1RestClientFactory.create();
     this.appConfigPort = appConfigPort;
     this.objectMapper = objectMapper;
-    this.origin = origin;
   }
 
   @Override
@@ -68,7 +62,7 @@ public class DmsValueListWebhookAdapter implements ValueListPort {
                   repositoryId,
                   propertyId)
               // Origin is mandatory for write access (POST/PUT/DELETE/PATCH) to prevent CSRF.
-              .header(HttpHeaders.ORIGIN, origin)
+              .header(HttpHeaders.ORIGIN, appConfigPort.systemBaseUri())
               .header(credential.headerName(), credential.headerValue())
               .headers(headers -> addAcceptLanguage(headers, credential))
               .body(

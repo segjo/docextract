@@ -67,9 +67,6 @@ docextract:
       # import mask's selected repository isn't staged for a process; the import mask itself lets
       # the user pick from GET /api/v1/ingest/import-info's repositories (GET /repo/repositories).
       repository-id: 7cd5d582-2b5d-5e56-9a15-619f94e6e3ed
-      # Origin header required by the DMS API for POST/PUT/DELETE/PATCH (CSRF protection)
-      # origin: http://localhost:8081
-      origin: https://dms.local
   gotenberg:
     base-uri: http://localhost:3000
   docling:

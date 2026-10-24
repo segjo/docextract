@@ -1,9 +1,9 @@
 package ch.adeon.apps.docextract.ingest.adapter.out.dms;
 
 import ch.adeon.apps.docextract.ingest.application.DmsChunkUploadException;
-import ch.adeon.apps.docextract.ingest.port.DmsChunkUploadPort;
 import ch.adeon.apps.docextract.ingest.domain.DmsLocation;
 import ch.adeon.apps.docextract.ingest.domain.MediaType;
+import ch.adeon.apps.docextract.ingest.port.DmsChunkUploadPort;
 import ch.adeon.apps.docextract.security.application.AppConfigPort;
 import ch.adeon.apps.docextract.security.domain.DvelopCredential;
 import org.springframework.beans.factory.annotation.Value;
@@ -25,16 +25,13 @@ public class DmsChunkUploadAdapter implements DmsChunkUploadPort {
   private final RestClient restClient;
   private final AppConfigPort appConfigPort;
   private final String defaultRepositoryId;
-  private final String origin;
 
   public DmsChunkUploadAdapter(
       AppConfigPort appConfigPort,
-      @Value("${docextract.ingest.dms.repository-id}") String defaultRepositoryId,
-      @Value("${docextract.ingest.dms.origin}") String origin) {
+      @Value("${docextract.ingest.dms.repository-id}") String defaultRepositoryId) {
     this.restClient = RestClient.create();
     this.appConfigPort = appConfigPort;
     this.defaultRepositoryId = defaultRepositoryId;
-    this.origin = origin;
   }
 
   @Override
@@ -50,7 +47,7 @@ public class DmsChunkUploadAdapter implements DmsChunkUploadPort {
                   appConfigPort.systemBaseUri() + "/dms/r/{repositoryId}/blob/chunk",
                   effectiveRepositoryId)
               // Origin is mandatory for write access (POST/PUT/DELETE/PATCH) to prevent CSRF.
-              .header(HttpHeaders.ORIGIN, origin)
+              .header(HttpHeaders.ORIGIN, appConfigPort.systemBaseUri())
               .header(credential.headerName(), credential.headerValue())
               .headers(headers -> addAcceptLanguage(headers, credential))
               .contentType(org.springframework.http.MediaType.APPLICATION_OCTET_STREAM)
