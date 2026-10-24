@@ -54,8 +54,8 @@ docextract:
   dvelop:
     jstore-uri: http://localhost:6380/store/httpgateway/appconfig
     # fallback used only when the jstore endpoint above is unreachable, e.g. https://dms.local
-    system-base-uri: http://localhost:8081
-    # system-base-uri: https://dms.local
+    # system-base-uri: http://localhost:8081
+    system-base-uri: https://dms.local
   ingest:
     # T-4 DoS mitigation: hard cap on upload size (bytes), default 50 MiB
     max-file-size-bytes: 52428800
@@ -63,6 +63,9 @@ docextract:
     # abort or when this TTL elapses, whichever comes first.
     blob-ttl: PT2H
     dms:
+      # Fallback repository used when a caller doesn't offer a choice (e.g. the MCP gateway) or the
+      # import mask's selected repository isn't staged for a process; the import mask itself lets
+      # the user pick from GET /api/v1/ingest/import-info's repositories (GET /repo/repositories).
       repository-id: 7cd5d582-2b5d-5e56-9a15-619f94e6e3ed
       # Origin header required by the DMS API for POST/PUT/DELETE/PATCH (CSRF protection)
       # origin: http://localhost:8081

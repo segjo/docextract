@@ -1,7 +1,7 @@
 # PROJEKTPLAN — DocExtract
 
 **Modulweite Aufwands- und Blockplanung der CAS-AISE-Projektarbeit**
-Begleitdokument zu [SPEC.md](SPEC.md) · Stand: 08/2026
+Begleitdokument zu [SPEC.md](SPEC.md) · Stand: 10/2026
 
 > **Zweck dieses Dokuments:** Die [SPEC.md](SPEC.md) beschreibt das _Was_ (Vision, Anforderungen, Guardrails) und enthält die **internen** Meilensteine M1–M3 der Konzeptionsphase. Dieser Projektplan beschreibt das _Wann_ über die **fünf Modul-Blöcke** hinweg und ordnet den Gesamtaufwand von **~185 h** (≈ 145 h Block 1–4 + ≈ 40 h Block 5) den einzelnen Etappen zu.
 
@@ -53,16 +53,19 @@ Begleitdokument zu [SPEC.md](SPEC.md) · Stand: 08/2026
 
 ## 4. Block 2 — Frontend · ~38 h _(bis PVA 3)_
 
-| #   | Aufgabe                                                         |   h | Raster-Bezug          |
-| --- | --------------------------------------------------------------- | --: | --------------------- |
-| 2.1 | Wireframes der 3–5 Kern-Screens (Upload, Vorschau, Validierung) |   5 | Entwurf (5)           |
-| 2.2 | Frontend-Impl. (Angular, iframe) gegen statische Testdaten      |  18 | Prog. (7)(8)          |
-| 2.3 | Generierte Unit-Tests + Diff-Notiz (KI korrigiert/verworfen)    |   7 | Valid. (13) · KI (15) |
-| 2.4 | A11y-/Security-/Performance-Budget-Prüfung                      |   4 | Valid. (12)           |
-| 2.5 | **ADR** Präsentationsschicht (CSR-Entscheid)                    |   2 | Entwurf (4)           |
-| 2.6 | Projekt-Kontext-Dokument v0.2                                   |   2 | KI/Arch (17)          |
+| #   | Aufgabe                                                         |   h | Status                                                                                                                                                                                                                                                                                                                      | Raster-Bezug          |
+| --- | --------------------------------------------------------------- | --: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| 2.1 | Wireframes der 3–5 Kern-Screens (Upload, Vorschau, Validierung) |   5 | ✅ `docextract_ascii_layouts.md` (3 Screens: Import/Review/Validierung)                                                                                                                                                                                                                                                     | Entwurf (5)           |
+| 2.2 | Frontend-Impl. (Angular, iframe) gegen statische Testdaten      |  18 | ✅ Angular 22, iframe-Vorschau (`process/viewer`), Mock-Mode gegen Testdaten (`ng serve --configuration mock`, `mock-api.interceptor.ts`)                                                                                                                                                                                   | Prog. (7)(8)          |
+| 2.3 | Generierte Unit-Tests + Diff-Notiz (KI korrigiert/verworfen)    |   7 | ✅ Unit-Tests ergänzt (11 Spec-Dateien, 51 Tests: `process-progress`/`attribute-review` pure Funktionen, `status-bar`/`protocol-panel`/`similar-panel`/`properties-panel`/`document-viewer`/`process-page` Komponenten); Diff-Notiz als laufendes [`ENTWICKLUNGSTAGEBUCH.md`](ENTWICKLUNGSTAGEBUCH.md) (1. Eintrag erfasst) | Valid. (13) · KI (15) |
+| 2.4 | A11y-/Security-/Performance-Budget-Prüfung                      |   4 | ✅ NfA-F1 (`vitest-axe`), NfA-F2 (Sanitizer-Scan), NfA-F3 (`angular.json` Bundle-Budget 250/300 kB) — s. FRONTEND-SPEC.md                                                                                                                                                                                                   | Valid. (12)           |
+| 2.5 | **ADR** Präsentationsschicht (CSR-Entscheid)                    |   2 | ✅ ADR-013 (ARCHITECTURE.md § 9)                                                                                                                                                                                                                                                                                            | Entwurf (4)           |
+| 2.6 | Projekt-Kontext-Dokument v0.2                                   |   2 | ⚠️ ARCHITECTURE.md laufend aktualisiert (Stand 09/2026, inkl. ADR-013), aber ohne explizite v0.1→v0.2-Versionsmarkierung                                                                                                                                                                                                    | KI/Arch (17)          |
 
 **Exit-Kriterium:** Bedienbares Frontend gegen Mock-Daten; zweites ADR; dokumentierte KI-Korrekturen (Diffs).
+**Status:** 5 von 6 Positionen vollständig erfüllt (2.1–2.5). Offene Lücke: **2.6** — kein
+formaler Versionsstand des Projekt-Kontext-Dokuments dokumentiert. Exit-Kriterium bis auf diesen
+Punkt erreicht.
 
 ---
 
@@ -137,7 +140,7 @@ Diese sind **Modul-Pflicht** und dürfen nicht am Ende untergehen:
 - 🔴 **Kosten-Indikator** (NfA-7) — Token/Kosten je Dokument, ab Block 3 mitloggen.
 - 🔴 **ADRs** — mind. 3 wichtigste Entscheidungen (ab Block 1 sammeln).
 - 🟠 **Projekt-Kontext-Dokument** — v0.1 → v1.0 über alle Blöcke pflegen.
-- 🟠 **Entwicklungstagebuch** — jede relevante KI-Nutzung (Prompt, Tool, Übernahme/Korrektur/Veto) _laufend_ festhalten. Zahlt direkt auf 19 Raster-Punkte (KI-Nutzung 12 + Reflexion 7) ein.
+- 🟠 **Entwicklungstagebuch** — jede relevante KI-Nutzung (Prompt, Tool, Übernahme/Korrektur/Veto) _laufend_ festhalten. Zahlt direkt auf 19 Raster-Punkte (KI-Nutzung 12 + Reflexion 7) ein. ✅ angelegt: [`ENTWICKLUNGSTAGEBUCH.md`](ENTWICKLUNGSTAGEBUCH.md) — jede Chat-Session wird dort als Eintrag erfasst; Historie seit 2026-09-02 rückwirkend aus der Copilot-Chronicle-Sitzungshistorie rekonstruiert (13 Sammel-Einträge, als solche gekennzeichnet), ab 2026-10-17 laufend live.
 - 🟠 **DevSecOps-Gate** (Block 5) — mind. ein automatischer Security-Check.
 
 ---

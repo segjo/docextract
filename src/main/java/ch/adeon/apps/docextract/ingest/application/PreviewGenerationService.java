@@ -89,4 +89,12 @@ public class PreviewGenerationService implements GeneratePreview {
   public boolean supports(MediaType mediaType) {
     return mediaType.isPdf() || previewRenderPort.supports(mediaType);
   }
+
+  @Override
+  public java.util.Set<String> supportedFileExtensions() {
+    java.util.Set<String> extensions = new java.util.LinkedHashSet<>();
+    extensions.add(".pdf");
+    extensions.addAll(previewRenderPort.supportedExtensions());
+    return java.util.Set.copyOf(extensions);
+  }
 }

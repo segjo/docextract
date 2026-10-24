@@ -24,26 +24,31 @@ public class DmsChunkUploadAdapter implements DmsChunkUploadPort {
 
   private final RestClient restClient;
   private final AppConfigPort appConfigPort;
-  private final String repositoryId;
+  private final String defaultRepositoryId;
   private final String origin;
 
   public DmsChunkUploadAdapter(
       AppConfigPort appConfigPort,
-      @Value("${docextract.ingest.dms.repository-id}") String repositoryId,
+      @Value("${docextract.ingest.dms.repository-id}") String defaultRepositoryId,
       @Value("${docextract.ingest.dms.origin}") String origin) {
     this.restClient = RestClient.create();
     this.appConfigPort = appConfigPort;
-    this.repositoryId = repositoryId;
+    this.defaultRepositoryId = defaultRepositoryId;
     this.origin = origin;
   }
 
   @Override
-  public DmsLocation upload(byte[] content, MediaType mediaType, DvelopCredential credential) {
+  public DmsLocation upload(
+      byte[] content, MediaType mediaType, String repositoryId, DvelopCredential credential) {
+    String effectiveRepositoryId =
+        (repositoryId == null || repositoryId.isBlank()) ? defaultRepositoryId : repositoryId;
     try {
       ResponseEntity<Void> response =
           restClient
               .post()
-              .uri(appConfigPort.systemBaseUri() + "/dms/r/{repositoryId}/blob/chunk", repositoryId)
+              .uri(
+                  appConfigPort.systemBaseUri() + "/dms/r/{repositoryId}/blob/chunk",
+                  effectiveRepositoryId)
               // Origin is mandatory for write access (POST/PUT/DELETE/PATCH) to prevent CSRF.
               .header(HttpHeaders.ORIGIN, origin)
               .header(credential.headerName(), credential.headerValue())

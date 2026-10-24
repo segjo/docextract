@@ -228,14 +228,14 @@ docextract:
 ```
 ch.adeon.apps.docextract
 ├─ ingest
-│  ├─ domain        # DocumentUpload, Limits, BlobRef, DmsLocation
-│  ├─ application   # IngestDocumentService, PreviewStreamService
-│  ├─ port          # PreviewPort, DocumentBlobPort, DmsChunkUploadPort
+│  ├─ domain        # DocumentUpload, Limits, BlobRef, DmsLocation, DmsRepository, ImportInfo
+│  ├─ application   # IngestDocumentService, PreviewStreamService, GetImportInfoService
+│  ├─ port          # PreviewPort, DocumentBlobPort, DmsChunkUploadPort, DmsRepositoryPort
 │  └─ adapter
-│     ├─ in.rest    # UploadController (202 + processId), PreviewController (Range)
+│     ├─ in.rest    # UploadController (202 + processId), PreviewController (Range), ImportInfoController
 │     ├─ out.preview # GotenbergPreviewAdapter (Paketname folgt dem Port, nicht dem Produkt)
 │     ├─ out.blob   # PgDocumentBlobAdapter
-│     └─ out.dms
+│     └─ out.dms    # DmsChunkUploadAdapter, DmsRepositoryAdapter (GET /repo/repositories)
 ├─ content
 │  ├─ domain        # ExtractedText, DocumentContent, Representation
 │  ├─ application   # ExtractTextService (erste N Wörter), ContentService
@@ -257,7 +257,7 @@ ch.adeon.apps.docextract
 │  ├─ port          # DmsWritePort, CorpusPromotionPort, PendingEmbeddingDeletePort
 │  └─ adapter.out   # dms | postgres
 ├─ agentgateway     # adapter.in.mcp
-├─ process          # Orchestrator, SSE, PgNotify, StaleJobRecovery
+├─ process          # Orchestrator, SSE, PgNotify, StaleJobRecovery, ProcessRepositoryPort (Import-Repository je Prozess)
 ├─ audit            # append-only, ohne Roh-PII
 ├─ security         # AuthContext, TenantResolver, ConsentGuard
 └─ shared           # Fehler, Config, Observability, TtlCleanupJob
@@ -614,6 +614,14 @@ ADR-001 bis ADR-003 wurden **bewusst nicht an die KI delegiert** (Krit. 18). Arc
 - **Begründung:** Einfacher, schneller (NfA-2), jeder Textextraktor ist als Adapter einsetzbar. Die FR-4-Qualität hängt nicht daran, weil FR-4 eine eigene Repräsentation nutzt.
 - **Konsequenz:** `extraction_source` und `embedding_model` werden als Filter geführt. Genügt Precision@3 nicht (NfA-6), sind _N_ und das Embedding-Modell die ersten Stellhebel.
 - **Re-Indexierung (Implementierungsstand):** Da Rohtext nie persistiert wird (ADR-006), kann `ReindexService` bestehende Dokumente nicht automatisch neu vektorisieren. Beim Start vergleicht er `docextract.retrieval.embedding-model` mit den in der Datenbank vorhandenen `embedding_model`-Werten und markiert `APPROVED`-Zeilen eines abgelösten Modells als `STALE` — dieser Status ist vom Retrieval-Prädikat `status = 'APPROVED'` bereits ausgeschlossen, ohne Codeänderung an der Suche. Betroffene Dokumente müssen erneut hochgeladen werden, um wieder im Korpus zu erscheinen; das ist eine Betriebs-Kennzahl (Anzahl `STALE`-Zeilen), kein automatischer Re-Ingest.
+
+### ADR-013 — Client-Side Rendering (CSR) statt Server-Side Rendering für das Frontend
+
+- **Status:** akzeptiert
+- **Kontext:** Das Angular-Frontend läuft als **iframe hinter dem d.velop Reverse Proxy** und authentisiert sich über das durchgereichte d.velop-Session-Cookie (§ 2, § 3.1). SSR (z. B. Angular Universal) bräuchte einen zusätzlichen Node-Rendering-Server, der das Session-Cookie serverseitig mitführt und personalisierte, nicht indexierbare Inhalte (Upload, Vorschau, Validierung) cachen/invalidieren müsste — ohne SEO- oder Time-to-First-Byte-Nutzen, da die App nicht öffentlich indexiert wird und erst nach Login im iframe sichtbar ist.
+- **Entscheidung:** Das Frontend wird ausschliesslich als **Client-Side-Rendering (CSR)**-Single-Page-App gebaut und als statische Assets ausgeliefert (Angular, kein Angular-Universal-Server). Interaktion mit dem Backend erfolgt rein clientseitig über REST und SSE (FRONTEND-SPEC.md).
+- **Begründung:** Kein SEO-Bedarf (iframe, Session-gebunden); vermeidet einen zweiten, backend-ähnlichen Server mit eigener Cookie-Weiterleitung, zusätzlicher Angriffsfläche und Betriebskomplexität (C-6, Docker Compose); passt zum reaktiven, formularlastigen Validierungs-UI, das ohnehin erst nach dem initialen Laden über Upload → SSE-Fortschritt → Validierung mit Daten gefüllt wird.
+- **Konsequenz:** Statisches Hosting der Angular-Build-Artefakte hinter dem Reverse Proxy (kein eigener Rendering-Container, keine zusätzliche Zeile im Compose-Setup, § 7). Performance-Ziel ist das **Initial-Bundle-Budget** (NfA-F3, FRONTEND-SPEC.md) statt serverseitiger Render-Metriken. Barrierefreiheit (NfA-F1) und XSS-Vermeidung (NfA-F2) bleiben rein clientseitige Prüfkriterien.
 
 ---
 

@@ -1,0 +1,93 @@
+<section class="dialog" aria-labelledby="import-title">
+  <h1 id="import-title">Dokument importieren</h1>
+  <p class="lead">
+    Waehlen Sie ein Dokument fuer DocExtract aus. Nach dem Import startet die Verarbeitung.
+  </p>
+
+  <div
+    class="dropzone"
+    [class.dropzone--active]="dragOver()"
+    (dragover)="onDragOver($event)"
+    (dragleave)="onDragLeave()"
+    (drop)="onDrop($event)"
+  >
+    <p class="dropzone__icon" aria-hidden="true">&#8593;</p>
+    <p class="dropzone__hint">Dokument hierher ziehen</p>
+    <p class="dropzone__or">
+      oder
+      <label class="file-picker">
+        Datei auswaehlen
+        <input
+          type="file"
+          [attr.accept]="acceptAttribute"
+          aria-label="Datei auswaehlen"
+          (change)="onFileInputChange($event)"
+        />
+      </label>
+    </p>
+    <p class="dropzone__constraints">
+      @if (acceptedFileExtensions().length) {
+        {{ acceptedFileExtensions().join(', ') }}
+        @if (maxFileSizeBytes(); as maxSize) {
+          - maximal {{ maxSize / (1024 * 1024) }} MB
+        }
+      }
+    </p>
+  </div>
+
+  @if (selectedFile(); as file) {
+    <div class="file-info">
+      <span class="file-info__icon" aria-hidden="true">{{ fileExtensionLabel(file) }}</span>
+      <span class="file-info__meta">
+        <span class="file-info__name">{{ file.name }}</span>
+        <small>{{ fileSizeLabel(file) }} &middot; bereit fuer den Import</small>
+      </span>
+      <button
+        type="button"
+        class="file-info__remove"
+        aria-label="Datei entfernen"
+        (click)="cancel()"
+      >
+        &times;
+      </button>
+    </div>
+  }
+  @if (validationError(); as error) {
+    <p class="error" role="alert">{{ error }}</p>
+  }
+  @if (uploadError(); as error) {
+    <p class="error" role="alert">{{ error }}</p>
+  }
+  @if (importInfoError(); as error) {
+    <p class="error" role="alert">{{ error }}</p>
+  }
+
+  @if (repositories().length) {
+    <div class="repository-select">
+      <label for="repository">Repository</label>
+      <select
+        id="repository"
+        [value]="selectedRepositoryId()"
+        (change)="onRepositoryChange($event)"
+      >
+        @for (repository of repositories(); track repository.id) {
+          <option [value]="repository.id" [disabled]="!repository.isAvailable">
+            {{ repository.name }}
+          </option>
+        }
+      </select>
+    </div>
+  }
+
+  <div class="actions">
+    <button type="button" class="btn btn--secondary" (click)="cancel()">Abbrechen</button>
+    <button
+      type="button"
+      class="btn btn--primary"
+      [disabled]="!selectedFile() || uploading()"
+      (click)="submit()"
+    >
+      {{ uploading() ? 'Importiert...' : 'Importieren' }}
+    </button>
+  </div>
+</section>

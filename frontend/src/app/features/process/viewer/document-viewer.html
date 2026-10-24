@@ -1,0 +1,10 @@
+<div class="viewer">
+  @if (previewBlobId(); as blobId) {
+    <iframe #frame class="viewer__frame" title="Dokumentvorschau"></iframe>
+  } @else {
+    <div class="viewer__placeholder">
+      <span class="viewer__loader" aria-hidden="true"></span>
+      <p>Vorschau wird erstellt</p>
+    </div>
+  }
+</div>

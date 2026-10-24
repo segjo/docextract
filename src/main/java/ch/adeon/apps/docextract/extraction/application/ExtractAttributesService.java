@@ -10,6 +10,7 @@ import ch.adeon.apps.docextract.extraction.domain.ExtractionResult;
 import ch.adeon.apps.docextract.extraction.domain.LlmResponse;
 import ch.adeon.apps.docextract.extraction.port.LlmPort;
 import ch.adeon.apps.docextract.process.application.ProcessEventPort;
+import ch.adeon.apps.docextract.process.application.ProcessRepositoryPort;
 import ch.adeon.apps.docextract.process.domain.ProcessEvent;
 import ch.adeon.apps.docextract.process.domain.ProcessStep;
 import ch.adeon.apps.docextract.process.domain.StepStatus;
@@ -47,7 +48,7 @@ import tools.jackson.databind.ObjectMapper;
  * (FR-4, T-1, E-5).
  */
 @Service
-public class ExtractAttributesService implements ExtractAttributes {
+public class ExtractAttributesService implements ExtractAttributes, RetryExtraction {
 
   private static final Logger log = LoggerFactory.getLogger(ExtractAttributesService.class);
 
@@ -71,7 +72,8 @@ public class ExtractAttributesService implements ExtractAttributes {
   private final ProcessEventPort processEventPort;
   private final AuditPort auditPort;
   private final ObjectMapper objectMapper;
-  private final String repositoryId;
+  private final ProcessRepositoryPort processRepositoryPort;
+  private final String defaultRepositoryId;
   private final int maxValueListValues;
 
   public ExtractAttributesService(
@@ -83,7 +85,8 @@ public class ExtractAttributesService implements ExtractAttributes {
       ProcessEventPort processEventPort,
       AuditPort auditPort,
       ObjectMapper objectMapper,
-      @Value("${docextract.ingest.dms.repository-id}") String repositoryId,
+      ProcessRepositoryPort processRepositoryPort,
+      @Value("${docextract.ingest.dms.repository-id}") String defaultRepositoryId,
       @Value("${docextract.valuelist.max-values:50}") int maxValueListValues) {
     this.documentTypeCandidatesPort = documentTypeCandidatesPort;
     this.contentStagingPort = contentStagingPort;
@@ -93,12 +96,30 @@ public class ExtractAttributesService implements ExtractAttributes {
     this.processEventPort = processEventPort;
     this.auditPort = auditPort;
     this.objectMapper = objectMapper;
-    this.repositoryId = repositoryId;
+    this.processRepositoryPort = processRepositoryPort;
+    this.defaultRepositoryId = defaultRepositoryId;
     this.maxValueListValues = maxValueListValues;
   }
 
   @Override
   public ExtractionResult extract(String processId, DvelopCredential credential) {
+    return doExtract(processId, null, credential);
+  }
+
+  @Override
+  public ExtractionResult retry(String processId, String documentTypeId, DvelopCredential credential) {
+    Objects.requireNonNull(documentTypeId, "documentTypeId");
+    return doExtract(processId, documentTypeId, credential);
+  }
+
+  /**
+   * Core extraction flow shared by both inbound ports. {@code forcedDocumentTypeId} is {@code null}
+   * for the normal post-ingestion flow (LLM classifies among the staged candidates, skipped when
+   * only one exists); non-null overrides the classification with the given staged candidate's type,
+   * for a reviewer-triggered {@link RetryExtraction retry} after changing the document type.
+   */
+  private ExtractionResult doExtract(
+      String processId, String forcedDocumentTypeId, DvelopCredential credential) {
     log.info("extraction started processId={}", processId);
     processEventPort.publish(
         new ProcessEvent(processId, ProcessStep.EXTRACTED, StepStatus.STARTED, null));
@@ -116,9 +137,11 @@ public class ExtractAttributesService implements ExtractAttributes {
 
       String documentText = documentText(processId);
       DmsDocumentMetadata selectedType =
-          candidates.size() == 1
-              ? candidates.get(0)
-              : classifyDocumentType(processId, documentText, candidates);
+          forcedDocumentTypeId != null
+              ? findCandidate(candidates, forcedDocumentTypeId, processId)
+              : candidates.size() == 1
+                  ? candidates.get(0)
+                  : classifyDocumentType(processId, documentText, candidates);
 
       List<DmsPropertyDefinition> writableProperties =
           selectedType.documentType().properties().stream()
@@ -133,6 +156,7 @@ public class ExtractAttributesService implements ExtractAttributes {
               : resolveValueLists(
                   suggestAttributes(documentText, selectedType, writableProperties),
                   selectedType,
+                  processId,
                   credential);
       ExtractionResult result = new ExtractionResult(selectedType.documentType().id(), attributes);
       extractionResultPort.store(processId, result);
@@ -161,6 +185,19 @@ public class ExtractAttributesService implements ExtractAttributes {
    */
   private String documentText(String processId) {
     return contentStagingPort.retrieve(processId).map(DocumentContent::value).orElse("");
+  }
+
+  /** Looks up a reviewer-chosen {@code documentTypeId} among this process's staged candidates. */
+  private DmsDocumentMetadata findCandidate(
+      List<DmsDocumentMetadata> candidates, String documentTypeId, String processId) {
+    return candidates.stream()
+        .filter(candidate -> Objects.equals(candidate.documentType().id(), documentTypeId))
+        .findFirst()
+        .orElseThrow(
+            () ->
+                new ExtractionException(
+                    "documentTypeId %s is not a staged candidate for process %s"
+                        .formatted(documentTypeId, processId)));
   }
 
   private DmsDocumentMetadata classifyDocumentType(
@@ -282,6 +319,7 @@ public class ExtractAttributesService implements ExtractAttributes {
   private List<ExtractedAttribute> resolveValueLists(
       List<SuggestedAttribute> suggestions,
       DmsDocumentMetadata selectedType,
+      String processId,
       DvelopCredential credential) {
     Map<String, DmsPropertyDefinition> byId =
         selectedType.documentType().properties().stream()
@@ -313,7 +351,7 @@ public class ExtractAttributesService implements ExtractAttributes {
     }
 
     resolvePendingValueLists(
-        pending, byId, selectedType, credential, resolvedById, knownValues, knownMultiValues);
+        pending, byId, selectedType, processId, credential, resolvedById, knownValues, knownMultiValues);
 
     return suggestions.stream()
         .map(SuggestedAttribute::propertyId)
@@ -331,6 +369,7 @@ public class ExtractAttributesService implements ExtractAttributes {
       List<SuggestedAttribute> pending,
       Map<String, DmsPropertyDefinition> byId,
       DmsDocumentMetadata selectedType,
+      String processId,
       DvelopCredential credential,
       Map<String, ExtractedAttribute> resolvedById,
       Map<String, String> knownValues,
@@ -343,7 +382,13 @@ public class ExtractAttributesService implements ExtractAttributes {
         DmsPropertyDefinition definition = byId.get(suggestion.propertyId());
         ExtractedAttribute attribute =
             resolveOne(
-                suggestion, definition, selectedType, credential, knownValues, knownMultiValues);
+                suggestion,
+                definition,
+                selectedType,
+                processId,
+                credential,
+                knownValues,
+                knownMultiValues);
         if (attribute.value() != null || attribute.values() != null) {
           recordResolved(
               suggestion.propertyId(), attribute, resolvedById, knownValues, knownMultiValues);
@@ -381,6 +426,7 @@ public class ExtractAttributesService implements ExtractAttributes {
       SuggestedAttribute suggestion,
       DmsPropertyDefinition definition,
       DmsDocumentMetadata selectedType,
+      String processId,
       DvelopCredential credential,
       Map<String, String> knownValues,
       Map<String, List<String>> knownMultiValues) {
@@ -400,6 +446,7 @@ public class ExtractAttributesService implements ExtractAttributes {
         && candidate != null
         && !candidate.isBlank()) {
       try {
+        String repositoryId = processRepositoryPort.retrieve(processId).orElse(defaultRepositoryId);
         DmsValueList fetched =
             valueListPort.fetchValues(
                 repositoryId,

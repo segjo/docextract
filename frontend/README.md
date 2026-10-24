@@ -1,25 +1,56 @@
 # DocExtract UI
 
-Angular app served by the backend under `/adeon-docextract/ui/` (iframe UI for Sachbearbeiter:in).
+Angular 22 app served by the backend under `/adeon-docextract/ui/` (iframe UI for Sachbearbeiter:in,
+CSR only — ADR-013). Requirements/layout: [`doc/frontend/FRONTEND-SPEC.md`](../doc/frontend/FRONTEND-SPEC.md),
+[`doc/frontend/docextract_ascii_layouts.md`](../doc/frontend/docextract_ascii_layouts.md),
+[`doc/frontend/docextract-color-palette.html`](../doc/frontend/docextract-color-palette.html).
 
-## Scaffold
+## Status
 
-Run from the repo root, using the exact project name expected by `pom.xml` (`frontend.project.name`):
+Skeleton scaffolded: routing, theme, typed API clients for the backend's OpenAPI contract
+(`doc/api/docextract-api-docs.json`), and the three screens from the layout spec. Business-logic
+gaps are marked `TODO` in code (e.g. `process-page.ts` — `documentId`/`repositoryId` for the DMS
+write aren't resolvable from any GET endpoint yet).
 
-```bash
-npx @angular/cli new docextract-ui --directory frontend --routing --style scss
+## Structure
+
+```
+src/app/
+  core/            # API models + HttpClient/SSE clients (core/api), framework-agnostic helpers
+  features/
+    import/        # Layout 1 — Dokument importieren
+    process/       # Layout 2/3 — Verarbeitung + Validierung (viewer, protocol/properties/similar panels, status bar)
 ```
 
-Ensure `frontend/angular.json` builds to `dist/docextract-ui` (Angular's default builder output already
-nests the browser bundle under `dist/docextract-ui/browser`, which is what the Maven build copies).
+## Development server
 
-Set the app's base href / router base to `/adeon-docextract/ui/` (e.g. `<base href="/adeon-docextract/ui/">`
-in `src/index.html`) so asset and route URLs resolve correctly behind the reverse proxy.
+```bash
+npm start            # ng serve, proxies /adeon-docextract/api to localhost:8080 (proxy.conf.json)
+```
 
-## Build integration
+## Build
 
-Once `frontend/package.json` exists, `mvn package` automatically:
+```bash
+npm run build        # ng build — prod bundle in dist/docextract-ui/browser
+```
 
-1. Installs Node/npm and runs `npm ci && npm run build` in `frontend/`.
-2. Copies `frontend/dist/docextract-ui/browser/**` into `src/main/resources/static`, so the Angular
-   build ships inside the single Spring Boot jar (ADR-001: no separate frontend deployment).
+`mvn package` runs this automatically (via `frontend-maven-plugin`, see root `pom.xml`) and copies
+the output into `src/main/resources/static/ui`, so it ships inside the Spring Boot jar (ADR-001).
+
+## Tests & linting
+
+```bash
+npm test             # ng test — Vitest; includes NfA-F1 (axe-core a11y) and NfA-F2 (no
+                      # bypassSecurityTrust*/[innerHTML]) specs from FRONTEND-SPEC.md
+npx ng lint           # ESLint (angular-eslint)
+```
+
+NfA-F3 (initial bundle ≤ 300 kB) is enforced via the `production` budget in `angular.json`.
+
+## Conventions
+
+- Angular 22 best practices: [`doc/frontend/angular-best-practices.md`](../doc/frontend/angular-best-practices.md)
+  (signals, `input()`/`output()`/`model()`, `@Service()`, no `NgModule`).
+- Prettier formats `.ts`/`.html`/`.scss` (`.prettierrc`, checked in per `doc/CONTEXT.md` §7).
+- API base path/models mirror `doc/api/docextract-api-docs.json` — regenerate that spec
+  (`mvn -Popenapi-spec verify`) before touching `core/models`/`core/api` for a backend contract change.

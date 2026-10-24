@@ -88,6 +88,13 @@ public class GotenbergPreviewAdapter implements PreviewRenderPort {
     return EXTENSION_BY_MEDIA_TYPE.containsKey(mediaType.value().toLowerCase(Locale.ROOT));
   }
 
+  @Override
+  public java.util.Set<String> supportedExtensions() {
+    return EXTENSION_BY_MEDIA_TYPE.values().stream()
+        .map(extension -> "." + extension)
+        .collect(java.util.stream.Collectors.toUnmodifiableSet());
+  }
+
   /**
    * Gotenberg's LibreOffice route selects the input format from the filename extension, not the
    * MIME type. Callers here pass the blob id (no extension), so one is appended from the MIME type

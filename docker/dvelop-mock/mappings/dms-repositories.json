@@ -1,17 +1,34 @@
 {
   "request": {
     "method": "GET",
-    "urlPath": "/r"
+    "urlPath": "/repo/repositories"
   },
   "response": {
     "status": 200,
-    "headers": { "Content-Type": "application/json" },
+    "headers": { "Content-Type": "application/hal+json" },
     "jsonBody": {
       "repositories": [
         {
-          "id": "dev-repository",
+          "id": "7cd5d582-2b5d-5e56-9a15-619f94e6e3ed",
           "name": "Dev Repository",
-          "sourceId": "dev-repository"
+          "serverId": "P",
+          "host": "localhost",
+          "port": "3400",
+          "groupId": "",
+          "isDefault": true,
+          "isAvailable": true,
+          "isReachable": true
+        },
+        {
+          "id": "9b6a5c0a-9a3a-4a0e-9d3a-2a7a7a8b2c11",
+          "name": "Archive Repository",
+          "serverId": "P",
+          "host": "localhost",
+          "port": "3400",
+          "groupId": "",
+          "isDefault": false,
+          "isAvailable": true,
+          "isReachable": true
         }
       ]
     }

@@ -1,6 +1,7 @@
 package ch.adeon.apps.docextract.retrieval.application;
 
 import ch.adeon.apps.docextract.process.application.ProcessEventPort;
+import ch.adeon.apps.docextract.process.application.ProcessRepositoryPort;
 import ch.adeon.apps.docextract.process.domain.ProcessEvent;
 import ch.adeon.apps.docextract.process.domain.ProcessStep;
 import ch.adeon.apps.docextract.process.domain.StepStatus;
@@ -53,9 +54,10 @@ public class FindSimilarService implements FindSimilar {
   private final DmsObjectMetadataPort dmsObjectMetadataPort;
   private final DmsObjectDefinitionPort dmsObjectDefinitionPort;
   private final DocumentTypeCandidatesPort documentTypeCandidatesPort;
+  private final ProcessRepositoryPort processRepositoryPort;
   private final ObjectMapper objectMapper;
   private final double minScore;
-  private final String repositoryId;
+  private final String defaultRepositoryId;
 
   public FindSimilarService(
       StageEmbeddings stageEmbeddings,
@@ -66,9 +68,10 @@ public class FindSimilarService implements FindSimilar {
       DmsObjectMetadataPort dmsObjectMetadataPort,
       DmsObjectDefinitionPort dmsObjectDefinitionPort,
       DocumentTypeCandidatesPort documentTypeCandidatesPort,
+      ProcessRepositoryPort processRepositoryPort,
       ObjectMapper objectMapper,
       @Value("${docextract.retrieval.min-score:0.0}") double minScore,
-      @Value("${docextract.ingest.dms.repository-id}") String repositoryId) {
+      @Value("${docextract.ingest.dms.repository-id}") String defaultRepositoryId) {
     this.stageEmbeddings = stageEmbeddings;
     this.authContextPort = authContextPort;
     this.vectorSearchPort = vectorSearchPort;
@@ -77,9 +80,10 @@ public class FindSimilarService implements FindSimilar {
     this.dmsObjectMetadataPort = dmsObjectMetadataPort;
     this.dmsObjectDefinitionPort = dmsObjectDefinitionPort;
     this.documentTypeCandidatesPort = documentTypeCandidatesPort;
+    this.processRepositoryPort = processRepositoryPort;
     this.objectMapper = objectMapper;
     this.minScore = minScore;
-    this.repositoryId = repositoryId;
+    this.defaultRepositoryId = defaultRepositoryId;
   }
 
   @Override
@@ -198,24 +202,28 @@ public class FindSimilarService implements FindSimilar {
   }
 
   /**
-   * Stages the document type candidates for the next processing step (SPEC §3): if similar
-   * documents were found, this is just the best-matched type's already-fetched {@link
-   * DmsDocumentMetadata} (deduplicated, no extra DMS call). Otherwise all repository document types
-   * + properties are fetched as a fallback so extraction still has a schema to constrain against.
-   * Best-effort: a failed DMS call is logged and leaves no candidates staged, it must not fail the
-   * whole retrieval step.
+   * TODO: CHECK this! Stages the document type candidates for the next processing step (SPEC §3):
+   * if similar documents were found, this is just the best-matched type's already-fetched {@link
+   * DmsDocumentMetadata} (deduplicated, no extra DMS call). Otherwise — including when {@code
+   * bestTypeResults} is the unfiltered fallback from {@link #filterToBestDocumentType(List)}
+   * because none of the hits had a parseable document type — all repository document types +
+   * properties are fetched instead as a fallback so extraction still has a schema to constrain
+   * against. Best-effort: a failed DMS call is logged and leaves no candidates staged, it must not
+   * fail the whole retrieval step.
    */
   private void stageDocumentTypeCandidates(
       String processId, DvelopCredential credential, List<RetrievalResult> bestTypeResults) {
-    if (!bestTypeResults.isEmpty()) {
-      documentTypeCandidatesPort.store(processId, distinctDocumentTypes(bestTypeResults));
+    List<DmsDocumentMetadata> typedCandidates = distinctDocumentTypes(bestTypeResults);
+    if (!typedCandidates.isEmpty()) {
+      documentTypeCandidatesPort.store(processId, typedCandidates);
       return;
     }
     try {
+      String repositoryId = processRepositoryPort.retrieve(processId).orElse(defaultRepositoryId);
       List<DmsDocumentMetadata> candidates =
           dmsObjectDefinitionPort.fetchAll(repositoryId, credential);
       log.info(
-          "no similar document found, staged {} document type candidates processId={}",
+          "no typed similar document found, staged {} document type candidates processId={}",
           candidates.size(),
           processId);
       documentTypeCandidatesPort.store(processId, candidates);

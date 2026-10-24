@@ -1,6 +1,7 @@
 package ch.adeon.apps.docextract.ingest.port;
 
 import ch.adeon.apps.docextract.ingest.domain.MediaType;
+import java.util.Set;
 
 /**
  * Outbound port rendering a non-PDF upload (read from the ORIGINAL blob) into a PDF preview
@@ -13,5 +14,10 @@ public interface PreviewRenderPort {
   /** Whether this adapter can render a PDF preview for the given media type. */
   default boolean supports(MediaType mediaType) {
     return true;
+  }
+
+  /** File extensions (with leading dot, e.g. {@code ".docx"}) this adapter can render. */
+  default Set<String> supportedExtensions() {
+    return Set.of();
   }
 }

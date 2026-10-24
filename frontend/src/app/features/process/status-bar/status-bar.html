@@ -1,0 +1,24 @@
+<div class="status-bar">
+  <p class="status-bar__summary">
+    {{ attributeCount() }} Eigenschaften &middot; {{ criticalCount() }} kritisch &middot;
+    {{ toReviewCount() }} zu pruefen
+  </p>
+  <div class="status-bar__actions">
+    <button
+      type="button"
+      class="btn btn--secondary"
+      [disabled]="busy()"
+      (click)="rejectRequested.emit()"
+    >
+      Ablehnen
+    </button>
+    <button
+      type="button"
+      class="btn btn--primary"
+      [disabled]="busy() || toReviewCount() > 0"
+      (click)="confirmRequested.emit()"
+    >
+      Bestaetigen &amp; ins DMS schreiben
+    </button>
+  </div>
+</div>

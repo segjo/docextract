@@ -1,0 +1,18 @@
+<div class="similar">
+  @if (rows().length === 0) {
+    <p class="similar__empty">Keine aehnlichen Dokumente gefunden.</p>
+  } @else {
+    <ul class="similar__list">
+      @for (row of rows(); track row.result.documentId; let i = $index) {
+        <li class="similar__item">
+          <span class="similar__rank" aria-hidden="true">{{ i + 1 }}</span>
+          <span class="similar__info">
+            <span class="similar__name">{{ row.metadata?.documentType?.name ?? 'Dokument' }}</span>
+            <span class="similar__meta">DMS-ID {{ row.result.documentId }}</span>
+          </span>
+          <span class="similar__score">{{ scorePercent(row.result.score) }} %</span>
+        </li>
+      }
+    </ul>
+  }
+</div>

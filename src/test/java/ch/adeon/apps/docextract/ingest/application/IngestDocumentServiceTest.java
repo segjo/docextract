@@ -23,6 +23,7 @@ import ch.adeon.apps.docextract.ingest.domain.MediaType;
 import ch.adeon.apps.docextract.ingest.port.DmsChunkUploadPort;
 import ch.adeon.apps.docextract.ingest.port.DocumentBlobPort;
 import ch.adeon.apps.docextract.process.application.ProcessEventPort;
+import ch.adeon.apps.docextract.process.application.ProcessRepositoryPort;
 import ch.adeon.apps.docextract.retrieval.application.FindSimilar;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
 import ch.adeon.apps.docextract.security.application.OutboundCredentialPort;
@@ -47,6 +48,7 @@ class IngestDocumentServiceTest {
   private final ExtractAttributes extractAttributes = mock(ExtractAttributes.class);
   private final DocumentHashStagingPort documentHashStagingPort =
       mock(DocumentHashStagingPort.class);
+  private final ProcessRepositoryPort processRepositoryPort = mock(ProcessRepositoryPort.class);
   private final IngestDocumentService service =
       new IngestDocumentService(
           documentBlobPort,
@@ -61,6 +63,7 @@ class IngestDocumentServiceTest {
           findSimilar,
           extractAttributes,
           documentHashStagingPort,
+          processRepositoryPort,
           1024L,
           5);
 
@@ -78,7 +81,7 @@ class IngestDocumentServiceTest {
             eq("user-1")))
         .thenReturn(
             new BlobRef(blobId, BlobKind.ORIGINAL, MediaType.PDF, 1, "p", "tenant-a", "user-1"));
-    when(dmsChunkUploadPort.upload(any(), eq(MediaType.PDF), any()))
+    when(dmsChunkUploadPort.upload(any(), eq(MediaType.PDF), any(), any()))
         .thenReturn(new DmsLocation("/dms/blob/chunk/1"));
     when(generatePreview.generate(any(), any(), eq(MediaType.PDF), eq("tenant-a"), eq("user-1")))
         .thenReturn(CompletableFuture.completedFuture(Optional.empty()));
@@ -98,7 +101,7 @@ class IngestDocumentServiceTest {
     assertThatThrownBy(() -> service.ingest(command)).isInstanceOf(UploadRejectedException.class);
 
     verify(documentBlobPort, never()).store(any(), any(), any(), any(), any(), any());
-    verify(dmsChunkUploadPort, never()).upload(any(), any(), any());
+    verify(dmsChunkUploadPort, never()).upload(any(), any(), any(), any());
   }
 
   @Test
@@ -118,7 +121,7 @@ class IngestDocumentServiceTest {
             new BlobRef(blobId, BlobKind.ORIGINAL, MediaType.PDF, 1, "p", "tenant-a", "user-1"));
     when(generatePreview.generate(any(), any(), eq(MediaType.PDF), eq("tenant-a"), eq("user-1")))
         .thenReturn(CompletableFuture.completedFuture(Optional.of(previewBlobId)));
-    when(dmsChunkUploadPort.upload(any(), eq(MediaType.PDF), any()))
+    when(dmsChunkUploadPort.upload(any(), eq(MediaType.PDF), any(), any()))
         .thenThrow(new DmsChunkUploadException("dms unreachable"));
 
     assertThatThrownBy(

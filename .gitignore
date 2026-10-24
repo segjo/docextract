@@ -6,3 +6,6 @@ target/
 *.iml
 .DS_Store
 *.log
+
+# Compiled frontend source files
+src/main/resources/static/

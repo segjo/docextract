@@ -1,0 +1,123 @@
+<div class="properties">
+  @if (documentType()) {
+    <div class="banner">
+      KI-Vorschlaege pruefen. Quellen und Konfidenzen dienen als Entscheidungshilfe.
+    </div>
+  } @else {
+    <div class="banner banner--warn">
+      <strong>Kein passender Dokumenttyp erkannt.</strong> Bitte Kategorie waehlen oder ablehnen.
+    </div>
+  }
+  <p class="properties__hint">Kein automatischer DMS-Write.</p>
+
+  @if (documentTypeCandidates().length) {
+    <div class="properties__type-switch">
+      <label for="document-type-select">Dokumenttyp</label>
+      <select
+        id="document-type-select"
+        [value]="displayedDocumentTypeId() ?? ''"
+        (change)="selectDocumentType($any($event.target).value)"
+      >
+        @for (candidate of documentTypeCandidates(); track candidate.documentType.id) {
+          <option [value]="candidate.documentType.id">{{ candidate.documentType.name }}</option>
+        }
+      </select>
+    </div>
+  }
+
+  @if (pendingCandidate(); as candidate) {
+    <div class="dialog-backdrop" role="presentation">
+      <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="document-type-dialog-title">
+        <h2 id="document-type-dialog-title">Dokumenttyp wechseln?</h2>
+        <p>
+          Dokumenttyp zu <strong>{{ candidate.documentType.name }}</strong> wechseln. Wie sollen die
+          Eigenschaften behandelt werden?
+        </p>
+        <div class="dialog__actions">
+          <button type="button" class="dialog__btn" [disabled]="retrying()" (click)="cancelDocumentTypeChange()">
+            Abbrechen
+          </button>
+          <button
+            type="button"
+            class="dialog__btn"
+            [disabled]="retrying()"
+            (click)="confirmDocumentTypeChange(false)"
+          >
+            Wechseln, Eigenschaften leeren
+          </button>
+          <button
+            type="button"
+            class="dialog__btn dialog__btn--primary"
+            [disabled]="retrying()"
+            (click)="confirmDocumentTypeChange(true)"
+          >
+            {{ retrying() ? 'Extrahiere...' : 'Wechseln, neu extrahieren' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <label class="properties__empty-toggle">
+    <input
+      type="checkbox"
+      [checked]="showEmptyProperties()"
+      (change)="toggleShowEmptyProperties($any($event.target).checked)"
+    />
+    Leere Eigenschaften anzeigen
+  </label>
+
+  <div class="properties__grid">
+    @for (row of rows(); track row.attribute.propertyId) {
+      <div class="field" [class.field--low]="row.critical" [class.field--empty]="row.empty">
+        <div class="field__header">
+          <label [for]="'field-' + row.attribute.propertyId">
+            {{ row.definition?.name ?? row.attribute.propertyId }}
+            @if (row.mandatory) {
+              <span class="field__mandatory-badge">Pflichtfeld</span>
+            }
+            @if (row.critical) {
+              <span class="field__critical-badge">kritisch</span>
+            }
+          </label>
+          @if (!row.empty) {
+            <span class="field__confidence">{{ confidencePercent(row.attribute.confidence) }} %</span>
+          }
+        </div>
+
+        @if (row.definition?.hasValueList) {
+          <select
+            [id]="'field-' + row.attribute.propertyId"
+            [value]="attributes()[row.attribute.propertyId] ?? ''"
+            (change)="updateValue(row.attribute.propertyId, $any($event.target).value)"
+          >
+            <option value="">(keine Auswahl)</option>
+            @for (option of row.definition?.valueList ?? []; track option) {
+              <option [value]="option">{{ option }}</option>
+            }
+          </select>
+        } @else {
+          <input
+            type="text"
+            [id]="'field-' + row.attribute.propertyId"
+            [value]="attributes()[row.attribute.propertyId] ?? ''"
+            (input)="updateValue(row.attribute.propertyId, $any($event.target).value)"
+          />
+        }
+
+        @if (row.attribute.sourceExcerpt) {
+          <button
+            type="button"
+            class="field__source-toggle"
+            (click)="toggleSource(row.attribute.propertyId)"
+          >
+            Quelle anzeigen
+          </button>
+          @if (expandedSourceId() === row.attribute.propertyId) {
+            <p class="field__source-excerpt">{{ row.attribute.sourceExcerpt }}</p>
+          }
+        }
+      </div>
+    }
+  </div>
+</div>

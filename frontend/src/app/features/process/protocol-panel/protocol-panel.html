@@ -1,0 +1,14 @@
+<div class="protocol">
+  <p class="protocol__heading">Dokument wird importiert</p>
+  <p class="protocol__process-id">processId: {{ processId() }}</p>
+
+  <ol class="protocol__steps">
+    @for (step of steps; track step; let i = $index) {
+      <li class="protocol__step" [class]="'protocol__step--' + statuses()[step]">
+        <span class="protocol__step-circle" aria-hidden="true">{{ i + 1 }}</span>
+        <span class="protocol__step-label">{{ labels[step] }}</span>
+        <span class="protocol__step-status">{{ statusLabels[statuses()[step]] }}</span>
+      </li>
+    }
+  </ol>
+</div>

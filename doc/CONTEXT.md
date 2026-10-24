@@ -9,6 +9,8 @@
 > Eigener API-Vertrag: [`doc/api/docextract-api-docs.json`](doc/api/docextract-api-docs.json) — aus den
 > `@RestController`n generierter OpenAPI-3-Snapshot (`/v3/api-docs`, siehe `OpenApiConfig`), Quelle der
 > Wahrheit für die DocExtract-eigene REST-API, z. B. zur Generierung des Angular-Frontend-Clients.
+> Frontend-Aufgaben: [`doc/frontend/FRONTEND-SPEC.md`](frontend/FRONTEND-SPEC.md) — Anforderungen, Layout
+> und Farbpalette für das Angular-Frontend; vor jeder Frontend-Implementierung konsultieren.
 > Bei Konflikt gilt: **SPEC/ARCHITECTURE > diese Datei > Framework-Defaults > generische Best Practices.**
 > Diese Datei ersetzt keine Anforderung; sie operationalisiert sie.
 
@@ -179,6 +181,9 @@ ch.adeon.apps.docextract
 
 - Diffs klein und nachvollziehbar halten; Namen/Verträge stabil.
 - Kommentare erklären **warum** (Bezug auf FR/NfA/ADR), nicht das Offensichtliche.
+- Jede Copilot-Chat-Session zu diesem Repo wird am Ende als Eintrag in
+  [`doc/ENTWICKLUNGSTAGEBUCH.md`](ENTWICKLUNGSTAGEBUCH.md) festgehalten (Format siehe Datei) —
+  das ist die Diff-Notiz zu KI-Übernahmen/-Korrekturen/-Verwürfen gemäss PROJEKTPLAN.md § 9.
 
 ---
 

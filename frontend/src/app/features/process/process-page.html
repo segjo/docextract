@@ -1,0 +1,83 @@
+<div class="process">
+  <section class="process__viewer" aria-label="Dokumentvorschau">
+    <app-document-viewer [previewBlobId]="previewBlobId()" />
+  </section>
+
+  <section class="process__panel">
+    <div class="tabs" role="tablist" aria-label="Validierungsbereiche">
+      <button
+        type="button"
+        role="tab"
+        class="tabs__tab"
+        [class.tabs__tab--active]="activeTab() === 'EIGENSCHAFTEN'"
+        [attr.aria-selected]="activeTab() === 'EIGENSCHAFTEN'"
+        [disabled]="!resultsReady()"
+        (click)="selectTab('EIGENSCHAFTEN')"
+      >
+        <span class="tabs__icon" aria-hidden="true">&#9831;</span>EIGENSCHAFTEN
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="tabs__tab"
+        [class.tabs__tab--active]="activeTab() === 'AEHNLICHE'"
+        [attr.aria-selected]="activeTab() === 'AEHNLICHE'"
+        [disabled]="!resultsReady()"
+        (click)="selectTab('AEHNLICHE')"
+      >
+        <span class="tabs__icon" aria-hidden="true">&#9638;</span>AEHNLICHE ({{
+          similarDocuments().length
+        }})
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="tabs__tab"
+        [class.tabs__tab--active]="activeTab() === 'PROTOKOLL'"
+        [attr.aria-selected]="activeTab() === 'PROTOKOLL'"
+        (click)="selectTab('PROTOKOLL')"
+      >
+        <span class="tabs__icon" aria-hidden="true">&#8801;</span>PROTOKOLL
+      </button>
+    </div>
+
+    @if (actionError(); as error) {
+      <p class="process__error" role="alert">{{ error }}</p>
+    }
+
+    <div class="process__tabpanel" role="tabpanel">
+      @switch (activeTab()) {
+        @case ('EIGENSCHAFTEN') {
+          @if (extractionResult(); as result) {
+            <app-properties-panel
+              [documentType]="documentType()"
+              [documentTypeCandidates]="documentTypeCandidates()"
+              [(selectedDocumentTypeId)]="selectedDocumentTypeId"
+              [retrying]="retryingExtraction()"
+              [extractedAttributes]="result.attributes"
+              [(attributes)]="editedAttributes"
+              (documentTypeChange)="onDocumentTypeChange($event)"
+            />
+          }
+        }
+        @case ('AEHNLICHE') {
+          <app-similar-panel [results]="similarDocuments()" />
+        }
+        @case ('PROTOKOLL') {
+          <app-protocol-panel [processId]="processId()" [events]="events()" />
+        }
+      }
+    </div>
+
+    @if (resultsReady()) {
+      <app-status-bar
+        [attributeCount]="reviewCounts().total"
+        [criticalCount]="reviewCounts().critical"
+        [toReviewCount]="reviewCounts().toReview"
+        [busy]="confirming()"
+        (rejectRequested)="reject()"
+        (confirmRequested)="confirm()"
+      />
+    }
+  </section>
+</div>
