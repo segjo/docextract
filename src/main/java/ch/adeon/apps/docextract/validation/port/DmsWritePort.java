@@ -9,7 +9,6 @@ public interface DmsWritePort {
       String contentLocationUri,
       Map<String, Object> attributes,
       String filename,
-      String origin,
       String sourceCategory,
       DvelopCredential credential);
 }

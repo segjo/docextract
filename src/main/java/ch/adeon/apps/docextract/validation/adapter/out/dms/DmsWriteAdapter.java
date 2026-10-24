@@ -18,12 +18,12 @@ import org.springframework.web.client.RestClientException;
 /**
  * Stores the confirmed attributes as a new DMS object via {@code POST /r/{repositoryId}/o2m/}
  * (operationId {@code storeDmsObjectWithMapping}, doc/api/dvelop-dmsapp.http {@code
- * storeDocument}). The default mapping source ({@code /dms/r/{repositoryId}/source}) is used so
- * the property keys already present in {@code attributes} (d.3 property ids) are applied directly
+ * storeDocument}). The default mapping source ({@code /dms/r/{repositoryId}/source}) is used so the
+ * property keys already present in {@code attributes} (d.3 property ids) are applied directly
  * without a tenant-specific translation. On success the new DMS object's id is parsed out of the
  * {@code Location} response header (e.g. {@code .../o2m/T000004242?sourceid=...} -> {@code
- * T000004242}); any failure or a missing {@code Location} is reported as {@code null} so the
- * caller (ConfirmAndWriteBackService) can treat it as a rejected write-back.
+ * T000004242}); any failure or a missing {@code Location} is reported as {@code null} so the caller
+ * (ConfirmAndWriteBackService) can treat it as a rejected write-back.
  */
 @Component
 public class DmsWriteAdapter implements DmsWritePort {
@@ -44,7 +44,6 @@ public class DmsWriteAdapter implements DmsWritePort {
       String contentLocationUri,
       Map<String, Object> attributes,
       String filename,
-      String origin,
       String sourceCategory,
       DvelopCredential credential) {
     try {
@@ -53,7 +52,7 @@ public class DmsWriteAdapter implements DmsWritePort {
               .post()
               .uri(appConfigPort.systemBaseUri() + "/dms/r/{repositoryId}/o2m/", repositoryId)
               // Origin is mandatory for write access (POST/PUT/DELETE/PATCH) to prevent CSRF.
-              .header(HttpHeaders.ORIGIN, origin)
+              .header(HttpHeaders.ORIGIN, appConfigPort.systemBaseUri())
               .header(credential.headerName(), credential.headerValue())
               .headers(headers -> addAcceptLanguage(headers, credential))
               .contentType(MediaType.valueOf("application/hal+json"))
@@ -67,8 +66,7 @@ public class DmsWriteAdapter implements DmsWritePort {
                       new SourceProperties(toProperties(attributes))))
               .retrieve()
               .toBodilessEntity();
-      String documentId =
-          extractDocumentId(response.getHeaders().getFirst(HttpHeaders.LOCATION));
+      String documentId = extractDocumentId(response.getHeaders().getFirst(HttpHeaders.LOCATION));
       if (documentId == null) {
         LOG.warn("d.velop DMS did not return a usable Location header for the stored document");
       }

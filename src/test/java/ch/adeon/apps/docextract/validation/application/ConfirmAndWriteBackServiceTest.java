@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ch.adeon.apps.docextract.audit.application.AuditPort;
+import ch.adeon.apps.docextract.security.application.AppConfigPort;
 import ch.adeon.apps.docextract.security.application.OutboundCredentialPort;
 import ch.adeon.apps.docextract.security.domain.DvelopCredential;
 import ch.adeon.apps.docextract.validation.domain.ConfirmationCommand;
@@ -25,13 +26,15 @@ class ConfirmAndWriteBackServiceTest {
     CorpusPromotionPort corpusPromotionPort = mock(CorpusPromotionPort.class);
     OutboundCredentialPort outboundCredentialPort = mock(OutboundCredentialPort.class);
     AuditPort auditPort = mock(AuditPort.class);
+    AppConfigPort appConfigPort = mock(AppConfigPort.class);
     ConfirmAndWriteBackService service =
         new ConfirmAndWriteBackService(
             dmsWritePort,
             corpusPromotionPort,
             outboundCredentialPort,
+            appConfigPort,
             auditPort,
-            "https://dms.local",
+            "origin",
             "DBUE",
             "document.pdf");
 
@@ -42,7 +45,7 @@ class ConfirmAndWriteBackServiceTest {
         .isInstanceOf(ConsentRequiredException.class);
 
     verify(dmsWritePort, never())
-        .writeAttributes(eq("repo-1"), eq(""), eq(Map.of()), any(), any(), any(), any());
+        .writeAttributes(eq("repo-1"), eq(""), eq(Map.of()), any(), any(), any());
   }
 
   @Test
@@ -51,18 +54,20 @@ class ConfirmAndWriteBackServiceTest {
     CorpusPromotionPort corpusPromotionPort = mock(CorpusPromotionPort.class);
     OutboundCredentialPort outboundCredentialPort = mock(OutboundCredentialPort.class);
     AuditPort auditPort = mock(AuditPort.class);
+    AppConfigPort appConfigPort = mock(AppConfigPort.class);
     when(outboundCredentialPort.current())
         .thenReturn(new DvelopCredential("Authorization", "Bearer token", null));
     when(dmsWritePort.writeAttributes(
-            eq("repo-1"), eq(""), eq(Map.of()), any(), any(), any(), any()))
+            eq("repo-1"), eq(""), eq(Map.of()), any(), any(), any()))
         .thenReturn(null);
     ConfirmAndWriteBackService service =
         new ConfirmAndWriteBackService(
             dmsWritePort,
             corpusPromotionPort,
             outboundCredentialPort,
+            appConfigPort,
             auditPort,
-            "https://dms.local",
+            "origin",
             "DBUE",
             "document.pdf");
 
