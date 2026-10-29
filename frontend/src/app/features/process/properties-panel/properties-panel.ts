@@ -26,8 +26,6 @@ export class PropertiesPanel {
   readonly documentType = input<DmsDocumentType | null>(null);
   /** The process's staged document-type candidates (SPEC §3), for the reviewer to pick from. */
   readonly documentTypeCandidates = input<DmsDocumentMetadata[]>([]);
-  /** All document types from /object-definitions; the full option list of the select. */
-  readonly objectDefinitions = input<DmsDocumentMetadata[]>([]);
   /** Two-way bound with the container: the currently selected candidate's document type id. */
   readonly selectedDocumentTypeId = model<string | null>(null);
   /** True while a retry extraction request is in flight; disables the dialog's actions. */
@@ -56,17 +54,8 @@ export class PropertiesPanel {
   protected readonly displayedDocumentTypeId = computed(
     () => this.pendingDocumentTypeId() ?? this.selectedDocumentTypeId(),
   );
-  protected readonly candidateIds = computed(
-    () => new Set(this.documentTypeCandidates().map((candidate) => candidate.documentType.id)),
-  );
-  /** Object definitions plus any candidate not (yet) contained in them. */
-  protected readonly documentTypeOptions = computed(() => {
-    const all = this.objectDefinitions();
-    const known = new Set(all.map((entry) => entry.documentType.id));
-    return [...all, ...this.documentTypeCandidates().filter((c) => !known.has(c.documentType.id))];
-  });
   protected readonly pendingCandidate = computed(() =>
-    this.documentTypeOptions().find(
+    this.documentTypeCandidates().find(
       (candidate) => candidate.documentType.id === this.pendingDocumentTypeId(),
     ),
   );

@@ -144,7 +144,7 @@ const contractPartnerProperty = {
   hasMoreValues: false,
 };
 
-/** Second candidate, for exercising the "change document type + retry" flow in mock mode. */
+/** Repository document types; only the invoice has similar documents (score > 0). */
 export function mockDocumentTypeCandidates(): DmsDocumentMetadata[] {
   return [
     {
@@ -152,6 +152,7 @@ export function mockDocumentTypeCandidates(): DmsDocumentMetadata[] {
         id: 'doctype_invoice',
         name: 'Rechnung',
         properties: [invoiceNumberProperty, invoiceDateProperty, supplierProperty],
+        score: 1.74,
       },
       contentLanguage: 'de',
       properties: [],
@@ -161,24 +162,18 @@ export function mockDocumentTypeCandidates(): DmsDocumentMetadata[] {
         id: 'doctype_contract',
         name: 'Vertrag',
         properties: [contractTitleProperty, contractPartnerProperty],
+        score: 0,
       },
       contentLanguage: 'de',
       properties: [],
     },
-  ];
-}
-
-/** All document types of the repository: the candidates plus further, non-suggested ones. */
-export function mockObjectDefinitions(): DmsDocumentMetadata[] {
-  return [
-    ...mockDocumentTypeCandidates(),
     {
-      documentType: { id: 'doctype_letter', name: 'Brief', properties: [] },
+      documentType: { id: 'doctype_letter', name: 'Brief', properties: [], score: 0 },
       contentLanguage: 'de',
       properties: [],
     },
     {
-      documentType: { id: 'doctype_delivery_note', name: 'Lieferschein', properties: [] },
+      documentType: { id: 'doctype_delivery_note', name: 'Lieferschein', properties: [], score: 0 },
       contentLanguage: 'de',
       properties: [],
     },

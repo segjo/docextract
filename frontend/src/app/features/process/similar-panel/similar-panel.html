@@ -7,22 +7,30 @@
         <li class="similar__item">
           <span class="similar__rank" aria-hidden="true">{{ i + 1 }}</span>
           <span class="similar__info">
-            <span class="similar__name">{{ row.metadata?.documentType?.name ?? 'Dokument' }}</span>
+            <span class="similar__name">{{ row.title }}</span>
             <span class="similar__meta">
               <a
                 class="similar__link"
                 target="_blank"
                 rel="noopener noreferrer"
                 [href]="'/dms/r/' + row.result.repositoryId + '/o2/' + row.result.documentId"
-                >DMS-ID {{ row.result.documentId }}</a
+                >{{ row.result.documentId }}</a
               >
+              @if (row.metadata?.documentType?.name; as typeName) {
+                <span class="similar__type"> &middot; {{ typeName }}</span>
+              }
             </span>
           </span>
           <span class="similar__score">{{ scorePercent(row.result.score) }} %</span>
-          @if (row.json) {
+          @if (row.properties.length > 0) {
             <details class="similar__details">
               <summary>Eigenschaften</summary>
-              <pre class="similar__json">{{ row.json }}</pre>
+              <dl class="similar__props">
+                @for (property of row.properties; track $index) {
+                  <dt>{{ property.name }}</dt>
+                  <dd>{{ property.value }}</dd>
+                }
+              </dl>
             </details>
           }
         </li>

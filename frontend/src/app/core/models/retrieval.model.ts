@@ -32,6 +32,8 @@ export interface DmsDocumentType {
   id: string;
   name: string;
   properties: DmsPropertyDefinition[];
+  /** Summed similarity of this process's similar documents of this type; 0 = none. */
+  score?: number;
 }
 
 /** A property *value* on a document instance — references its schema via `id` (DmsDocumentType.properties). */

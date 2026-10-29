@@ -12,6 +12,7 @@ import { ExtractionResult } from '../../core/models/extraction.model';
 import { ProcessEvent } from '../../core/models/process.model';
 import { DmsDocumentMetadata, RetrievalResult } from '../../core/models/retrieval.model';
 import { countAttributeReview } from '../../core/attribute-review';
+import { normalizeDateAttributes } from '../../core/date-format';
 import {
   findPreviewBlobId,
   hasFailure,
@@ -46,7 +47,6 @@ export class ProcessPage {
   protected readonly extractionResult = signal<ExtractionResult | null>(null);
   protected readonly similarDocuments = signal<RetrievalResult[]>([]);
   protected readonly documentTypeCandidates = signal<DmsDocumentMetadata[]>([]);
-  protected readonly objectDefinitions = signal<DmsDocumentMetadata[]>([]);
   protected readonly editedAttributes = signal<Record<string, string>>({});
   protected readonly acknowledgedIds = signal<string[]>([]);
   protected readonly selectedDocumentTypeId = signal<string | null>(null);
@@ -66,7 +66,7 @@ export class ProcessPage {
   protected readonly documentType = computed(() => {
     const documentTypeId = this.extractionResult()?.documentTypeId;
     return (
-      [...this.documentTypeCandidates(), ...this.objectDefinitions()].find(
+      this.documentTypeCandidates().find(
         (candidate) => candidate.documentType.id === documentTypeId,
       )?.documentType ?? null
     );
@@ -81,16 +81,6 @@ export class ProcessPage {
   );
 
   constructor() {
-    // Slow and independent of the process: start immediately.
-    this.retrievalApi
-      .objectDefinitions()
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (definitions) => this.objectDefinitions.set(definitions),
-        // Select falls back to the candidates if the list cannot be loaded.
-        error: () => this.objectDefinitions.set([]),
-      });
-
     effect(() => {
       if (isRetrievalComplete(this.events()) && !this.similarReady() && !this.loadingSimilar) {
         this.loadSimilar();
@@ -144,7 +134,9 @@ export class ProcessPage {
           Object.fromEntries(extraction.attributes.map((a) => [a.propertyId, a.value ?? ''])),
         );
         this.selectedDocumentTypeId.set(extraction.documentTypeId);
-        this.activeTab.set('EIGENSCHAFTEN');
+        if (this.activeTab() === 'PROTOKOLL') {
+          this.activeTab.set('EIGENSCHAFTEN');
+        }
         this.loadingResults.set(false);
       },
       error: () => {
@@ -223,7 +215,10 @@ export class ProcessPage {
       .confirm({
         processId: this.processId(),
         dmsSourceCategory: this.selectedDocumentTypeId(),
-        attributes: this.editedAttributes(),
+        attributes: normalizeDateAttributes(
+          this.editedAttributes(),
+          this.documentType()?.properties ?? [],
+        ),
       })
       .subscribe({
         next: (result) => {

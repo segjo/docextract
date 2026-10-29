@@ -116,6 +116,9 @@ docextract:
     # Cosine-similarity floor (0..1) a hit must reach to be reported; lower-similarity hits are
     # dropped rather than shown to the user (NfA-6). 0.0 disables filtering.
     min-score: 0.9
+    # Allow-list of DMS document type ids (comma-separated, e.g. DBEL,DBUE) offered as candidates;
+    # empty = all repository document types.
+    document-type-filter: DREC,DVER,DKOR
     # TTL for the similar-documents result handed to the validation UI, persisted in Postgres
     # (not per-instance memory) so any cluster node can serve it (ADR-004).
     result-ttl: PT2H

@@ -10,7 +10,7 @@
   }
   <p class="properties__hint">Kein automatischer DMS-Write.</p>
 
-  @if (documentTypeOptions().length) {
+  @if (documentTypeCandidates().length) {
     <div class="properties__type-switch">
       <label for="document-type-select">Dokumenttyp</label>
       <select
@@ -18,12 +18,12 @@
         [value]="displayedDocumentTypeId() ?? ''"
         (change)="selectDocumentType($any($event.target).value)"
       >
-        @for (option of documentTypeOptions(); track option.documentType.id) {
+        @for (option of documentTypeCandidates(); track option.documentType.id) {
           <option
             [value]="option.documentType.id"
-            [class.is-candidate]="candidateIds().has(option.documentType.id)"
+            [class.is-candidate]="(option.documentType.score ?? 0) > 0"
           >
-            {{ candidateIds().has(option.documentType.id) ? '\u2605 ' : ''
+            {{ (option.documentType.score ?? 0) > 0 ? '\u2605 ' : ''
             }}{{ option.documentType.name }}
           </option>
         }

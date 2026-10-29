@@ -25,10 +25,6 @@ export class RetrievalApi {
     );
   }
 
-  objectDefinitions(): Observable<DmsDocumentMetadata[]> {
-    return this.http.get<DmsDocumentMetadata[]>(`${API_BASE}/object-definitions`);
-  }
-
   valueList(propertyId: string, request: ValueListRequest): Observable<DmsValueList> {
     return this.http.post<DmsValueList>(
       `${API_BASE}/value-lists/${encodeURIComponent(propertyId)}`,

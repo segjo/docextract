@@ -18,11 +18,15 @@ import ch.adeon.apps.docextract.process.domain.ProcessStep;
 import ch.adeon.apps.docextract.process.domain.StepStatus;
 import ch.adeon.apps.docextract.retrieval.domain.DmsDocumentMetadata;
 import ch.adeon.apps.docextract.retrieval.domain.DmsDocumentType;
+import ch.adeon.apps.docextract.retrieval.domain.DmsPropertyDataType;
+import ch.adeon.apps.docextract.retrieval.domain.DmsPropertyDefinition;
+import ch.adeon.apps.docextract.retrieval.domain.DmsValueList;
 import ch.adeon.apps.docextract.retrieval.domain.EmbeddingVector;
 import ch.adeon.apps.docextract.retrieval.domain.RetrievalException;
 import ch.adeon.apps.docextract.retrieval.domain.RetrievalResult;
 import ch.adeon.apps.docextract.retrieval.port.DmsObjectDefinitionPort;
 import ch.adeon.apps.docextract.retrieval.port.DmsObjectMetadataPort;
+import ch.adeon.apps.docextract.retrieval.port.ValueListPort;
 import ch.adeon.apps.docextract.retrieval.port.VectorSearchPort;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
 import ch.adeon.apps.docextract.security.domain.AuthContext;
@@ -45,6 +49,7 @@ class FindSimilarServiceTest {
   private final DocumentTypeCandidatesPort documentTypeCandidatesPort =
       mock(DocumentTypeCandidatesPort.class);
   private final ProcessRepositoryPort processRepositoryPort = mock(ProcessRepositoryPort.class);
+  private final ValueListPort valueListPort = mock(ValueListPort.class);
   private final ObjectMapper objectMapper = new ObjectMapper();
   private final DvelopCredential credential =
       new DvelopCredential("Authorization", "Bearer t", "de-CH");
@@ -59,8 +64,11 @@ class FindSimilarServiceTest {
           dmsObjectDefinitionPort,
           documentTypeCandidatesPort,
           processRepositoryPort,
+          valueListPort,
           objectMapper,
+          50,
           0.0,
+          List.of(),
           "repo-1");
 
   @Test
@@ -69,8 +77,7 @@ class FindSimilarServiceTest {
         .thenReturn(Optional.of(new EmbeddingVector(new float[] {1f, 1f})));
     when(authContextPort.current()).thenReturn(new AuthContext("tenant-a", "u", "U"));
     RetrievalResult top = new RetrievalResult("repo-1", "doc-1", 0.9, null);
-    when(vectorSearchPort.search(eq("tenant-a"), any(), eq(5)))
-        .thenReturn(List.of(top));
+    when(vectorSearchPort.search(eq("tenant-a"), any(), eq(5))).thenReturn(List.of(top));
     when(dmsObjectMetadataPort.fetchProperties("repo-1", "doc-1", credential))
         .thenReturn("{\"id\":\"doc-1\"}");
 
@@ -78,8 +85,7 @@ class FindSimilarServiceTest {
 
     RetrievalResult enriched = new RetrievalResult("repo-1", "doc-1", 0.9, "{\"id\":\"doc-1\"}");
     assertThat(results).containsExactly(enriched);
-    verify(vectorSearchPort)
-        .search("tenant-a", new EmbeddingVector(new float[] {1f, 1f}), 5);
+    verify(vectorSearchPort).search("tenant-a", new EmbeddingVector(new float[] {1f, 1f}), 5);
     verify(retrievalResultPort).store("p1", List.of(enriched));
     verify(processEventPort)
         .publish(new ProcessEvent("p1", ProcessStep.RETRIEVED, StepStatus.STARTED, null));
@@ -108,8 +114,7 @@ class FindSimilarServiceTest {
         .thenReturn(Optional.of(new EmbeddingVector(new float[] {1f, 1f})));
     when(authContextPort.current()).thenReturn(new AuthContext("tenant-a", "u", "U"));
     RetrievalResult top = new RetrievalResult("repo-1", "doc-1", 0.9, null);
-    when(vectorSearchPort.search(eq("tenant-a"), any(), eq(5)))
-        .thenReturn(List.of(top));
+    when(vectorSearchPort.search(eq("tenant-a"), any(), eq(5))).thenReturn(List.of(top));
     when(dmsObjectMetadataPort.fetchProperties("repo-1", "doc-1", credential))
         .thenThrow(new RuntimeException("dms unreachable"));
 
@@ -131,16 +136,18 @@ class FindSimilarServiceTest {
             dmsObjectDefinitionPort,
             documentTypeCandidatesPort,
             processRepositoryPort,
+            valueListPort,
             objectMapper,
+            50,
             0.8,
+            List.of(),
             "repo-1");
     when(stageEmbeddings.stage("p1"))
         .thenReturn(Optional.of(new EmbeddingVector(new float[] {1f, 1f})));
     when(authContextPort.current()).thenReturn(new AuthContext("tenant-a", "u", "U"));
     RetrievalResult strong = new RetrievalResult("repo-1", "doc-1", 0.9, null);
     RetrievalResult weak = new RetrievalResult("repo-1", "doc-2", 0.3, null);
-    when(vectorSearchPort.search(eq("tenant-a"), any(), eq(5)))
-        .thenReturn(List.of(strong, weak));
+    when(vectorSearchPort.search(eq("tenant-a"), any(), eq(5))).thenReturn(List.of(strong, weak));
 
     List<RetrievalResult> results = thresholded.find("p1", 5, credential);
 
@@ -184,6 +191,15 @@ class FindSimilarServiceTest {
     when(vectorSearchPort.search(eq("tenant-a"), any(), eq(5)))
         .thenReturn(List.of(typeAWeak, typeAStrong, typeBSingle));
     stubDmsProperties(typeAWeak, typeAStrong, typeBSingle);
+    when(dmsObjectDefinitionPort.fetchAll("repo-1", credential))
+        .thenReturn(
+            List.of(
+                new DmsDocumentMetadata(
+                    new DmsDocumentType("DREC", "Rechnung", List.of()), null, List.of()),
+                new DmsDocumentMetadata(
+                    new DmsDocumentType("DLIEF", "Lieferschein", List.of()), null, List.of()),
+                new DmsDocumentMetadata(
+                    new DmsDocumentType("DBRIEF", "Brief", List.of()), null, List.of())));
 
     List<RetrievalResult> results = service.find("p1", 5, credential);
 
@@ -191,15 +207,25 @@ class FindSimilarServiceTest {
     assertThat(results).containsExactlyInAnyOrder(typeAWeak, typeAStrong);
     verify(retrievalResultPort)
         .store(eq("p1"), argThat(list -> list.containsAll(List.of(typeAWeak, typeAStrong))));
-    // The candidate is read back from the already-fetched hits, no extra DMS objdef call needed.
+    // All repository types are staged, scored by the summed score of their hits.
     verify(documentTypeCandidatesPort)
         .store(
             eq("p1"),
             argThat(
                 candidates ->
-                    candidates.size() == 1
-                        && "DREC".equals(candidates.get(0).documentType().id())));
-    verify(dmsObjectDefinitionPort, never()).fetchAll(any(), any());
+                    candidates.size() == 3
+                        && Math.abs(scoreOf(candidates, "DREC") - 1.86) < 1e-9
+                        && Math.abs(scoreOf(candidates, "DLIEF") - 0.99) < 1e-9
+                        && scoreOf(candidates, "DBRIEF") == 0.0));
+  }
+
+  private static double scoreOf(List<DmsDocumentMetadata> candidates, String documentTypeId) {
+    return candidates.stream()
+        .filter(candidate -> documentTypeId.equals(candidate.documentType().id()))
+        .findFirst()
+        .orElseThrow()
+        .documentType()
+        .score();
   }
 
   @Test
@@ -218,6 +244,59 @@ class FindSimilarServiceTest {
 
     assertThat(results).isEmpty();
     verify(documentTypeCandidatesPort).store("p1", candidates);
+  }
+
+  @Test
+  void enriches_candidate_properties_having_a_value_list_when_no_similar_document_is_found() {
+    when(stageEmbeddings.stage("p1"))
+        .thenReturn(Optional.of(new EmbeddingVector(new float[] {1f, 1f})));
+    when(authContextPort.current()).thenReturn(new AuthContext("tenant-a", "u", "U"));
+    when(vectorSearchPort.search(eq("tenant-a"), any(), eq(5))).thenReturn(List.of());
+    DmsPropertyDefinition category = definition("27", true);
+    DmsPropertyDefinition plain = definition("28", false);
+    when(dmsObjectDefinitionPort.fetchAll("repo-1", credential))
+        .thenReturn(
+            List.of(
+                new DmsDocumentMetadata(
+                    new DmsDocumentType("DREC", "Rechnung", List.of(category, plain)),
+                    null,
+                    List.of())));
+    when(valueListPort.fetchValues(
+            eq("repo-1"), eq("DREC"), eq("27"), any(), any(), any(), eq(50), eq(credential)))
+        .thenReturn(new DmsValueList(List.of("A", "B"), true));
+
+    service.find("p1", 5, credential);
+
+    verify(documentTypeCandidatesPort)
+        .store(
+            eq("p1"),
+            argThat(
+                candidates -> {
+                  List<DmsPropertyDefinition> properties =
+                      candidates.get(0).documentType().properties();
+                  return properties.get(0).valueList().equals(List.of("A", "B"))
+                      && properties.get(0).hasMoreValues()
+                      && properties.get(1).valueList().isEmpty();
+                }));
+  }
+
+  private static DmsPropertyDefinition definition(String id, boolean hasValueList) {
+    return new DmsPropertyDefinition(
+        id,
+        "Property " + id,
+        DmsPropertyDataType.ALPHANUMERIC,
+        false,
+        hasValueList,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        0,
+        0,
+        List.of(),
+        false);
   }
 
   @Test
