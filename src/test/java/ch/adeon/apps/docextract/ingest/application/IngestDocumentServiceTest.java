@@ -23,6 +23,7 @@ import ch.adeon.apps.docextract.ingest.domain.MediaType;
 import ch.adeon.apps.docextract.ingest.port.DmsChunkUploadPort;
 import ch.adeon.apps.docextract.ingest.port.DocumentBlobPort;
 import ch.adeon.apps.docextract.process.application.ProcessEventPort;
+import ch.adeon.apps.docextract.process.application.ProcessDocumentPort;
 import ch.adeon.apps.docextract.process.application.ProcessRepositoryPort;
 import ch.adeon.apps.docextract.retrieval.application.FindSimilar;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
@@ -49,6 +50,7 @@ class IngestDocumentServiceTest {
   private final DocumentHashStagingPort documentHashStagingPort =
       mock(DocumentHashStagingPort.class);
   private final ProcessRepositoryPort processRepositoryPort = mock(ProcessRepositoryPort.class);
+  private final ProcessDocumentPort processDocumentPort = mock(ProcessDocumentPort.class);
   private final IngestDocumentService service =
       new IngestDocumentService(
           documentBlobPort,
@@ -64,6 +66,7 @@ class IngestDocumentServiceTest {
           extractAttributes,
           documentHashStagingPort,
           processRepositoryPort,
+          processDocumentPort,
           1024L,
           5);
 

@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, DestroyRef, computed, effect, inject, input, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
@@ -6,11 +7,17 @@ import { ExtractionApi } from '../../core/api/extraction-api';
 import { ProcessEventsApi } from '../../core/api/process-events-api';
 import { RetrievalApi } from '../../core/api/retrieval-api';
 import { ValidationApi } from '../../core/api/validation-api';
+import { ConfirmationResult } from '../../core/models/validation.model';
 import { ExtractionResult } from '../../core/models/extraction.model';
 import { ProcessEvent } from '../../core/models/process.model';
 import { DmsDocumentMetadata, RetrievalResult } from '../../core/models/retrieval.model';
 import { countAttributeReview } from '../../core/attribute-review';
-import { findPreviewBlobId, hasFailure, isExtractionComplete } from '../../core/process-progress';
+import {
+  findPreviewBlobId,
+  hasFailure,
+  isExtractionComplete,
+  isRetrievalComplete,
+} from '../../core/process-progress';
 import { DocumentViewer } from './viewer/document-viewer';
 import { ProtocolPanel } from './protocol-panel/protocol-panel';
 import { PropertiesPanel } from './properties-panel/properties-panel';
@@ -39,32 +46,57 @@ export class ProcessPage {
   protected readonly extractionResult = signal<ExtractionResult | null>(null);
   protected readonly similarDocuments = signal<RetrievalResult[]>([]);
   protected readonly documentTypeCandidates = signal<DmsDocumentMetadata[]>([]);
+  protected readonly objectDefinitions = signal<DmsDocumentMetadata[]>([]);
   protected readonly editedAttributes = signal<Record<string, string>>({});
+  protected readonly acknowledgedIds = signal<string[]>([]);
   protected readonly selectedDocumentTypeId = signal<string | null>(null);
   protected readonly retryingExtraction = signal(false);
   protected readonly activeTab = signal<Tab>('PROTOKOLL');
   protected readonly loadingResults = signal(false);
   protected readonly confirming = signal(false);
+  protected readonly confirmation = signal<ConfirmationResult | null>(null);
   protected readonly actionError = signal<string | null>(null);
 
   protected readonly previewBlobId = computed(() => findPreviewBlobId(this.events()));
   protected readonly failed = computed(() => hasFailure(this.events()));
+  protected readonly similarReady = signal(false);
+  private loadingSimilar = false;
   protected readonly resultsReady = computed(() => this.extractionResult() !== null);
 
   protected readonly documentType = computed(() => {
     const documentTypeId = this.extractionResult()?.documentTypeId;
     return (
-      this.documentTypeCandidates().find(
+      [...this.documentTypeCandidates(), ...this.objectDefinitions()].find(
         (candidate) => candidate.documentType.id === documentTypeId,
       )?.documentType ?? null
     );
   });
 
   protected readonly reviewCounts = computed(() =>
-    countAttributeReview(this.extractionResult()?.attributes ?? [], this.editedAttributes()),
+    countAttributeReview(
+      this.extractionResult()?.attributes ?? [],
+      this.editedAttributes(),
+      this.acknowledgedIds(),
+    ),
   );
 
   constructor() {
+    // Slow and independent of the process: start immediately.
+    this.retrievalApi
+      .objectDefinitions()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (definitions) => this.objectDefinitions.set(definitions),
+        // Select falls back to the candidates if the list cannot be loaded.
+        error: () => this.objectDefinitions.set([]),
+      });
+
+    effect(() => {
+      if (isRetrievalComplete(this.events()) && !this.similarReady() && !this.loadingSimilar) {
+        this.loadSimilar();
+      }
+    });
+
     effect(() => {
       if (isExtractionComplete(this.events()) && !this.resultsReady() && !this.loadingResults()) {
         this.loadResults();
@@ -77,7 +109,23 @@ export class ProcessPage {
       this.processEventsApi
         .subscribe(this.processId())
         .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe((event) => this.events.update((list) => [...list, event]));
+        .subscribe((event) =>
+          this.events.update((list) => [...list, { ...event, receivedAt: Date.now() }]),
+        );
+    });
+  }
+
+  private loadSimilar(): void {
+    this.loadingSimilar = true;
+    this.retrievalApi.similarDocuments(this.processId()).subscribe({
+      next: (similar) => {
+        this.similarDocuments.set(similar);
+        this.similarReady.set(true);
+        this.loadingSimilar = false;
+      },
+      error: () => {
+        this.loadingSimilar = false;
+      },
     });
   }
 
@@ -86,13 +134,12 @@ export class ProcessPage {
     const processId = this.processId();
     forkJoin({
       extraction: this.extractionApi.extractionResult(processId),
-      similar: this.retrievalApi.similarDocuments(processId),
       candidates: this.retrievalApi.documentTypeCandidates(processId),
     }).subscribe({
-      next: ({ extraction, similar, candidates }) => {
+      next: ({ extraction, candidates }) => {
         this.extractionResult.set(extraction);
-        this.similarDocuments.set(similar);
         this.documentTypeCandidates.set(candidates);
+        this.acknowledgedIds.set([]);
         this.editedAttributes.set(
           Object.fromEntries(extraction.attributes.map((a) => [a.propertyId, a.value ?? ''])),
         );
@@ -123,6 +170,7 @@ export class ProcessPage {
   /** Switches to the new document type locally, clearing all property values (no backend call). */
   private applyDocumentTypeWithEmptyValues(documentTypeId: string): void {
     this.extractionResult.set({ documentTypeId, attributes: [] });
+    this.acknowledgedIds.set([]);
     this.editedAttributes.set({});
     this.actionError.set(null);
   }
@@ -136,6 +184,7 @@ export class ProcessPage {
     this.extractionApi.retryExtraction(this.processId(), documentTypeId).subscribe({
       next: (result) => {
         this.extractionResult.set(result);
+        this.acknowledgedIds.set([]);
         this.editedAttributes.set(
           Object.fromEntries(result.attributes.map((a) => [a.propertyId, a.value ?? ''])),
         );
@@ -170,25 +219,26 @@ export class ProcessPage {
     }
     this.confirming.set(true);
     this.actionError.set(null);
-    // TODO: `documentId`/`repositoryId` aren't resolvable from any GET endpoint for an existing
-    // processId (ConfirmRequest needs the DMS location from the original IngestedDocument) — wire
-    // through once the import screen passes it along (navigation state or a process lookup
-    // endpoint). Confirm will fail against the real backend until this is resolved.
     this.validationApi
       .confirm({
         processId: this.processId(),
-        documentId: this.processId(),
-        repositoryId: '',
-        consentGiven: true,
-        templateConsent: false,
+        dmsSourceCategory: this.selectedDocumentTypeId(),
         attributes: this.editedAttributes(),
       })
       .subscribe({
-        next: () => this.router.navigate(['/']),
-        error: () => {
+        next: (result) => {
           this.confirming.set(false);
-          this.actionError.set('Bestaetigen fehlgeschlagen. Bitte erneut versuchen.');
+          this.confirmation.set(result);
+        },
+        error: (err: HttpErrorResponse) => {
+          this.confirming.set(false);
+          const reason = err.status === 422 ? err.error?.detail : null;
+          this.actionError.set(reason || 'Bestaetigen fehlgeschlagen. Bitte erneut versuchen.');
         },
       });
+  }
+
+  protected importNext(): void {
+    this.router.navigate(['/']);
   }
 }

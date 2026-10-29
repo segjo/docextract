@@ -28,9 +28,8 @@ public class DocExtractMcpTool implements McpTool {
 
   @Override
   public ConfirmationResult confirm(
-      String processId, String documentId, String repositoryId, boolean consentGiven) {
+      String processId, String documentId, String repositoryId, String dmsSourceCategory) {
     return confirmAndWriteBack.confirm(
-        new ConfirmationCommand(
-            processId, documentId, repositoryId, consentGiven, false, Map.of()));
+        new ConfirmationCommand(processId, dmsSourceCategory, Map.of()));
   }
 }

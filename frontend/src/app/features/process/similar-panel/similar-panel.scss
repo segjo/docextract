@@ -15,6 +15,9 @@
 .similar__item {
   display: grid;
   grid-template-columns: 30px 1fr auto;
+  grid-template-areas:
+    'rank info score'
+    'details details details';
   gap: 12px;
   align-items: center;
   padding: 12px 0;
@@ -54,4 +57,31 @@
   font-weight: 700;
   color: var(--color-confidence-high);
   white-space: nowrap;
+}
+
+.similar__rank { grid-area: rank; }
+.similar__info { grid-area: info; }
+.similar__score { grid-area: score; }
+
+.similar__link {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.similar__details {
+  grid-area: details;
+  font-size: 12px;
+}
+
+.similar__details summary {
+  cursor: pointer;
+  color: var(--color-grey-text);
+}
+
+.similar__json {
+  margin: 6px 0 0;
+  padding: 8px;
+  max-height: 240px;
+  overflow: auto;
+  background: var(--color-soft);
 }

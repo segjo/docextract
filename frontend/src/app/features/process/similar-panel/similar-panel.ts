@@ -4,6 +4,7 @@ import { DmsDocumentMetadata, RetrievalResult } from '../../../core/models/retri
 interface SimilarDocumentRow {
   result: RetrievalResult;
   metadata: DmsDocumentMetadata | null;
+  json: string | null;
 }
 
 @Component({
@@ -15,7 +16,11 @@ export class SimilarPanel {
   readonly results = input.required<RetrievalResult[]>();
 
   protected readonly rows = computed<SimilarDocumentRow[]>(() =>
-    this.results().map((result) => ({ result, metadata: parseMetadata(result.properties) })),
+    this.results().map((result) => ({
+      result,
+      metadata: parseMetadata(result.properties),
+      json: formatJson(result.properties),
+    })),
   );
 
   protected scorePercent(score: number): number {
@@ -31,5 +36,16 @@ function parseMetadata(raw: string | null): DmsDocumentMetadata | null {
     return JSON.parse(raw) as DmsDocumentMetadata;
   } catch {
     return null;
+  }
+}
+
+function formatJson(raw: string | null): string | null {
+  if (!raw) {
+    return null;
+  }
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
   }
 }

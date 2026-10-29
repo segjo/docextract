@@ -6,13 +6,16 @@ export function isCriticalAttribute(attribute: ExtractedAttribute): boolean {
 
 /**
  * Assumption (FRONTEND-SPEC leaves "zu pruefen" undefined): a critical field counts as reviewed
- * once the user has changed it away from the original KI-Vorschlag.
+ * once the user has changed it away from the original KI-Vorschlag, or explicitly acknowledged it.
  */
 export function isReviewedAttribute(
   attribute: ExtractedAttribute,
   editedValue: string | undefined,
+  acknowledged = false,
 ): boolean {
-  return !isCriticalAttribute(attribute) || editedValue !== (attribute.value ?? '');
+  return (
+    !isCriticalAttribute(attribute) || acknowledged || editedValue !== (attribute.value ?? '')
+  );
 }
 
 export interface AttributeReviewCounts {
@@ -24,13 +27,14 @@ export interface AttributeReviewCounts {
 export function countAttributeReview(
   attributes: ExtractedAttribute[],
   edited: Record<string, string>,
+  acknowledgedIds: readonly string[] = [],
 ): AttributeReviewCounts {
   let critical = 0;
   let toReview = 0;
   for (const attribute of attributes) {
     if (isCriticalAttribute(attribute)) {
       critical++;
-      if (!isReviewedAttribute(attribute, edited[attribute.propertyId])) {
+      if (!isReviewedAttribute(attribute, edited[attribute.propertyId], acknowledgedIds.includes(attribute.propertyId))) {
         toReview++;
       }
     }

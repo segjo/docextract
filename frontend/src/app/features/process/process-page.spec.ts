@@ -17,7 +17,10 @@ function completedEvent(step: ProcessEvent['step']): ProcessEvent {
 describe('ProcessPage', () => {
   let events$: Subject<ProcessEvent>;
   let extractionApi: Pick<ExtractionApi, 'extractionResult' | 'retryExtraction'>;
-  let retrievalApi: Pick<RetrievalApi, 'similarDocuments' | 'documentTypeCandidates'>;
+  let retrievalApi: Pick<
+    RetrievalApi,
+    'similarDocuments' | 'documentTypeCandidates' | 'objectDefinitions'
+  >;
   let validationApi: Pick<ValidationApi, 'confirm' | 'reject'>;
   const extractionResult: ExtractionResult = {
     documentTypeId: 't1',
@@ -35,6 +38,7 @@ describe('ProcessPage', () => {
     retrievalApi = {
       similarDocuments: vi.fn().mockReturnValue(of([])),
       documentTypeCandidates: vi.fn().mockReturnValue(of([])),
+      objectDefinitions: vi.fn().mockReturnValue(of([])),
     };
     validationApi = {
       confirm: vi.fn().mockReturnValue(of({ status: 'CONFIRMED' })),
@@ -73,10 +77,19 @@ describe('ProcessPage', () => {
     fixture.detectChanges();
 
     expect(extractionApi.extractionResult).toHaveBeenCalledWith('p-1');
-    expect(retrievalApi.similarDocuments).toHaveBeenCalledWith('p-1');
     expect(retrievalApi.documentTypeCandidates).toHaveBeenCalledWith('p-1');
     expect(fixture.componentInstance['extractionResult']()).toEqual(extractionResult);
     expect(fixture.componentInstance['activeTab']()).toBe('EIGENSCHAFTEN');
+  });
+
+  it('enables the similar tab as soon as RETRIEVED completes, before extraction', () => {
+    const fixture = createComponent();
+    events$.next(completedEvent('RETRIEVED'));
+    fixture.detectChanges();
+
+    expect(retrievalApi.similarDocuments).toHaveBeenCalledWith('p-1');
+    expect(fixture.componentInstance['similarReady']()).toBe(true);
+    expect(fixture.componentInstance['resultsReady']()).toBe(false);
   });
 
   it('only loads results once even if further events arrive', () => {
@@ -106,10 +119,11 @@ describe('ProcessPage', () => {
     expect(fixture.componentInstance['loadingResults']()).toBe(false);
   });
 
-  it('confirm() sends the edited attributes and navigates home on success', () => {
+  it('confirm() sends the edited attributes and shows a link to the DMS document on success', () => {
+    (validationApi.confirm as ReturnType<typeof vi.fn>).mockReturnValue(
+      of({ repositoryId: 'repo-1', documentId: 'doc-1', writtenBack: true }),
+    );
     const fixture = createComponent();
-    const router = TestBed.inject(Router);
-    const navigateSpy = vi.spyOn(router, 'navigate');
     events$.next(completedEvent('EXTRACTED'));
     fixture.detectChanges();
 
@@ -118,7 +132,11 @@ describe('ProcessPage', () => {
     expect(validationApi.confirm).toHaveBeenCalledWith(
       expect.objectContaining({ processId: 'p-1', attributes: { p1: 'v1' } }),
     );
-    expect(navigateSpy).toHaveBeenCalledWith(['/']);
+    fixture.detectChanges();
+    const link = (fixture.nativeElement as HTMLElement).querySelector(
+      '.confirmed__link',
+    ) as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('/dms/r/repo-1/o2/doc-1');
   });
 
   it('confirm() surfaces an error and re-enables actions on failure', () => {

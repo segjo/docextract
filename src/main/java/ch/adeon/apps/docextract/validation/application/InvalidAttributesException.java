@@ -10,4 +10,9 @@ public class InvalidAttributesException extends RuntimeException {
   public InvalidAttributesException(String processId) {
     super("DMS rejected attributes for process " + processId + " — repeat the validation step");
   }
+
+  /** {@code reason} is the DMS' own message and becomes the exception message shown to the user. */
+  public InvalidAttributesException(String processId, String reason) {
+    super(reason);
+  }
 }

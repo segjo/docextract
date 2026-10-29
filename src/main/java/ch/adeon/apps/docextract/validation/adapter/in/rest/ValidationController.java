@@ -31,10 +31,7 @@ public class ValidationController {
         confirmAndWriteBack.confirm(
             new ConfirmationCommand(
                 request.processId(),
-                request.documentId(),
-                request.repositoryId(),
-                request.consentGiven(),
-                request.templateConsent(),
+                request.dmsSourceCategory(),
                 request.attributes()));
     return ResponseEntity.ok(result);
   }
@@ -47,10 +44,7 @@ public class ValidationController {
 
   public record ConfirmRequest(
       String processId,
-      String documentId,
-      String repositoryId,
-      boolean consentGiven,
-      boolean templateConsent,
+      String dmsSourceCategory,
       Map<String, Object> attributes) {}
 
   public record RejectRequest(String processId) {}

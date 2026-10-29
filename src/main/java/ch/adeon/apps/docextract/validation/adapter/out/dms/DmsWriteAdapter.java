@@ -3,6 +3,7 @@ package ch.adeon.apps.docextract.validation.adapter.out.dms;
 import ch.adeon.apps.docextract.security.application.AppConfigPort;
 import ch.adeon.apps.docextract.security.domain.DvelopCredential;
 import ch.adeon.apps.docextract.validation.port.DmsWritePort;
+import ch.adeon.apps.docextract.validation.port.DmsWriteRejectedException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -12,6 +13,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
@@ -71,10 +73,25 @@ public class DmsWriteAdapter implements DmsWritePort {
         LOG.warn("d.velop DMS did not return a usable Location header for the stored document");
       }
       return documentId;
+    } catch (HttpClientErrorException ex) {
+      LOG.warn("Storing the document in the d.velop DMS failed", ex);
+      throw new DmsWriteRejectedException(extractReason(ex));
     } catch (RestClientException ex) {
       LOG.warn("Storing the document in the d.velop DMS failed", ex);
       return null;
     }
+  }
+
+  private static String extractReason(HttpClientErrorException ex) {
+    try {
+      Map<?, ?> body = ex.getResponseBodyAs(Map.class);
+      if (body != null && body.get("reason") instanceof String reason && !reason.isBlank()) {
+        return reason.trim();
+      }
+    } catch (RuntimeException ignored) {
+      // fall through to the generic message
+    }
+    return "DMS rejected the attributes (HTTP " + ex.getStatusCode().value() + ")";
   }
 
   private static List<SourceProperty> toProperties(Map<String, Object> attributes) {

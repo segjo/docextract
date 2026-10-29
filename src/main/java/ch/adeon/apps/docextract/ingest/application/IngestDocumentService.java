@@ -20,6 +20,7 @@ import ch.adeon.apps.docextract.ingest.domain.ValidationResult;
 import ch.adeon.apps.docextract.ingest.port.DmsChunkUploadPort;
 import ch.adeon.apps.docextract.ingest.port.DocumentBlobPort;
 import ch.adeon.apps.docextract.process.application.ProcessEventPort;
+import ch.adeon.apps.docextract.process.application.ProcessDocumentPort;
 import ch.adeon.apps.docextract.process.application.ProcessRepositoryPort;
 import ch.adeon.apps.docextract.process.domain.ProcessEvent;
 import ch.adeon.apps.docextract.process.domain.ProcessStep;
@@ -72,6 +73,7 @@ public class IngestDocumentService implements IngestDocument {
   private final ExtractAttributes extractAttributes;
   private final DocumentHashStagingPort documentHashStagingPort;
   private final ProcessRepositoryPort processRepositoryPort;
+  private final ProcessDocumentPort processDocumentPort;
   private final int retrievalTopK;
   private final Limits limits;
   private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
@@ -90,6 +92,7 @@ public class IngestDocumentService implements IngestDocument {
       ExtractAttributes extractAttributes,
       DocumentHashStagingPort documentHashStagingPort,
       ProcessRepositoryPort processRepositoryPort,
+      ProcessDocumentPort processDocumentPort,
       @Value("${docextract.ingest.max-file-size-bytes:26214400}") long maxFileSizeBytes,
       @Value("${docextract.retrieval.top-k:5}") int retrievalTopK) {
     this.documentBlobPort = documentBlobPort;
@@ -105,6 +108,7 @@ public class IngestDocumentService implements IngestDocument {
     this.extractAttributes = extractAttributes;
     this.documentHashStagingPort = documentHashStagingPort;
     this.processRepositoryPort = processRepositoryPort;
+    this.processDocumentPort = processDocumentPort;
     this.retrievalTopK = retrievalTopK;
     this.limits = new Limits(maxFileSizeBytes);
   }
@@ -262,6 +266,7 @@ public class IngestDocumentService implements IngestDocument {
     }
 
     log.info("dms upload completed processId={} dmsLocation={}", processId, dmsLocation.uri());
+    processDocumentPort.save(processId, dmsLocation.uri(), upload.filename());
     processEventPort.publish(
         new ProcessEvent(processId, ProcessStep.DMS_UPLOADED, StepStatus.COMPLETED, null));
 
