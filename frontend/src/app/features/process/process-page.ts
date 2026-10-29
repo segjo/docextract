@@ -46,7 +46,6 @@ export class ProcessPage {
   protected readonly extractionResult = signal<ExtractionResult | null>(null);
   protected readonly similarDocuments = signal<RetrievalResult[]>([]);
   protected readonly documentTypeCandidates = signal<DmsDocumentMetadata[]>([]);
-  protected readonly objectDefinitions = signal<DmsDocumentMetadata[]>([]);
   protected readonly editedAttributes = signal<Record<string, string>>({});
   protected readonly acknowledgedIds = signal<string[]>([]);
   protected readonly selectedDocumentTypeId = signal<string | null>(null);
@@ -66,7 +65,7 @@ export class ProcessPage {
   protected readonly documentType = computed(() => {
     const documentTypeId = this.extractionResult()?.documentTypeId;
     return (
-      [...this.documentTypeCandidates(), ...this.objectDefinitions()].find(
+      this.documentTypeCandidates().find(
         (candidate) => candidate.documentType.id === documentTypeId,
       )?.documentType ?? null
     );
@@ -81,16 +80,6 @@ export class ProcessPage {
   );
 
   constructor() {
-    // Slow and independent of the process: start immediately.
-    this.retrievalApi
-      .objectDefinitions()
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (definitions) => this.objectDefinitions.set(definitions),
-        // Select falls back to the candidates if the list cannot be loaded.
-        error: () => this.objectDefinitions.set([]),
-      });
-
     effect(() => {
       if (isRetrievalComplete(this.events()) && !this.similarReady() && !this.loadingSimilar) {
         this.loadSimilar();

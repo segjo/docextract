@@ -33,13 +33,11 @@ import tools.jackson.databind.ObjectMapper;
  * NfA-4/-6). Hits below the configurable minimum score are dropped before the result is reported.
  * Each remaining hit's DMS object properties are then looked up live and attached (FR-3, SPEC §3),
  * and the hits are narrowed down to the best-matched document type (see {@link
- * #filterToBestDocumentType(List)}), whose {@link DmsDocumentMetadata} is staged as the document
- * type candidate for the next step — no extra DMS call needed, it is read back out of the already-
- * fetched properties. If no similar document was found at all, all repository document types +
- * properties are fetched instead as a fallback candidate set (SPEC §3, see {@link
- * DmsObjectDefinitionPort}) and staged the same way via {@link DocumentTypeCandidatesPort}. Reports
- * {@code RETRIEVED} progress via SSE (ADR-004) and stages the enriched result for the UI (see
- * {@link RetrievalResultPort}).
+ * #filterToBestDocumentType(List)}). All repository document types + properties (SPEC §3, see
+ * {@link DmsObjectDefinitionPort}) are staged as candidates for the next step via {@link
+ * DocumentTypeCandidatesPort}, each carrying a score derived from the similar hits. Reports {@code
+ * RETRIEVED} progress via SSE (ADR-004) and stages the enriched result for the UI (see {@link
+ * RetrievalResultPort}).
  */
 @Service
 public class FindSimilarService implements FindSimilar {
@@ -57,6 +55,7 @@ public class FindSimilarService implements FindSimilar {
   private final ProcessRepositoryPort processRepositoryPort;
   private final ObjectMapper objectMapper;
   private final double minScore;
+  private final List<String> documentTypeFilter;
   private final String defaultRepositoryId;
 
   public FindSimilarService(
@@ -71,6 +70,7 @@ public class FindSimilarService implements FindSimilar {
       ProcessRepositoryPort processRepositoryPort,
       ObjectMapper objectMapper,
       @Value("${docextract.retrieval.min-score:0.0}") double minScore,
+      @Value("${docextract.retrieval.document-type-filter:}") List<String> documentTypeFilter,
       @Value("${docextract.ingest.dms.repository-id}") String defaultRepositoryId) {
     this.stageEmbeddings = stageEmbeddings;
     this.authContextPort = authContextPort;
@@ -83,6 +83,7 @@ public class FindSimilarService implements FindSimilar {
     this.processRepositoryPort = processRepositoryPort;
     this.objectMapper = objectMapper;
     this.minScore = minScore;
+    this.documentTypeFilter = documentTypeFilter.stream().filter(s -> !s.isBlank()).toList();
     this.defaultRepositoryId = defaultRepositoryId;
   }
 
@@ -116,7 +117,7 @@ public class FindSimilarService implements FindSimilar {
           results.size(),
           bestTypeResults.size());
       retrievalResultPort.store(processId, bestTypeResults);
-      stageDocumentTypeCandidates(processId, credential, bestTypeResults);
+      stageDocumentTypeCandidates(processId, credential, results);
       processEventPort.publish(
           new ProcessEvent(processId, ProcessStep.RETRIEVED, StepStatus.COMPLETED, null));
       return bestTypeResults;
@@ -202,34 +203,63 @@ public class FindSimilarService implements FindSimilar {
   }
 
   /**
-   * TODO: CHECK this! Stages the document type candidates for the next processing step (SPEC §3):
-   * if similar documents were found, this is just the best-matched type's already-fetched {@link
-   * DmsDocumentMetadata} (deduplicated, no extra DMS call). Otherwise — including when {@code
-   * bestTypeResults} is the unfiltered fallback from {@link #filterToBestDocumentType(List)}
-   * because none of the hits had a parseable document type — all repository document types +
-   * properties are fetched instead as a fallback so extraction still has a schema to constrain
-   * against. Best-effort: a failed DMS call is logged and leaves no candidates staged, it must not
-   * fail the whole retrieval step.
+   * Stages the document type candidates for the next processing step (SPEC §3): always all
+   * repository document types + properties, each scored by the summed similarity of the {@code
+   * hits} of that type ({@code 0} if there is none), so the UI can highlight the likely types.
+   * Best-effort: if the DMS call fails, only the types read back from the hits are staged; if that
+   * is empty too, nothing is staged. It must not fail the whole retrieval step.
    */
   private void stageDocumentTypeCandidates(
-      String processId, DvelopCredential credential, List<RetrievalResult> bestTypeResults) {
-    List<DmsDocumentMetadata> typedCandidates = distinctDocumentTypes(bestTypeResults);
-    if (!typedCandidates.isEmpty()) {
-      documentTypeCandidatesPort.store(processId, typedCandidates);
-      return;
-    }
+      String processId, DvelopCredential credential, List<RetrievalResult> hits) {
+    List<DmsDocumentMetadata> typedCandidates = distinctDocumentTypes(hits);
+    Map<String, Double> scores = documentTypeScores(hits);
+    List<DmsDocumentMetadata> candidates = typedCandidates;
     try {
       String repositoryId = processRepositoryPort.retrieve(processId).orElse(defaultRepositoryId);
-      List<DmsDocumentMetadata> candidates =
-          dmsObjectDefinitionPort.fetchAll(repositoryId, credential);
-      log.info(
-          "no typed similar document found, staged {} document type candidates processId={}",
-          candidates.size(),
-          processId);
-      documentTypeCandidatesPort.store(processId, candidates);
+      candidates = dmsObjectDefinitionPort.fetchAll(repositoryId, credential);
     } catch (RuntimeException ex) {
       log.warn("failed to fetch DMS document type candidates processId={}", processId, ex);
     }
+    if (!documentTypeFilter.isEmpty()) {
+      candidates =
+          candidates.stream()
+              .filter(c -> c.documentType() != null)
+              .filter(c -> documentTypeFilter.contains(c.documentType().id()))
+              .toList();
+    }
+    if (candidates.isEmpty()) {
+      return;
+    }
+    log.info(
+        "staged {} document type candidates ({} typed by similar documents) processId={}",
+        candidates.size(),
+        typedCandidates.size(),
+        processId);
+    documentTypeCandidatesPort.store(
+        processId, candidates.stream().map(c -> withScore(c, scores)).toList());
+  }
+
+  private static DmsDocumentMetadata withScore(
+      DmsDocumentMetadata candidate, Map<String, Double> scores) {
+    double score = scores.getOrDefault(candidate.documentType().id(), 0.0);
+    return new DmsDocumentMetadata(
+        candidate.documentType().withScore(score),
+        candidate.contentLanguage(),
+        candidate.properties());
+  }
+
+  /** Summed hit score per document type id. */
+  private Map<String, Double> documentTypeScores(List<RetrievalResult> hits) {
+    Map<String, Double> scores = new LinkedHashMap<>();
+    for (RetrievalResult hit : hits) {
+      DmsDocumentMetadata metadata = parseMetadata(hit);
+      if (metadata != null
+          && metadata.documentType() != null
+          && metadata.documentType().id() != null) {
+        scores.merge(metadata.documentType().id(), hit.score(), Double::sum);
+      }
+    }
+    return scores;
   }
 
   /** One {@link DmsDocumentMetadata} per distinct document type id found among the hits. */

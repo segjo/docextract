@@ -17,10 +17,7 @@ function completedEvent(step: ProcessEvent['step']): ProcessEvent {
 describe('ProcessPage', () => {
   let events$: Subject<ProcessEvent>;
   let extractionApi: Pick<ExtractionApi, 'extractionResult' | 'retryExtraction'>;
-  let retrievalApi: Pick<
-    RetrievalApi,
-    'similarDocuments' | 'documentTypeCandidates' | 'objectDefinitions'
-  >;
+  let retrievalApi: Pick<RetrievalApi, 'similarDocuments' | 'documentTypeCandidates'>;
   let validationApi: Pick<ValidationApi, 'confirm' | 'reject'>;
   const extractionResult: ExtractionResult = {
     documentTypeId: 't1',
@@ -38,7 +35,6 @@ describe('ProcessPage', () => {
     retrievalApi = {
       similarDocuments: vi.fn().mockReturnValue(of([])),
       documentTypeCandidates: vi.fn().mockReturnValue(of([])),
-      objectDefinitions: vi.fn().mockReturnValue(of([])),
     };
     validationApi = {
       confirm: vi.fn().mockReturnValue(of({ status: 'CONFIRMED' })),

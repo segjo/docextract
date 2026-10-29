@@ -24,12 +24,14 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,14 +40,14 @@ import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Classifies the process's staged document type candidates (see {@link DocumentTypeCandidatesPort})
- * with the extraction LLM (skipped when only one candidate exists), then asks the same LLM to
- * suggest values for the winning type's writable properties, grounded in the process's structured
- * document content still held in-memory from the {@code content} module (ADR-006 — discarded only
- * after this step, not before). Every {@code hasValueList} property's suggestion is confirmed
- * against the DMS value list, re-fetching a filtered one live via {@link ValueListPort}/{@code
- * DmsValueListWebhookAdapter} when the already-known list is empty or capped and no match was found
- * (FR-4, T-1, E-5).
+ * Picks the process's staged document type candidate (see {@link DocumentTypeCandidatesPort}) with
+ * the highest similarity score; only if none has one (no similar document found) the extraction LLM
+ * classifies among all candidates. Then asks the same LLM to suggest values for the winning type's
+ * writable properties, grounded in the process's structured document content still held in-memory
+ * from the {@code content} module (ADR-006 — discarded only after this step, not before). Every
+ * {@code hasValueList} property's suggestion is confirmed against the DMS value list, re-fetching a
+ * filtered one live via {@link ValueListPort}/{@code DmsValueListWebhookAdapter} when the
+ * already-known list is empty or capped and no match was found (FR-4, T-1, E-5).
  */
 @Service
 public class ExtractAttributesService implements ExtractAttributes, RetryExtraction {
@@ -107,15 +109,16 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
   }
 
   @Override
-  public ExtractionResult retry(String processId, String documentTypeId, DvelopCredential credential) {
+  public ExtractionResult retry(
+      String processId, String documentTypeId, DvelopCredential credential) {
     Objects.requireNonNull(documentTypeId, "documentTypeId");
     return doExtract(processId, documentTypeId, credential);
   }
 
   /**
    * Core extraction flow shared by both inbound ports. {@code forcedDocumentTypeId} is {@code null}
-   * for the normal post-ingestion flow (LLM classifies among the staged candidates, skipped when
-   * only one exists); non-null overrides the classification with the given staged candidate's type,
+   * for the normal post-ingestion flow (best-scored candidate, else LLM classification among the
+   * staged candidates); non-null overrides the selection with the given staged candidate's type,
    * for a reviewer-triggered {@link RetryExtraction retry} after changing the document type.
    */
   private ExtractionResult doExtract(
@@ -139,9 +142,8 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
       DmsDocumentMetadata selectedType =
           forcedDocumentTypeId != null
               ? findCandidate(candidates, forcedDocumentTypeId, processId)
-              : candidates.size() == 1
-                  ? candidates.get(0)
-                  : classifyDocumentType(processId, documentText, candidates);
+              : bestScoredCandidate(candidates)
+                  .orElseGet(() -> classifyDocumentType(processId, documentText, candidates));
 
       List<DmsPropertyDefinition> writableProperties =
           selectedType.documentType().properties().stream()
@@ -198,6 +200,20 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
                 new ExtractionException(
                     "documentTypeId %s is not a staged candidate for process %s"
                         .formatted(documentTypeId, processId)));
+  }
+
+  /**
+   * The candidate with the highest similarity score (see {@code DmsDocumentType#score()}), or empty
+   * if no similar document backs any candidate (all scores 0) — then the LLM has to decide. A
+   * single candidate is returned as is.
+   */
+  private Optional<DmsDocumentMetadata> bestScoredCandidate(List<DmsDocumentMetadata> candidates) {
+    if (candidates.size() == 1) {
+      return Optional.of(candidates.get(0));
+    }
+    return candidates.stream()
+        .filter(candidate -> candidate.documentType().score() > 0)
+        .max(Comparator.comparingDouble(candidate -> candidate.documentType().score()));
   }
 
   private DmsDocumentMetadata classifyDocumentType(
@@ -351,7 +367,14 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
     }
 
     resolvePendingValueLists(
-        pending, byId, selectedType, processId, credential, resolvedById, knownValues, knownMultiValues);
+        pending,
+        byId,
+        selectedType,
+        processId,
+        credential,
+        resolvedById,
+        knownValues,
+        knownMultiValues);
 
     return suggestions.stream()
         .map(SuggestedAttribute::propertyId)
