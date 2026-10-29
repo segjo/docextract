@@ -7,5 +7,5 @@ public interface McpTool {
   IngestedDocument ingest(String filename, byte[] content);
 
   ConfirmationResult confirm(
-      String processId, String documentId, String repositoryId, boolean consentGiven);
+      String processId, String documentId, String repositoryId, String dmsSourceCategory);
 }

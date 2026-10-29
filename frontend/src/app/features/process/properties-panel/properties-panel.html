@@ -10,7 +10,7 @@
   }
   <p class="properties__hint">Kein automatischer DMS-Write.</p>
 
-  @if (documentTypeCandidates().length) {
+  @if (documentTypeOptions().length) {
     <div class="properties__type-switch">
       <label for="document-type-select">Dokumenttyp</label>
       <select
@@ -18,8 +18,14 @@
         [value]="displayedDocumentTypeId() ?? ''"
         (change)="selectDocumentType($any($event.target).value)"
       >
-        @for (candidate of documentTypeCandidates(); track candidate.documentType.id) {
-          <option [value]="candidate.documentType.id">{{ candidate.documentType.name }}</option>
+        @for (option of documentTypeOptions(); track option.documentType.id) {
+          <option
+            [value]="option.documentType.id"
+            [class.is-candidate]="candidateIds().has(option.documentType.id)"
+          >
+            {{ candidateIds().has(option.documentType.id) ? '\u2605 ' : ''
+            }}{{ option.documentType.name }}
+          </option>
         }
       </select>
     </div>
@@ -27,14 +33,24 @@
 
   @if (pendingCandidate(); as candidate) {
     <div class="dialog-backdrop" role="presentation">
-      <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="document-type-dialog-title">
+      <div
+        class="dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="document-type-dialog-title"
+      >
         <h2 id="document-type-dialog-title">Dokumenttyp wechseln?</h2>
         <p>
           Dokumenttyp zu <strong>{{ candidate.documentType.name }}</strong> wechseln. Wie sollen die
           Eigenschaften behandelt werden?
         </p>
         <div class="dialog__actions">
-          <button type="button" class="dialog__btn" [disabled]="retrying()" (click)="cancelDocumentTypeChange()">
+          <button
+            type="button"
+            class="dialog__btn"
+            [disabled]="retrying()"
+            (click)="cancelDocumentTypeChange()"
+          >
             Abbrechen
           </button>
           <button
@@ -81,7 +97,9 @@
             }
           </label>
           @if (!row.empty) {
-            <span class="field__confidence">{{ confidencePercent(row.attribute.confidence) }} %</span>
+            <span class="field__confidence"
+              >{{ confidencePercent(row.attribute.confidence) }} %</span
+            >
           }
         </div>
 
@@ -103,6 +121,17 @@
             [value]="attributes()[row.attribute.propertyId] ?? ''"
             (input)="updateValue(row.attribute.propertyId, $any($event.target).value)"
           />
+        }
+
+        @if (row.critical) {
+          <label class="field__acknowledge">
+            <input
+              type="checkbox"
+              [checked]="acknowledgedIds().includes(row.attribute.propertyId)"
+              (change)="toggleAcknowledged(row.attribute.propertyId, $any($event.target).checked)"
+            />
+            Wert geprueft
+          </label>
         }
 
         @if (row.attribute.sourceExcerpt) {

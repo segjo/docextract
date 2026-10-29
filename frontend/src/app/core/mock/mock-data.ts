@@ -168,6 +168,23 @@ export function mockDocumentTypeCandidates(): DmsDocumentMetadata[] {
   ];
 }
 
+/** All document types of the repository: the candidates plus further, non-suggested ones. */
+export function mockObjectDefinitions(): DmsDocumentMetadata[] {
+  return [
+    ...mockDocumentTypeCandidates(),
+    {
+      documentType: { id: 'doctype_letter', name: 'Brief', properties: [] },
+      contentLanguage: 'de',
+      properties: [],
+    },
+    {
+      documentType: { id: 'doctype_delivery_note', name: 'Lieferschein', properties: [] },
+      contentLanguage: 'de',
+      properties: [],
+    },
+  ];
+}
+
 export function mockSimilarDocuments(): RetrievalResult[] {
   return [
     {
@@ -251,5 +268,5 @@ export function mockRetryExtractionResult(documentTypeId: string): ExtractionRes
 }
 
 export function mockConfirmationResult(): ConfirmationResult {
-  return { documentId: 'mock-document-1', writtenBack: true, templateConsentRecorded: false };
+  return { repositoryId: 'mock-repo', documentId: 'mock-document-1', writtenBack: true };
 }

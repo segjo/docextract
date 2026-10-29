@@ -26,6 +26,8 @@ export class PropertiesPanel {
   readonly documentType = input<DmsDocumentType | null>(null);
   /** The process's staged document-type candidates (SPEC §3), for the reviewer to pick from. */
   readonly documentTypeCandidates = input<DmsDocumentMetadata[]>([]);
+  /** All document types from /object-definitions; the full option list of the select. */
+  readonly objectDefinitions = input<DmsDocumentMetadata[]>([]);
   /** Two-way bound with the container: the currently selected candidate's document type id. */
   readonly selectedDocumentTypeId = model<string | null>(null);
   /** True while a retry extraction request is in flight; disables the dialog's actions. */
@@ -33,6 +35,8 @@ export class PropertiesPanel {
   readonly extractedAttributes = input.required<ExtractedAttribute[]>();
   /** Edited values, two-way bound with the container so Confirm/Reject see the reviewed state. */
   readonly attributes = model.required<Record<string, string>>();
+  /** Critical properties the reviewer has verified without changing their value. */
+  readonly acknowledgedIds = model<string[]>([]);
 
   /**
    * Emitted once the reviewer confirms a document type change in the dialog: `reExtract` selects
@@ -52,8 +56,17 @@ export class PropertiesPanel {
   protected readonly displayedDocumentTypeId = computed(
     () => this.pendingDocumentTypeId() ?? this.selectedDocumentTypeId(),
   );
+  protected readonly candidateIds = computed(
+    () => new Set(this.documentTypeCandidates().map((candidate) => candidate.documentType.id)),
+  );
+  /** Object definitions plus any candidate not (yet) contained in them. */
+  protected readonly documentTypeOptions = computed(() => {
+    const all = this.objectDefinitions();
+    const known = new Set(all.map((entry) => entry.documentType.id));
+    return [...all, ...this.documentTypeCandidates().filter((c) => !known.has(c.documentType.id))];
+  });
   protected readonly pendingCandidate = computed(() =>
-    this.documentTypeCandidates().find(
+    this.documentTypeOptions().find(
       (candidate) => candidate.documentType.id === this.pendingDocumentTypeId(),
     ),
   );
@@ -61,6 +74,7 @@ export class PropertiesPanel {
   protected readonly rows = computed<AttributeRow[]>(() => {
     const definitions = this.documentType()?.properties ?? [];
     const edited = this.attributes();
+    const acknowledged = this.acknowledgedIds();
     const extractedAttributes = this.extractedAttributes();
     const extractedIds = new Set(extractedAttributes.map((attribute) => attribute.propertyId));
 
@@ -70,7 +84,11 @@ export class PropertiesPanel {
         attribute,
         definition,
         critical: isCriticalAttribute(attribute),
-        reviewed: isReviewedAttribute(attribute, edited[attribute.propertyId]),
+        reviewed: isReviewedAttribute(
+          attribute,
+          edited[attribute.propertyId],
+          acknowledged.includes(attribute.propertyId),
+        ),
         empty: false,
         mandatory: definition?.mandatory ?? false,
       };
@@ -78,7 +96,9 @@ export class PropertiesPanel {
 
     const showEmpty = this.showEmptyProperties();
     const emptyRows = definitions
-      .filter((definition) => !extractedIds.has(definition.id) && (definition.mandatory || showEmpty))
+      .filter(
+        (definition) => !extractedIds.has(definition.id) && (definition.mandatory || showEmpty),
+      )
       .map((definition) => ({
         attribute: {
           propertyId: definition.id,
@@ -99,6 +119,14 @@ export class PropertiesPanel {
 
   protected updateValue(propertyId: string, value: string): void {
     this.attributes.update((current) => ({ ...current, [propertyId]: value }));
+  }
+
+  protected toggleAcknowledged(propertyId: string, checked: boolean): void {
+    this.acknowledgedIds.update((current) =>
+      checked
+        ? [...current.filter((id) => id !== propertyId), propertyId]
+        : current.filter((id) => id !== propertyId),
+    );
   }
 
   protected selectDocumentType(documentTypeId: string): void {

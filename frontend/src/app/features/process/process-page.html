@@ -22,7 +22,7 @@
         class="tabs__tab"
         [class.tabs__tab--active]="activeTab() === 'AEHNLICHE'"
         [attr.aria-selected]="activeTab() === 'AEHNLICHE'"
-        [disabled]="!resultsReady()"
+        [disabled]="!similarReady()"
         (click)="selectTab('AEHNLICHE')"
       >
         <span class="tabs__icon" aria-hidden="true">&#9638;</span>AEHNLICHE ({{
@@ -52,10 +52,12 @@
             <app-properties-panel
               [documentType]="documentType()"
               [documentTypeCandidates]="documentTypeCandidates()"
+              [objectDefinitions]="objectDefinitions()"
               [(selectedDocumentTypeId)]="selectedDocumentTypeId"
               [retrying]="retryingExtraction()"
               [extractedAttributes]="result.attributes"
               [(attributes)]="editedAttributes"
+              [(acknowledgedIds)]="acknowledgedIds"
               (documentTypeChange)="onDocumentTypeChange($event)"
             />
           }
@@ -69,7 +71,21 @@
       }
     </div>
 
-    @if (resultsReady()) {
+    @if (confirmation(); as result) {
+      <div class="confirmed" role="status">
+        <div class="confirmed__text">
+          <strong class="confirmed__title">Dokument im DMS gespeichert</strong>
+          <a
+            class="confirmed__link"
+            target="_blank"
+            rel="noopener noreferrer"
+            [href]="'/dms/r/' + result.repositoryId + '/o2/' + result.documentId"
+            >Repository {{ result.repositoryId }} &middot; Dokument {{ result.documentId }}</a
+          >
+        </div>
+        <button type="button" class="btn" (click)="importNext()">Naechstes importieren</button>
+      </div>
+    } @else if (resultsReady()) {
       <app-status-bar
         [attributeCount]="reviewCounts().total"
         [criticalCount]="reviewCounts().critical"

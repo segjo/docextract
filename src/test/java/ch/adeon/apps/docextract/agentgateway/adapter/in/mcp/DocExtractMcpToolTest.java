@@ -16,7 +16,7 @@ class DocExtractMcpToolTest {
     DocExtractMcpTool tool = new DocExtractMcpTool(ingestDocument, confirmAndWriteBack);
 
     tool.ingest("test.pdf", new byte[] {1, 2});
-    tool.confirm("p1", "doc-1", "repo-1", true);
+    tool.confirm("p1", "doc-1", "repo-1", "DBUE");
 
     verify(ingestDocument).ingest(org.mockito.ArgumentMatchers.any());
     verify(confirmAndWriteBack).confirm(org.mockito.ArgumentMatchers.any());

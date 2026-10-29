@@ -25,6 +25,27 @@ export function deriveStepStatuses(events: ProcessEvent[]): Record<ProcessStep, 
   return result;
 }
 
+/** Elapsed ms per step between its STARTED and COMPLETED/FAILED event, based on arrival times. */
+export function deriveStepDurations(events: ProcessEvent[]): Partial<Record<ProcessStep, number>> {
+  const started: Partial<Record<ProcessStep, number>> = {};
+  const result: Partial<Record<ProcessStep, number>> = {};
+  for (const event of events) {
+    if (event.receivedAt === undefined) {
+      continue;
+    }
+    if (event.status === 'STARTED') {
+      started[event.step] = event.receivedAt;
+    } else if (started[event.step] !== undefined) {
+      result[event.step] = event.receivedAt - started[event.step]!;
+    }
+  }
+  return result;
+}
+
+export function formatDuration(ms: number): string {
+  return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`;
+}
+
 /** The PDF preview blob id, available once the PREVIEW step completes (native PDF or Gotenberg render). */
 export function findPreviewBlobId(events: ProcessEvent[]): string | null {
   const previewCompleted = [...events]
@@ -39,4 +60,8 @@ export function hasFailure(events: ProcessEvent[]): boolean {
 
 export function isExtractionComplete(events: ProcessEvent[]): boolean {
   return events.some((event) => event.step === 'EXTRACTED' && event.status === 'COMPLETED');
+}
+
+export function isRetrievalComplete(events: ProcessEvent[]): boolean {
+  return events.some((event) => event.step === 'RETRIEVED' && event.status === 'COMPLETED');
 }

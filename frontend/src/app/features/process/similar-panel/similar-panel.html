@@ -8,9 +8,23 @@
           <span class="similar__rank" aria-hidden="true">{{ i + 1 }}</span>
           <span class="similar__info">
             <span class="similar__name">{{ row.metadata?.documentType?.name ?? 'Dokument' }}</span>
-            <span class="similar__meta">DMS-ID {{ row.result.documentId }}</span>
+            <span class="similar__meta">
+              <a
+                class="similar__link"
+                target="_blank"
+                rel="noopener noreferrer"
+                [href]="'/dms/r/' + row.result.repositoryId + '/o2/' + row.result.documentId"
+                >DMS-ID {{ row.result.documentId }}</a
+              >
+            </span>
           </span>
           <span class="similar__score">{{ scorePercent(row.result.score) }} %</span>
+          @if (row.json) {
+            <details class="similar__details">
+              <summary>Eigenschaften</summary>
+              <pre class="similar__json">{{ row.json }}</pre>
+            </details>
+          }
         </li>
       }
     </ul>

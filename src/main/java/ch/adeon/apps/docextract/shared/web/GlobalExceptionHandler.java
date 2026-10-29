@@ -4,7 +4,6 @@ import ch.adeon.apps.docextract.ingest.application.BlobNotFoundException;
 import ch.adeon.apps.docextract.ingest.application.DmsChunkUploadException;
 import ch.adeon.apps.docextract.ingest.application.PreviewRenderingException;
 import ch.adeon.apps.docextract.ingest.application.UploadRejectedException;
-import ch.adeon.apps.docextract.validation.application.ConsentRequiredException;
 import ch.adeon.apps.docextract.validation.application.InvalidAttributesException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -13,13 +12,6 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 
 @ControllerAdvice
 public class GlobalExceptionHandler {
-
-  @ExceptionHandler(ConsentRequiredException.class)
-  public ProblemDetail handleConsentRequired(ConsentRequiredException ex) {
-    ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
-    problem.setTitle("Consent required");
-    return problem;
-  }
 
   @ExceptionHandler(InvalidAttributesException.class)
   public ProblemDetail handleInvalidAttributes(InvalidAttributesException ex) {

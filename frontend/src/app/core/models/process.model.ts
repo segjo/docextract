@@ -28,4 +28,6 @@ export interface ProcessEvent {
   step: ProcessStep;
   status: StepStatus;
   blobId: string | null;
+  /** Client-side arrival time (epoch ms), set when the event is received; not sent by the backend. */
+  receivedAt?: number;
 }

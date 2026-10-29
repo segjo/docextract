@@ -2,14 +2,6 @@ package ch.adeon.apps.docextract.validation.domain;
 
 import java.util.Map;
 
-/**
- * {@code templateConsent} is a separate, explicit opt-in for adopting the confirmed attributes as a
- * herkunftsmarkierte Vorlage (FR-5) — it must never be implied by {@code consentGiven} alone.
- */
+/** {@code dmsSourceCategory} is the DMS document type/category selected by the user. */
 public record ConfirmationCommand(
-    String processId,
-    String documentId,
-    String repositoryId,
-    boolean consentGiven,
-    boolean templateConsent,
-    Map<String, Object> attributes) {}
+    String processId, String dmsSourceCategory, Map<String, Object> attributes) {}

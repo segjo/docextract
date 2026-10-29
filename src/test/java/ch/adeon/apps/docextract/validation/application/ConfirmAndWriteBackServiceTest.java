@@ -9,6 +9,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ch.adeon.apps.docextract.audit.application.AuditPort;
+import ch.adeon.apps.docextract.process.application.ProcessDocumentPort;
+import ch.adeon.apps.docextract.process.application.ProcessDocumentPort.StoredDocument;
+import ch.adeon.apps.docextract.process.application.ProcessRepositoryPort;
 import ch.adeon.apps.docextract.security.application.AppConfigPort;
 import ch.adeon.apps.docextract.security.application.OutboundCredentialPort;
 import ch.adeon.apps.docextract.security.domain.DvelopCredential;
@@ -16,37 +19,10 @@ import ch.adeon.apps.docextract.validation.domain.ConfirmationCommand;
 import ch.adeon.apps.docextract.validation.port.CorpusPromotionPort;
 import ch.adeon.apps.docextract.validation.port.DmsWritePort;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class ConfirmAndWriteBackServiceTest {
-
-  @Test
-  void must_not_write_without_consent() {
-    DmsWritePort dmsWritePort = mock(DmsWritePort.class);
-    CorpusPromotionPort corpusPromotionPort = mock(CorpusPromotionPort.class);
-    OutboundCredentialPort outboundCredentialPort = mock(OutboundCredentialPort.class);
-    AuditPort auditPort = mock(AuditPort.class);
-    AppConfigPort appConfigPort = mock(AppConfigPort.class);
-    ConfirmAndWriteBackService service =
-        new ConfirmAndWriteBackService(
-            dmsWritePort,
-            corpusPromotionPort,
-            outboundCredentialPort,
-            appConfigPort,
-            auditPort,
-            "origin",
-            "DBUE",
-            "document.pdf");
-
-    assertThatThrownBy(
-            () ->
-                service.confirm(
-                    new ConfirmationCommand("p1", "doc-1", "repo-1", false, false, Map.of())))
-        .isInstanceOf(ConsentRequiredException.class);
-
-    verify(dmsWritePort, never())
-        .writeAttributes(eq("repo-1"), eq(""), eq(Map.of()), any(), any(), any());
-  }
 
   @Test
   void must_reject_and_not_promote_when_dms_rejects_attributes() {
@@ -55,10 +31,15 @@ class ConfirmAndWriteBackServiceTest {
     OutboundCredentialPort outboundCredentialPort = mock(OutboundCredentialPort.class);
     AuditPort auditPort = mock(AuditPort.class);
     AppConfigPort appConfigPort = mock(AppConfigPort.class);
+    ProcessDocumentPort processDocumentPort = mock(ProcessDocumentPort.class);
+    ProcessRepositoryPort processRepositoryPort = mock(ProcessRepositoryPort.class);
+    when(processDocumentPort.find("p1"))
+        .thenReturn(Optional.of(new StoredDocument("/blob/1", "a.pdf")));
+    when(processRepositoryPort.retrieve("p1")).thenReturn(Optional.of("repo-1"));
     when(outboundCredentialPort.current())
         .thenReturn(new DvelopCredential("Authorization", "Bearer token", null));
     when(dmsWritePort.writeAttributes(
-            eq("repo-1"), eq(""), eq(Map.of()), any(), any(), any()))
+            eq("repo-1"), eq("/blob/1"), eq(Map.of()), eq("a.pdf"), eq("DREC"), any()))
         .thenReturn(null);
     ConfirmAndWriteBackService service =
         new ConfirmAndWriteBackService(
@@ -67,16 +48,13 @@ class ConfirmAndWriteBackServiceTest {
             outboundCredentialPort,
             appConfigPort,
             auditPort,
-            "origin",
-            "DBUE",
-            "document.pdf");
+            processRepositoryPort,
+            processDocumentPort,
+            "default-repo");
 
-    assertThatThrownBy(
-            () ->
-                service.confirm(
-                    new ConfirmationCommand("p1", "doc-1", "repo-1", true, false, Map.of())))
+    assertThatThrownBy(() -> service.confirm(new ConfirmationCommand("p1", "DREC", Map.of())))
         .isInstanceOf(InvalidAttributesException.class);
 
-    verify(corpusPromotionPort, never()).promote("p1", "repo-1", null);
+    verify(corpusPromotionPort, never()).promote(eq("p1"), any(), any());
   }
 }

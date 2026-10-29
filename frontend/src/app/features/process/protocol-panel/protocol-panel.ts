@@ -4,7 +4,12 @@ import {
   PROCESS_STEP_LABELS,
   PROCESS_STEP_ORDER,
 } from '../../../core/models/process.model';
-import { deriveStepStatuses, DISPLAY_STEP_STATUS_LABELS } from '../../../core/process-progress';
+import {
+  deriveStepDurations,
+  deriveStepStatuses,
+  DISPLAY_STEP_STATUS_LABELS,
+  formatDuration,
+} from '../../../core/process-progress';
 
 @Component({
   selector: 'app-protocol-panel',
@@ -19,4 +24,6 @@ export class ProtocolPanel {
   protected readonly labels = PROCESS_STEP_LABELS;
   protected readonly statusLabels = DISPLAY_STEP_STATUS_LABELS;
   protected readonly statuses = computed(() => deriveStepStatuses(this.events()));
+  protected readonly durations = computed(() => deriveStepDurations(this.events()));
+  protected readonly formatDuration = formatDuration;
 }

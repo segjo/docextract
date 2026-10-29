@@ -7,7 +7,12 @@
       <li class="protocol__step" [class]="'protocol__step--' + statuses()[step]">
         <span class="protocol__step-circle" aria-hidden="true">{{ i + 1 }}</span>
         <span class="protocol__step-label">{{ labels[step] }}</span>
-        <span class="protocol__step-status">{{ statusLabels[statuses()[step]] }}</span>
+        <span class="protocol__step-status">
+          {{ statusLabels[statuses()[step]] }}
+          @if (durations()[step] !== undefined) {
+            <span class="protocol__step-duration">({{ formatDuration(durations()[step]!) }})</span>
+          }
+        </span>
       </li>
     }
   </ol>

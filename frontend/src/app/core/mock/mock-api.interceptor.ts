@@ -1,6 +1,13 @@
-import { HttpEvent, HttpHandlerFn, HttpRequest, HttpResponse } from '@angular/common/http';
-import { Observable, of } from 'rxjs';
-import { delay } from 'rxjs/operators';
+import {
+  HttpErrorResponse,
+  HttpEvent,
+  HttpHandlerFn,
+  HttpRequest,
+  HttpResponse,
+} from '@angular/common/http';
+import { isDevMode } from '@angular/core';
+import { Observable, of, throwError } from 'rxjs';
+import { catchError, delay } from 'rxjs/operators';
 import { API_BASE } from '../api/api-base';
 import { MOCK_API } from './mock-flag';
 import {
@@ -9,6 +16,7 @@ import {
   mockExtractionResult,
   mockImportInfo,
   mockIngestedDocument,
+  mockObjectDefinitions,
   mockRetryExtractionResult,
   mockSimilarDocuments,
   mockValueList,
@@ -37,7 +45,8 @@ const MOCK_ROUTES: MockRoute[] = [
   {
     method: 'POST',
     pattern: /^\/processes\/[^/]+\/extraction-result\/retry$/,
-    body: (req) => mockRetryExtractionResult((req.body as { documentTypeId: string }).documentTypeId),
+    body: (req) =>
+      mockRetryExtractionResult((req.body as { documentTypeId: string }).documentTypeId),
   },
   {
     method: 'GET',
@@ -49,21 +58,36 @@ const MOCK_ROUTES: MockRoute[] = [
     pattern: /^\/processes\/[^/]+\/document-type-candidates$/,
     body: mockDocumentTypeCandidates,
   },
-  { method: 'GET', pattern: /^\/object-definitions$/, body: mockDocumentTypeCandidates },
+  { method: 'GET', pattern: /^\/object-definitions$/, body: mockObjectDefinitions },
   { method: 'POST', pattern: /^\/value-lists\/[^/]+$/, body: mockValueList },
   { method: 'POST', pattern: /^\/validation\/confirm$/, body: mockConfirmationResult },
   { method: 'POST', pattern: /^\/validation\/reject$/, body: () => undefined },
 ];
 
-/** Intercepts all `API_BASE` calls with canned data — active only in the `mock` build configuration. */
+/**
+ * Intercepts all `API_BASE` calls with canned data in the `mock` build configuration. In dev mode
+ * without it, canned data is only used as a fallback when the backend is unreachable or failing.
+ */
 export function mockApiInterceptor(
   req: HttpRequest<unknown>,
   next: HttpHandlerFn,
 ): Observable<HttpEvent<unknown>> {
-  if (!MOCK_API || !req.url.startsWith(API_BASE)) {
+  if (!req.url.startsWith(API_BASE) || (!MOCK_API && !isDevMode())) {
     return next(req);
   }
   const path = req.url.slice(API_BASE.length);
   const route = MOCK_ROUTES.find((r) => r.method === req.method && r.pattern.test(path));
-  return route ? mockResponse(route.body(req)) : next(req);
+  if (!route) {
+    return next(req);
+  }
+  if (MOCK_API) {
+    return mockResponse(route.body(req));
+  }
+  return next(req).pipe(
+    catchError((error: unknown) =>
+      error instanceof HttpErrorResponse && (error.status === 0 || error.status >= 500)
+        ? mockResponse(route.body(req))
+        : throwError(() => error),
+    ),
+  );
 }
