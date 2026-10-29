@@ -12,6 +12,7 @@ import { ExtractionResult } from '../../core/models/extraction.model';
 import { ProcessEvent } from '../../core/models/process.model';
 import { DmsDocumentMetadata, RetrievalResult } from '../../core/models/retrieval.model';
 import { countAttributeReview } from '../../core/attribute-review';
+import { normalizeDateAttributes } from '../../core/date-format';
 import {
   findPreviewBlobId,
   hasFailure,
@@ -133,7 +134,9 @@ export class ProcessPage {
           Object.fromEntries(extraction.attributes.map((a) => [a.propertyId, a.value ?? ''])),
         );
         this.selectedDocumentTypeId.set(extraction.documentTypeId);
-        this.activeTab.set('EIGENSCHAFTEN');
+        if (this.activeTab() === 'PROTOKOLL') {
+          this.activeTab.set('EIGENSCHAFTEN');
+        }
         this.loadingResults.set(false);
       },
       error: () => {
@@ -212,7 +215,10 @@ export class ProcessPage {
       .confirm({
         processId: this.processId(),
         dmsSourceCategory: this.selectedDocumentTypeId(),
-        attributes: this.editedAttributes(),
+        attributes: normalizeDateAttributes(
+          this.editedAttributes(),
+          this.documentType()?.properties ?? [],
+        ),
       })
       .subscribe({
         next: (result) => {

@@ -6,11 +6,15 @@ import ch.adeon.apps.docextract.process.domain.ProcessEvent;
 import ch.adeon.apps.docextract.process.domain.ProcessStep;
 import ch.adeon.apps.docextract.process.domain.StepStatus;
 import ch.adeon.apps.docextract.retrieval.domain.DmsDocumentMetadata;
+import ch.adeon.apps.docextract.retrieval.domain.DmsDocumentType;
+import ch.adeon.apps.docextract.retrieval.domain.DmsPropertyDefinition;
+import ch.adeon.apps.docextract.retrieval.domain.DmsValueList;
 import ch.adeon.apps.docextract.retrieval.domain.EmbeddingVector;
 import ch.adeon.apps.docextract.retrieval.domain.RetrievalException;
 import ch.adeon.apps.docextract.retrieval.domain.RetrievalResult;
 import ch.adeon.apps.docextract.retrieval.port.DmsObjectDefinitionPort;
 import ch.adeon.apps.docextract.retrieval.port.DmsObjectMetadataPort;
+import ch.adeon.apps.docextract.retrieval.port.ValueListPort;
 import ch.adeon.apps.docextract.retrieval.port.VectorSearchPort;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
 import ch.adeon.apps.docextract.security.domain.AuthContext;
@@ -53,7 +57,9 @@ public class FindSimilarService implements FindSimilar {
   private final DmsObjectDefinitionPort dmsObjectDefinitionPort;
   private final DocumentTypeCandidatesPort documentTypeCandidatesPort;
   private final ProcessRepositoryPort processRepositoryPort;
+  private final ValueListPort valueListPort;
   private final ObjectMapper objectMapper;
+  private final int maxValueListValues;
   private final double minScore;
   private final List<String> documentTypeFilter;
   private final String defaultRepositoryId;
@@ -68,7 +74,9 @@ public class FindSimilarService implements FindSimilar {
       DmsObjectDefinitionPort dmsObjectDefinitionPort,
       DocumentTypeCandidatesPort documentTypeCandidatesPort,
       ProcessRepositoryPort processRepositoryPort,
+      ValueListPort valueListPort,
       ObjectMapper objectMapper,
+      @Value("${docextract.valuelist.max-values:50}") int maxValueListValues,
       @Value("${docextract.retrieval.min-score:0.0}") double minScore,
       @Value("${docextract.retrieval.document-type-filter:}") List<String> documentTypeFilter,
       @Value("${docextract.ingest.dms.repository-id}") String defaultRepositoryId) {
@@ -81,7 +89,9 @@ public class FindSimilarService implements FindSimilar {
     this.dmsObjectDefinitionPort = dmsObjectDefinitionPort;
     this.documentTypeCandidatesPort = documentTypeCandidatesPort;
     this.processRepositoryPort = processRepositoryPort;
+    this.valueListPort = valueListPort;
     this.objectMapper = objectMapper;
+    this.maxValueListValues = maxValueListValues;
     this.minScore = minScore;
     this.documentTypeFilter = documentTypeFilter.stream().filter(s -> !s.isBlank()).toList();
     this.defaultRepositoryId = defaultRepositoryId;
@@ -214,8 +224,9 @@ public class FindSimilarService implements FindSimilar {
     List<DmsDocumentMetadata> typedCandidates = distinctDocumentTypes(hits);
     Map<String, Double> scores = documentTypeScores(hits);
     List<DmsDocumentMetadata> candidates = typedCandidates;
+    String repositoryId = defaultRepositoryId;
     try {
-      String repositoryId = processRepositoryPort.retrieve(processId).orElse(defaultRepositoryId);
+      repositoryId = processRepositoryPort.retrieve(processId).orElse(defaultRepositoryId);
       candidates = dmsObjectDefinitionPort.fetchAll(repositoryId, credential);
     } catch (RuntimeException ex) {
       log.warn("failed to fetch DMS document type candidates processId={}", processId, ex);
@@ -235,8 +246,71 @@ public class FindSimilarService implements FindSimilar {
         candidates.size(),
         typedCandidates.size(),
         processId);
+    String effectiveRepositoryId = repositoryId;
     documentTypeCandidatesPort.store(
-        processId, candidates.stream().map(c -> withScore(c, scores)).toList());
+        processId,
+        candidates.stream()
+            .map(c -> withValueLists(c, effectiveRepositoryId, credential))
+            .map(c -> withScore(c, scores))
+            .toList());
+  }
+
+  /** objdef has no valid values; fetched without filter context, so dependent lists stay empty. */
+  private DmsDocumentMetadata withValueLists(
+      DmsDocumentMetadata candidate, String repositoryId, DvelopCredential credential) {
+    DmsDocumentType type = candidate.documentType();
+    if (type == null || type.id() == null) {
+      return candidate;
+    }
+    List<DmsPropertyDefinition> enriched =
+        type.properties().stream()
+            .map(definition -> withValueList(definition, type.id(), repositoryId, credential))
+            .toList();
+    return new DmsDocumentMetadata(
+        new DmsDocumentType(type.id(), type.name(), enriched, type.score()),
+        candidate.contentLanguage(),
+        candidate.properties());
+  }
+
+  private DmsPropertyDefinition withValueList(
+      DmsPropertyDefinition definition,
+      String documentTypeId,
+      String repositoryId,
+      DvelopCredential credential) {
+    if (!definition.hasValueList() || !definition.valueList().isEmpty()) {
+      return definition;
+    }
+    try {
+      DmsValueList valueList =
+          valueListPort.fetchValues(
+              repositoryId,
+              documentTypeId,
+              definition.id(),
+              Map.of(),
+              Map.of(),
+              null,
+              maxValueListValues,
+              credential);
+      return new DmsPropertyDefinition(
+          definition.id(),
+          definition.name(),
+          definition.dataType(),
+          definition.mandatory(),
+          definition.hasValueList(),
+          definition.isDynamicValueList(),
+          definition.isHidden(),
+          definition.isModifiable(),
+          definition.isSystemProperty(),
+          definition.isMultiAttribute(),
+          definition.isDocumentTypeProperty(),
+          definition.maxRowCount(),
+          definition.maxLength(),
+          valueList.values(),
+          valueList.hasMore());
+    } catch (RuntimeException ex) {
+      log.warn("failed to fetch DMS valuelist for propertyId={}", definition.id(), ex);
+      return definition;
+    }
   }
 
   private static DmsDocumentMetadata withScore(

@@ -18,11 +18,15 @@ import ch.adeon.apps.docextract.process.domain.ProcessStep;
 import ch.adeon.apps.docextract.process.domain.StepStatus;
 import ch.adeon.apps.docextract.retrieval.domain.DmsDocumentMetadata;
 import ch.adeon.apps.docextract.retrieval.domain.DmsDocumentType;
+import ch.adeon.apps.docextract.retrieval.domain.DmsPropertyDataType;
+import ch.adeon.apps.docextract.retrieval.domain.DmsPropertyDefinition;
+import ch.adeon.apps.docextract.retrieval.domain.DmsValueList;
 import ch.adeon.apps.docextract.retrieval.domain.EmbeddingVector;
 import ch.adeon.apps.docextract.retrieval.domain.RetrievalException;
 import ch.adeon.apps.docextract.retrieval.domain.RetrievalResult;
 import ch.adeon.apps.docextract.retrieval.port.DmsObjectDefinitionPort;
 import ch.adeon.apps.docextract.retrieval.port.DmsObjectMetadataPort;
+import ch.adeon.apps.docextract.retrieval.port.ValueListPort;
 import ch.adeon.apps.docextract.retrieval.port.VectorSearchPort;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
 import ch.adeon.apps.docextract.security.domain.AuthContext;
@@ -45,6 +49,7 @@ class FindSimilarServiceTest {
   private final DocumentTypeCandidatesPort documentTypeCandidatesPort =
       mock(DocumentTypeCandidatesPort.class);
   private final ProcessRepositoryPort processRepositoryPort = mock(ProcessRepositoryPort.class);
+  private final ValueListPort valueListPort = mock(ValueListPort.class);
   private final ObjectMapper objectMapper = new ObjectMapper();
   private final DvelopCredential credential =
       new DvelopCredential("Authorization", "Bearer t", "de-CH");
@@ -59,7 +64,9 @@ class FindSimilarServiceTest {
           dmsObjectDefinitionPort,
           documentTypeCandidatesPort,
           processRepositoryPort,
+          valueListPort,
           objectMapper,
+          50,
           0.0,
           List.of(),
           "repo-1");
@@ -129,7 +136,9 @@ class FindSimilarServiceTest {
             dmsObjectDefinitionPort,
             documentTypeCandidatesPort,
             processRepositoryPort,
+            valueListPort,
             objectMapper,
+            50,
             0.8,
             List.of(),
             "repo-1");
@@ -235,6 +244,59 @@ class FindSimilarServiceTest {
 
     assertThat(results).isEmpty();
     verify(documentTypeCandidatesPort).store("p1", candidates);
+  }
+
+  @Test
+  void enriches_candidate_properties_having_a_value_list_when_no_similar_document_is_found() {
+    when(stageEmbeddings.stage("p1"))
+        .thenReturn(Optional.of(new EmbeddingVector(new float[] {1f, 1f})));
+    when(authContextPort.current()).thenReturn(new AuthContext("tenant-a", "u", "U"));
+    when(vectorSearchPort.search(eq("tenant-a"), any(), eq(5))).thenReturn(List.of());
+    DmsPropertyDefinition category = definition("27", true);
+    DmsPropertyDefinition plain = definition("28", false);
+    when(dmsObjectDefinitionPort.fetchAll("repo-1", credential))
+        .thenReturn(
+            List.of(
+                new DmsDocumentMetadata(
+                    new DmsDocumentType("DREC", "Rechnung", List.of(category, plain)),
+                    null,
+                    List.of())));
+    when(valueListPort.fetchValues(
+            eq("repo-1"), eq("DREC"), eq("27"), any(), any(), any(), eq(50), eq(credential)))
+        .thenReturn(new DmsValueList(List.of("A", "B"), true));
+
+    service.find("p1", 5, credential);
+
+    verify(documentTypeCandidatesPort)
+        .store(
+            eq("p1"),
+            argThat(
+                candidates -> {
+                  List<DmsPropertyDefinition> properties =
+                      candidates.get(0).documentType().properties();
+                  return properties.get(0).valueList().equals(List.of("A", "B"))
+                      && properties.get(0).hasMoreValues()
+                      && properties.get(1).valueList().isEmpty();
+                }));
+  }
+
+  private static DmsPropertyDefinition definition(String id, boolean hasValueList) {
+    return new DmsPropertyDefinition(
+        id,
+        "Property " + id,
+        DmsPropertyDataType.ALPHANUMERIC,
+        false,
+        hasValueList,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        0,
+        0,
+        List.of(),
+        false);
   }
 
   @Test

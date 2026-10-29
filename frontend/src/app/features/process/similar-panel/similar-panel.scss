@@ -59,9 +59,15 @@
   white-space: nowrap;
 }
 
-.similar__rank { grid-area: rank; }
-.similar__info { grid-area: info; }
-.similar__score { grid-area: score; }
+.similar__rank {
+  grid-area: rank;
+}
+.similar__info {
+  grid-area: info;
+}
+.similar__score {
+  grid-area: score;
+}
 
 .similar__link {
   color: inherit;
@@ -78,10 +84,22 @@
   color: var(--color-grey-text);
 }
 
-.similar__json {
+.similar__props {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 16px;
   margin: 6px 0 0;
   padding: 8px;
   max-height: 240px;
   overflow: auto;
   background: var(--color-soft);
+}
+
+.similar__props dt {
+  color: var(--color-grey-text);
+}
+
+.similar__props dd {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
