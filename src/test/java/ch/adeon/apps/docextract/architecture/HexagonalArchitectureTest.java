@@ -1,11 +1,19 @@
 package ch.adeon.apps.docextract.architecture;
 
+import static com.tngtech.archunit.base.DescribedPredicate.not;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.belongToAnyOf;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.adeon.apps.docextract.content.domain.ContentException;
+import ch.adeon.apps.docextract.extraction.domain.ExtractionException;
+import ch.adeon.apps.docextract.retrieval.domain.RetrievalException;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
+import com.tngtech.archunit.lang.EvaluationResult;
 import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeAll;
@@ -27,6 +35,11 @@ class HexagonalArchitectureTest {
           "process",
           "audit",
           "security");
+
+  /** Bis P7 modulübergreifend genutzte Domain-Exceptions (ARCHITECTURE.md § 5.6). */
+  private static final Class<?>[] PUBLISHED_DOMAIN_TYPES = {
+    ContentException.class, ExtractionException.class, RetrievalException.class
+  };
 
   private static JavaClasses productionClasses;
 
@@ -124,15 +137,37 @@ class HexagonalArchitectureTest {
   @Test
   void adapters_are_not_reachable_from_other_modules() {
     // Cross-Modul-Aufrufe laufen ausschliesslich über Ports, nie Adapter zu Adapter.
-    FEATURE_MODULES.forEach(
-        module ->
-            noClasses()
-                .that()
-                .resideOutsideOfPackage(BASE + "." + module + "..")
-                .should()
-                .dependOnClassesThat()
-                .resideInAPackage(BASE + "." + module + ".adapter..")
-                .as("no class outside of module '%s' may depend on its adapters".formatted(module))
-                .check(productionClasses));
+    FEATURE_MODULES.forEach(module ->
+        noClasses()
+            .that()
+            .resideOutsideOfPackage(BASE + "." + module + "..")
+            .should()
+            .dependOnClassesThat()
+            .resideInAPackage(BASE + "." + module + ".adapter..")
+            .as("no class outside of module '%s' may depend on its adapters".formatted(module))
+            .check(productionClasses));
+  }
+
+  @Test
+  void other_modules_access_only_application_port_or_published_domain_types() {
+    List<String> violations =
+        FEATURE_MODULES.stream()
+            .map(module ->
+                noClasses()
+                    .that()
+                    .resideOutsideOfPackage(BASE + "." + module + "..")
+                    .should()
+                    .dependOnClassesThat(
+                        resideInAPackage(BASE + "." + module + ".domain..")
+                            .and(not(belongToAnyOf(PUBLISHED_DOMAIN_TYPES))))
+                    .as(
+                        "no class outside of module '%s' may depend on its unpublished domain types"
+                            .formatted(module))
+                    .evaluate(productionClasses))
+            .filter(EvaluationResult::hasViolation)
+            .map(result -> result.getFailureReport().toString())
+            .toList();
+
+    assertThat(violations).isEmpty();
   }
 }

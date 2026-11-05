@@ -246,40 +246,40 @@ docextract:
 
 ### 5.4 Fachmodule
 
-| Modul            | Verantwortung                                                                                            | Inbound-Port                                                           | Wichtigste Outbound-Ports                                                                                                                                  |
-| ---------------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **ingest**       | Upload, Limits, Ablage der Roh-Bytes, DMS-Chunk-Upload, Vorschau-Streaming (FR-1)                        | `IngestDocument`, `StreamPreview`                                      | `DocumentBlobPort`, `PreviewRenderPort`, `DmsChunkUploadPort`, `DmsRepositoryPort`                                                                         |
-| **content**      | Textextraktion der ersten _N_ Wörter (FR-2) und Dokumentrepräsentation für FR-4; nichts wird persistiert | `ExtractText`, `ProvideContent`                                        | `TextExtractionPort`, `DocumentContentPort`                                                                                                                |
-| **retrieval**    | Ein Embedding je Dokument, Staging als `PENDING`, Top-5-Suche mit Pre-Filter (FR-3)                      | `FindSimilar`                                                          | `EmbeddingPort`, `PendingEmbeddingPort`, `VectorSearchPort`, `DmsObjectDefinitionPort`, `DmsObjectMetadataPort`, `ValueListPort`, `AuthContextPort`        |
-| **extraction**   | KI-Attributvorschläge mit objdef, Top-5-Metadaten, Wertelisten; Schema-Validierung, Retry (FR-4)         | `ExtractAttributes`                                                    | `LlmPort`, `ValueListPort` (aus retrieval), `DocumentTypeCandidatesPort` (aus retrieval; objdef/Top-5-Metadaten)                                           |
-| **validation**   | Freigabe, DMS-Rückschreiben, Promotion `PENDING → APPROVED`, separater Vorlagen-Consent (FR-5)           | `Confirm`, `Reject`, `RetryCorpusPromotion`, `TtlPurger` (TTL-Cleanup) | `DmsWritePort`, `CorpusPromotionPort`, `PendingEmbeddingDeletePort`, `PendingEmbeddingCheckPort`, `FinalizationStatePort`, `DocumentBlobPort` (aus ingest) |
-| **agentgateway** | MCP-Tool, nutzt dieselben Application-Services (FR-6)                                                    | `McpTool`                                                              | wie UI-Pfad                                                                                                                                                |
-| **process**      | Async-Orchestrierung, SSE, Lease/Heartbeat, Recovery                                                     | `SubscribeProgress`                                                    | `ProcessEventPort`, `ProcessDocumentPort`, `ProcessRepositoryPort`                                                                                         |
-| **audit**        | Append-only Protokoll, Token/Kosten (C-4, NfA-7)                                                         | —                                                                      | `AuditPort`                                                                                                                                                |
-| **security**     | Session → `tenant_id`, Consent-Gate                                                                      | `AuthContextPort`                                                      | —                                                                                                                                                          |
+| Modul            | Verantwortung                                                                                                                                                      | Inbound-Port                                                           | Wichtigste Outbound-Ports                                                                                                                                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **ingest**       | Upload, Limits, Ablage der Roh-Bytes, DMS-Chunk-Upload, Vorschau-Streaming (FR-1); steuert die Pipeline content → retrieval → extraction (`IngestDocumentService`) | `IngestDocument`, `StreamPreview`                                      | `DocumentBlobPort`, `PreviewRenderPort`, `DmsChunkUploadPort`, `DmsRepositoryPort`                                                                                                                                           |
+| **content**      | Textextraktion der ersten _N_ Wörter (FR-2) und Dokumentrepräsentation für FR-4; nichts wird persistiert                                                           | `ExtractText`, `ProvideContent`                                        | `TextExtractionPort`, `DocumentContentPort`                                                                                                                                                                                  |
+| **retrieval**    | Ein Embedding je Dokument, Staging als `PENDING`, Top-5-Suche mit Pre-Filter (FR-3)                                                                                | `FindSimilar`                                                          | `EmbeddingPort`, `PendingEmbeddingPort`, `VectorSearchPort`, `DmsObjectDefinitionPort`, `DmsObjectMetadataPort`, `ValueListPort`, `AuthContextPort`                                                                          |
+| **extraction**   | KI-Attributvorschläge mit objdef, Top-5-Metadaten, Wertelisten; Schema-Validierung, Retry (FR-4)                                                                   | `ExtractAttributes`                                                    | `LlmPort`, `ValueListPort`, `DocumentTypeCandidatesPort` (objdef/Top-5-Metadaten), `RetrievalResultPort` (alle aus retrieval), `ContentStagingPort` (aus content), `ProcessEventPort`, `ProcessRepositoryPort` (aus process) |
+| **validation**   | Freigabe, DMS-Rückschreiben, Promotion `PENDING → APPROVED`, separater Vorlagen-Consent (FR-5)                                                                     | `Confirm`, `Reject`, `RetryCorpusPromotion`, `TtlPurger` (TTL-Cleanup) | `DmsWritePort`, `CorpusPromotionPort`, `PendingEmbeddingDeletePort`, `PendingEmbeddingCheckPort`, `FinalizationStatePort`, `DocumentBlobPort` (aus ingest)                                                                   |
+| **agentgateway** | MCP-Tool, nutzt dieselben Application-Services (FR-6)                                                                                                              | `McpTool`                                                              | wie UI-Pfad                                                                                                                                                                                                                  |
+| **process**      | Fortschritt/SSE (`PROCESS_STEP`, LISTEN/NOTIFY), Lease/Heartbeat, Recovery; keine Orchestrierung der Pipeline (liegt in ingest)                                    | `SubscribeProgress`                                                    | `ProcessEventPort`, `ProcessDocumentPort`, `ProcessRepositoryPort`                                                                                                                                                           |
+| **audit**        | Append-only Protokoll, Token/Kosten (C-4, NfA-7)                                                                                                                   | —                                                                      | `AuditPort`                                                                                                                                                                                                                  |
+| **security**     | Session → `tenant_id`, Consent-Gate                                                                                                                                | `AuthContextPort`                                                      | —                                                                                                                                                                                                                            |
 
 ### 5.5 Paketstruktur
 
 ```
 ch.adeon.apps.docextract
 ├─ ingest
-│  ├─ domain        # DocumentUpload, Limits, BlobRef, DmsLocation, DmsRepository, ImportInfo
-│  ├─ application   # IngestDocumentService, PreviewStreamService, GetImportInfoService
-│  ├─ port          # PreviewRenderPort, DocumentBlobPort, DmsChunkUploadPort, DmsRepositoryPort
+│  ├─ domain        # DocumentUpload, Limits, DmsLocation, DmsRepository, ImportInfo
+│  ├─ application   # IngestDocumentService (steuert die Pipeline), PreviewStreamService, GetImportInfoService; IngestCommand, IngestedDocument
+│  ├─ port          # PreviewRenderPort, DocumentBlobPort, DmsChunkUploadPort, DmsRepositoryPort; BlobRef, PageRange
 │  └─ adapter
 │     ├─ in.rest    # UploadController (202 + processId), PreviewController (Range), ImportInfoController
 │     ├─ out.preview # GotenbergPreviewAdapter (Paketname folgt dem Port, nicht dem Produkt)
 │     ├─ out.blob   # PgDocumentBlobAdapter
 │     └─ out.dms    # DmsChunkUploadAdapter, DmsRepositoryAdapter (GET /repo/repositories)
 ├─ content
-│  ├─ domain        # ExtractedText, DocumentContent, Representation
-│  ├─ application   # ExtractTextService (erste N Wörter), ContentService
-│  ├─ port          # TextExtractionPort, DocumentContentPort
+│  ├─ domain        # Representation
+│  ├─ application   # ExtractTextService (erste N Wörter), ContentService; ContentCommand
+│  ├─ port          # TextExtractionPort, DocumentContentPort; ExtractedText, DocumentContent
 │  └─ adapter.out   # pdfbox | tika | docling
 ├─ retrieval
-│  ├─ domain        # SimilarityQuery, TenantFilter, EmbeddingSpec, DmsDocumentMetadata
+│  ├─ domain        # SimilarityQuery, TenantFilter, EmbeddingSpec
 │  ├─ application   # FindSimilarService, StagePendingService, ReindexService
-│  ├─ port          # EmbeddingPort, VectorSearchPort, PendingEmbeddingPort, DmsObjectDefinitionPort, DmsObjectMetadataPort, ValueListPort
+│  ├─ port          # EmbeddingPort, VectorSearchPort, PendingEmbeddingPort, DmsObjectDefinitionPort, DmsObjectMetadataPort, ValueListPort; DmsDocumentMetadata, DmsDocumentType, DmsProperty, DmsPropertyDefinition, DmsPropertyDataType, DmsValueList, RetrievalResult
 │  └─ adapter.out   # openai-compatible | springai.* | pgvector | dms (DmsObjectDefinitionAdapter, DmsObjectMetadataAdapter, DmsValueListWebhookAdapter)
 ├─ extraction
 │  ├─ domain        # AttributeSchema, ExtractionResult, Confidence, ModelInfo, ExtractedAttribute(sourceExcerpt)
@@ -287,18 +287,87 @@ ch.adeon.apps.docextract
 │  ├─ port          # LlmPort (ValueListPort wird aus retrieval.port mitgenutzt)
 │  └─ adapter.out   # openai-compatible | springai.*
 ├─ validation
-│  ├─ domain        # ConfirmationCommand,  ConfirmationResult, Finalization, FinalizationStatus, PendingEmbeddingCheck
-│  ├─ application   # ConfirmAndWriteBackService (Consent-Gate, Saga, Promotion-Retry), RejectSuggestionService, TtlCleanupService (Embeddings + Blobs), FinalizationStatePort
+│  ├─ domain        # Finalization, FinalizationStatus, PendingEmbeddingCheck
+│  ├─ application   # ConfirmAndWriteBackService (Consent-Gate, Saga, Promotion-Retry), RejectSuggestionService, TtlCleanupService (Embeddings + Blobs), FinalizationStatePort; ConfirmationCommand, ConfirmationResult
 │  ├─ port          # DmsWritePort, CorpusPromotionPort, PendingEmbeddingDeletePort, PendingEmbeddingCheckPort
 │  └─ adapter       # in.rest, in.scheduler (FinalizationRecoveryScheduler), out.dms, out.postgres
 ├─ agentgateway     # adapter.in.mcp
-├─ process          # Orchestrator, SSE, PgNotify, StaleJobRecovery; ProcessEventPort, ProcessDocumentPort, ProcessRepositoryPort (Import-Repository je Prozess)
-├─ audit            # AuditPort; append-only, ohne Roh-PII
-├─ security         # AuthContext, TenantResolver, ConsentGuard
-└─ shared           # Fehler, Config, Observability, cleanup (TtlCleanupJob + TtlPurger: jedes Modul löscht nur eigene abgelaufene Zeilen)
+├─ process          # Fortschritt (ProcessEvent, ProcessStep, StepStatus), SSE, PgNotify, StaleJobRecovery; ProcessEventPort, ProcessDocumentPort, ProcessRepositoryPort (Import-Repository je Prozess)
+├─ audit            # AuditPort, AuditEvent; append-only, ohne Roh-PII
+├─ security         # AuthContext, DvelopCredential (application), TenantResolver, ConsentGuard
+└─ shared           # Fehler, Config, Observability, media (MediaType), cleanup (TtlCleanupJob + TtlPurger: jedes Modul löscht nur eigene abgelaufene Zeilen)
 ```
 
 **Verantwortlichkeitsprinzip:** `domain`, `application` und `port` enthalten **keine Produkt- oder Framework-Typen**. Produktspezifischer Code liegt ausschliesslich in `adapter.*`. Security und Audit werden per DI/Aspekten eingezogen, damit REST und MCP dieselben Guardrails durchlaufen. Erzwungen per ArchUnit (§ 10.1).
+
+### 5.6 Modulschnitt und Verträge
+
+Abgeleitet aus den Java-Abhängigkeiten im Produktivcode (Stand 2026-11-05, `import`-Analyse + ArchUnit). Kanten = Inbound-Port/Service (`application`) oder Outbound-Port (`port`/`application`) des Zielmoduls. Die gestrichelte Kante ist **keine** Code-Abhängigkeit, sondern eine Kopplung über das gemeinsame DB-Schema. `shared` (Querschnitt) ist nicht dargestellt.
+
+```mermaid
+flowchart LR
+    agentgateway
+    ingest
+    content
+    retrieval
+    extraction
+    validation
+    process
+    audit
+    security
+
+    agentgateway -- "IngestDocument" --> ingest
+    agentgateway -- "ConfirmAndWriteBack" --> validation
+
+    ingest -- "ExtractText, ProvideContent" --> content
+    ingest -- "FindSimilar" --> retrieval
+    ingest -- "ExtractAttributes" --> extraction
+
+    content -- "DocumentBlobPort" --> ingest
+    retrieval -- "TextStagingPort" --> content
+    retrieval -- "DocumentHashStagingPort" --> ingest
+    extraction -- "ContentStagingPort" --> content
+    extraction -- "DocumentTypeCandidatesPort, RetrievalResultPort, ValueListPort" --> retrieval
+    validation -- "DocumentBlobPort" --> ingest
+    validation -. "Tabelle embedding via eigene Ports: CorpusPromotionPort, PendingEmbeddingDeletePort, PendingEmbeddingCheckPort" .-> retrieval
+
+    ingest -- "ProcessEventPort, ProcessDocumentPort, ProcessRepositoryPort" --> process
+    content -- "ProcessEventPort" --> process
+    retrieval -- "ProcessEventPort, ProcessRepositoryPort" --> process
+    extraction -- "ProcessEventPort, ProcessRepositoryPort" --> process
+    validation -- "ProcessDocumentPort, ProcessRepositoryPort" --> process
+
+    ingest -- "AuditPort" --> audit
+    extraction -- "AuditPort" --> audit
+    validation -- "AuditPort" --> audit
+
+    ingest -- "AuthContextPort, OutboundCredentialPort, AppConfigPort" --> security
+    retrieval -- "AuthContextPort, OutboundCredentialPort, AppConfigPort" --> security
+    extraction -- "OutboundCredentialPort" --> security
+    validation -- "AuthContextPort, OutboundCredentialPort, AppConfigPort" --> security
+```
+
+`process`, `audit` und `security` haben keine ausgehenden Modulabhängigkeiten. Die Pipeline-Stufen (content → retrieval → extraction) ruft `ingest.application.IngestDocumentService` nacheinander auf; `process` liefert nur Fortschritt/SSE (§ 5.4).
+
+**Nähte:**
+
+- **validation → retrieval (Korpus-Promotion):** _Änderungsgrund:_ Freigaberegeln (FR-5, C-2, Consent) ändern sich unabhängig von Suchverfahren und Embedding-Modell (FR-3, ADR-012). _Kopplung:_ Es gibt keine Java-Abhängigkeit; `validation` besitzt die schmalen Ports `CorpusPromotionPort`, `PendingEmbeddingDeletePort` und `PendingEmbeddingCheckPort`, deren Postgres-Adapter direkt auf die `retrieval`-Tabelle `embedding` (`status`, `tenant_id`, `process_id`, `expires_at`) zugreifen. Die Kopplung liegt damit im Schema, und nur `validation` darf `APPROVED` setzen (C-3). _Resilienz:_ Schlägt die Promotion nach dem DMS-Write fehl, bleibt der Prozess in `FINALIZED_INDEX_PENDING` und wird vom Recovery-Job nachgeholt; bis dahin ist das Embedding `PENDING` und für das Retrieval unsichtbar (ADR-015).
+- **extraction → retrieval (Kandidaten, Referenzen, Wertelisten):** _Änderungsgrund:_ Prompt, Schema und LLM (FR-4, C-5) ändern sich unabhängig von Ähnlichkeitssuche und DMS-Metadatenabruf. _Kopplung:_ In-process über `DocumentTypeCandidatesPort` und `RetrievalResultPort` (je `processId` in Postgres gestagt) sowie `ValueListPort`; die Vertragstypen (`DmsDocumentMetadata`, `DmsPropertyDefinition`, `RetrievalResult`, …) liegen in `retrieval.port`. _Resilienz:_ Die Übergabe läuft über gestagte Daten statt über einen Aufruf von `FindSimilar`; findet das Retrieval keine Treffer, liefert es objdef-Kandidaten als Fallback. Scheitert das Retrieval, startet `IngestDocumentService` die Extraktion nicht (`RETRIEVED`/`FAILED`); Wertelisten-Abrufe sind best-effort, ein nicht bestätigter Wert wird „unbekannt" statt geraten.
+
+**Verteilung:** Die Module werden nicht auf getrennte Services verteilt, weil keine Qualitätsanforderung es verlangt (ADR-001); die Grenzen werden per ArchUnit gehalten, damit ein späterer Split möglich bleibt.
+
+**ArchUnit (`HexagonalArchitectureTest`):**
+
+- `adapters_are_not_reachable_from_other_modules` — kein Zugriff auf `adapter` eines anderen Moduls (keine Verletzung).
+- `other_modules_access_only_application_port_or_published_domain_types` — Zugriff auf `domain` eines anderen Moduls nur für explizit gelistete Typen (`PUBLISHED_DOMAIN_TYPES`). Grün. Die 23 früher modulübergreifend genutzten Domain-Typen liegen seit 2026-11-05 im `port`- bzw. `application`-Paket des Besitzermoduls, in dessen Signatur sie stehen; `MediaType` liegt in `shared.media`. Liste alt → neu: ENTWICKLUNGSTAGEBUCH.md, Eintrag 2026-11-05 „Domain-Typen verschoben".
+
+| Zielmodul    | verbleibende Ausnahme | genutzt von | bis                            |
+| ------------ | --------------------- | ----------- | ------------------------------ |
+| `content`    | `ContentException`    | ingest      | P7 (Fehlerklassen in `shared`) |
+| `retrieval`  | `RetrievalException`  | ingest      | P7                             |
+| `extraction` | `ExtractionException` | ingest      | P7                             |
+
+Die drei Exceptions werden nur per `catch` referenziert; ArchUnit erkennt das nicht als Abhängigkeit, sie stehen der Vollständigkeit halber in der Liste.
 
 ---
 

@@ -131,7 +131,7 @@ ch.adeon.apps.docextract
 ├─ extraction     # schema-constrained LLM-Attributvorschläge + Quell-Exzerpte (FR-4, T-1)
 ├─ validation     # Human-in-the-Loop, DMS-Write, atomare PENDING→APPROVED-Promotion (FR-5, C-2, C-7)
 ├─ agentgateway   # MCP-Tool, teilt Application-Services (FR-6, T-6)
-├─ process        # Async-Orchestrierung, SSE, PII-freier Step-State, Lease/Heartbeat/Recovery (ADR-004)
+├─ process        # Fortschritt/SSE, PII-freier Step-State, Lease/Heartbeat/Recovery (ADR-004); Pipeline steuert ingest
 ├─ audit          # append-only, ohne roh-PII, Token-/Kosten-Erfassung (C-4, NfA-7)
 ├─ security       # Session→Tenant/ACL-Auflösung, Consent-Gate
 └─ shared         # Fehlerbehandlung, Config, Observability, In-Memory-Job-Context

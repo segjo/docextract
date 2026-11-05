@@ -997,3 +997,142 @@ Abhängigkeit nur dafür wäre über den Auftrag hinaus. Der Alarm ist log-basie
 
 **Reflexion:** Die vorab als Empfehlung formulierte Grenze liess sich direkt umsetzen, weil Daten
 (`first_failed_at`) und Ablauf (`INDEX_FAILED` → regulärer Cleanup) schon im Vorschlag benannt waren.
+
+---
+
+## 2026-11-05 — § 5.6 Modulschnitt und Verträge (Block 3, P2 / Artefakt 1)
+
+**Tool/Modell:** GitHub Copilot Chat (Agent-Modus), Branch `feat/coding-agent`.
+
+**Auftrag (Prompt-Zusammenfassung):** Neuer Abschnitt § 5.6 in `ARCHITECTURE.md`: Mermaid-Flowchart
+der Fachmodule mit Port-Kanten aus dem echten Code, Nähte validation→retrieval und
+extraction→retrieval (Änderungsgrund, Kopplung, Resilienz), Satz zu ADR-001, ArchUnit-Regel „Zugriff
+zwischen Modulen nur über `application`/`port`", Verletzungen auflisten statt unterdrücken.
+
+**Geänderte Dateien:**
+
+- `doc/ARCHITECTURE.md` (neu § 5.6; bestehende Nummern unverändert)
+- `src/test/java/.../architecture/HexagonalArchitectureTest.java` (neue Regel
+  `other_modules_access_only_application_port_or_published_domain_types` mit expliziter Liste
+  `PUBLISHED_DOMAIN_TYPES`)
+
+**Übernommen (generiert):** Diagramm aus `import`-Analyse des Produktivcodes abgeleitet, nicht aus
+§ 5.4. Regel zuerst ohne Ausnahmen laufen lassen (rot), Verletzungen aus dem ArchUnit-Report
+gesammelt (23 Typen + 3 nur per `catch` referenzierte Exceptions), dann als benannte Liste in den Test
+und als Tabelle in § 5.6 übernommen. Die Regel sammelt Verletzungen über alle Module (statt beim
+ersten Modul abzubrechen). Neue Cross-Modul-Zugriffe auf nicht gelistete Domain-Typen schlagen fehl.
+
+**Befunde Code vs. Doku (nicht geändert):**
+
+- validation→retrieval ist **keine** Java-Abhängigkeit: Die Promotion-/Delete-/Check-Ports liegen in
+  `validation`, ihre Adapter schreiben direkt in die Tabelle `embedding` (Kopplung über das Schema).
+  Im Diagramm gestrichelt.
+- Die Pipeline (content → retrieval → extraction) orchestriert `ingest.IngestDocumentService`, nicht
+  `process` (§ 5.4 nennt `process` „Async-Orchestrierung").
+- extraction nutzt zusätzlich `RetrievalResultPort`, `ContentStagingPort`, `ProcessEventPort`,
+  `ProcessRepositoryPort` (in § 5.4 nicht als Outbound-Ports genannt).
+- `agentgateway.DocExtractMcpTool` ruft `ConfirmAndWriteBack.confirm(...)` auf, d. h. das MCP-Tool
+  bietet heute einen schreibenden Pfad an.
+
+**Zu prüfen durch Mensch:**
+
+- OFFEN: 26 Domain-Typen werden modulübergreifend genutzt (Tabelle § 5.6). Als Vertragstypen nach
+  `port`/`shared` verschieben oder als Published Language im `domain`-Paket akzeptieren?
+- OFFEN: § 5.4 an den Code angleichen (Orchestrierung in `ingest` statt `process`; fehlende
+  Outbound-Ports von extraction) oder Code an § 5.4?
+- OFFEN: MCP-Tool mit `confirm` (DMS-Write) widerspricht Block-3-Vorgabe P4 „kein Tool für
+  confirm" bzw. ist mit C-2/ADR-003 abzugleichen — Klärung in P4/P5.
+
+**Reflexion:** Die ArchUnit-Regel erst bewusst rot laufen zu lassen lieferte die vollständige
+Liste (inkl. transitiv genutzter Typen wie `DmsDocumentType`, die nicht importiert werden); eine reine
+`import`-Suche hätte diese übersehen.
+
+---
+
+## 2026-11-05 — Domain-Typen verschoben, § 5.4/§ 5.5 an Code angeglichen (Block 3, P2-Nachtrag)
+
+**Tool/Modell:** GitHub Copilot Chat (Agent-Modus), Branch `feat/coding-agent`.
+
+**Auftrag (Prompt-Zusammenfassung):** Entscheide zu den OFFEN-Punkten aus § 5.6 umsetzen. (A) Jeden
+Typ aus `PUBLISHED_DOMAIN_TYPES` in `port`/`application` des Besitzermoduls verschieben (Signatur
+massgebend), `MediaType` → `shared`, die drei Exceptions bleiben bis P7; nur verschieben, separater
+Commit. (B) Doku folgt Code: § 5.4/§ 5.5 (ingest steuert Pipeline, process = Fortschritt/SSE,
+fehlende Outbound-Ports von extraction), CONTEXT.md § 5 (nur process).
+
+**Verschobene Typen (alt → neu), Commit `b770a92`:**
+
+| alt                                      | neu                                          |
+| ---------------------------------------- | -------------------------------------------- |
+| `audit.domain.AuditEvent`                | `audit.application.AuditEvent`               |
+| `content.domain.ContentCommand`          | `content.application.ContentCommand`         |
+| `content.domain.DocumentContent`         | `content.port.DocumentContent`               |
+| `content.domain.ExtractedText`           | `content.port.ExtractedText`                 |
+| `ingest.domain.BlobRef`                  | `ingest.port.BlobRef`                        |
+| `ingest.domain.IngestCommand`            | `ingest.application.IngestCommand`           |
+| `ingest.domain.IngestedDocument`         | `ingest.application.IngestedDocument`        |
+| `ingest.domain.MediaType`                | `shared.media.MediaType`                     |
+| `ingest.domain.PageRange`                | `ingest.port.PageRange`                      |
+| `process.domain.ProcessEvent`            | `process.application.ProcessEvent`           |
+| `process.domain.ProcessStep`             | `process.application.ProcessStep`            |
+| `process.domain.StepStatus`              | `process.application.StepStatus`             |
+| `retrieval.domain.DmsDocumentMetadata`   | `retrieval.port.DmsDocumentMetadata`         |
+| `retrieval.domain.DmsDocumentType`       | `retrieval.port.DmsDocumentType`             |
+| `retrieval.domain.DmsProperty`           | `retrieval.port.DmsProperty`                 |
+| `retrieval.domain.DmsPropertyDataType`   | `retrieval.port.DmsPropertyDataType`         |
+| `retrieval.domain.DmsPropertyDefinition` | `retrieval.port.DmsPropertyDefinition`       |
+| `retrieval.domain.DmsValueList`          | `retrieval.port.DmsValueList`                |
+| `retrieval.domain.RetrievalResult`       | `retrieval.port.RetrievalResult`             |
+| `security.domain.AuthContext`            | `security.application.AuthContext`           |
+| `security.domain.DvelopCredential`       | `security.application.DvelopCredential`      |
+| `validation.domain.ConfirmationCommand`  | `validation.application.ConfirmationCommand` |
+| `validation.domain.ConfirmationResult`   | `validation.application.ConfirmationResult`  |
+
+**Übernommen (generiert):**
+
+- Zielregel: Steht ein Typ in einer Signatur im `port`-Paket des Besitzermoduls, geht er nach
+  `port` (auch wenn er zusätzlich in `application` vorkommt), sonst nach `application`. So entsteht
+  keine Abhängigkeit `port → application` innerhalb eines Moduls (z. B. `DocumentContent`,
+  `ExtractedText`, `RetrievalResult`).
+- Nicht direkt in einer Signatur, aber transitiv über einen verschobenen Typ: `ProcessStep`/
+  `StepStatus` (über `ProcessEvent`), `DmsDocumentType`/`DmsProperty`/`DmsPropertyDefinition`/
+  `DmsPropertyDataType` (über `DmsDocumentMetadata`) — mit dem tragenden Typ verschoben.
+- Ziel für `MediaType`: `shared.media` (Unterpaket nach Thema wie `shared.hash`, `shared.cleanup`).
+- Ohne IDE per `git mv` + Umschreiben von `package`/`import`/Javadoc-FQN; fehlende Imports für
+  bisher paketgleiche Referenzen ergänzt. Diff geprüft: nur `package`-, `import`- und Javadoc-Zeilen.
+  `process.domain` ist danach leer und entfällt.
+- `PUBLISHED_DOMAIN_TYPES` auf `ContentException`, `RetrievalException`, `ExtractionException`
+  reduziert. § 5.6 (Tabelle, Nahttext extraction → retrieval), § 5.4, § 5.5 und CONTEXT.md § 5
+  (process-Zeile) nachgeführt; § 5.5 zusätzlich bei den verschobenen Typen.
+- `mvn -o clean verify` grün, `HexagonalArchitectureTest` grün.
+
+**Commits:** Nur die reinen Verschiebungen sind als `b770a92` committet.
+`HexagonalArchitectureTest` (enthält auch die neue P2-Regel), `ARCHITECTURE.md`, `CONTEXT.md` und
+dieses Tagebuch sind noch nicht committet, weil P2 noch nicht committet war.
+
+**Zu prüfen durch Mensch:**
+
+- OFFEN: Keine Klasse in einem `domain`-Paket nutzt im Code einen verschobenen Typ. Einzige
+  Referenz domain → port: Javadoc `{@link}` in `extraction.domain.ExtractedAttribute` auf
+  `retrieval.port.DmsProperty`/`DmsPropertyDefinition` (und `LlmResponse`/`LlmCapabilities` auf das
+  eigene `extraction.port.LlmPort`). Belassen?
+- Zielpaket `shared.media` für `MediaType` bestätigen.
+- `security.application.DvelopCredential` wird jetzt aus `port`-Paketen anderer Module importiert
+  (`ingest.port`, `retrieval.port`, `validation.port` → `security.application`). Keine ArchUnit-Regel
+  verbietet das. Ist es so gewollt?
+- Die übrigen OFFEN-Punkte aus dem P2-Eintrag sind erledigt (Domain-Typen, § 5.4). Weiterhin offen
+  ist das MCP-Tool mit `confirm` (P4/P5).
+
+**Nachtrag (Entscheide Mensch zu den OFFEN-Punkten oben):**
+
+- Erledigt: `extraction.domain.ExtractedAttribute` — `{@link retrieval.port.DmsPropertyDefinition}`/
+  `{@link retrieval.port.DmsProperty}` durch `{@code …}` ersetzt. Kein `domain`-Javadoc verweist mehr
+  auf `port`/`application`/`adapter` eines fremden Moduls (geprüft per `grep`).
+- Entschieden: `shared.media.MediaType` bleibt. Geprüft: einziger Import `java.util.Locale`, keine
+  Framework-Typen.
+- Entschieden: `port` → `security.application.DvelopCredential` (aus `ingest.port`,
+  `retrieval.port`, `validation.port`) ist gewollt.
+- Aufgabe P4: MCP-Tool `confirm` (`DocExtractMcpTool` → `ConfirmAndWriteBack`) entfernen.
+- Aufgabe P5: `ConsentGuard` verweigert Kanal MCP für confirm/reject/template.
+- `mvn -o clean verify` grün. Commit nur mit `ExtractedAttribute.java`, getrennt von P2; das
+  Tagebuch wird mit den P2-Dokumenten committet, weil die Einträge in einem zusammenhängenden,
+  noch nicht committeten Block stehen.

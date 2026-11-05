@@ -9,7 +9,8 @@ import ch.adeon.apps.docextract.shared.media.MediaType;
  * don't offer a choice (e.g. the MCP gateway), in which case ingest falls back to the configured
  * default repository.
  */
-public record IngestCommand(String filename, MediaType mediaType, byte[] content, String repositoryId) {
+public record IngestCommand(
+    String filename, MediaType mediaType, byte[] content, String repositoryId) {
 
   /** Builds a command, guessing the media type from the filename when no content type is known. */
   public static IngestCommand of(
