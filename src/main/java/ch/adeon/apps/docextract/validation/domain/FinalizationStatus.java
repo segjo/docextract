@@ -6,5 +6,7 @@ public enum FinalizationStatus {
   DMS_WRITE_STARTED,
   /** DMS finalized, corpus promotion still outstanding; protected from TTL cleanup. */
   FINALIZED_INDEX_PENDING,
-  COMPLETED
+  COMPLETED,
+  /** Promotion abandoned after the retry limit (C-7 final failure); no longer cleanup-protected. */
+  INDEX_FAILED
 }

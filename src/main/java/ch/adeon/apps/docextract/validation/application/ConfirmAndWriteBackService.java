@@ -17,6 +17,9 @@ import ch.adeon.apps.docextract.validation.port.CorpusPromotionPort;
 import ch.adeon.apps.docextract.validation.port.DmsWritePort;
 import ch.adeon.apps.docextract.validation.port.DmsWriteRejectedException;
 import ch.adeon.apps.docextract.validation.port.PendingEmbeddingCheckPort;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,6 +48,9 @@ public class ConfirmAndWriteBackService implements ConfirmAndWriteBack, RetryCor
   private final PendingEmbeddingCheckPort pendingEmbeddingCheckPort;
   private final DocumentBlobPort documentBlobPort;
   private final String defaultRepositoryId;
+  private final Clock clock;
+  private final Duration promotionRetryLimit;
+  private final Duration promotionAlertAfter;
 
   public ConfirmAndWriteBackService(
       DmsWritePort dmsWritePort,
@@ -57,7 +63,10 @@ public class ConfirmAndWriteBackService implements ConfirmAndWriteBack, RetryCor
       FinalizationStatePort finalizationStatePort,
       PendingEmbeddingCheckPort pendingEmbeddingCheckPort,
       DocumentBlobPort documentBlobPort,
-      @Value("${docextract.ingest.dms.repository-id}") String defaultRepositoryId) {
+      @Value("${docextract.ingest.dms.repository-id}") String defaultRepositoryId,
+      Clock clock,
+      @Value("${docextract.validation.promotion-retry-limit}") Duration promotionRetryLimit,
+      @Value("${docextract.validation.promotion-alert-after}") Duration promotionAlertAfter) {
     this.dmsWritePort = dmsWritePort;
     this.corpusPromotionPort = corpusPromotionPort;
     this.outboundCredentialPort = outboundCredentialPort;
@@ -69,6 +78,9 @@ public class ConfirmAndWriteBackService implements ConfirmAndWriteBack, RetryCor
     this.pendingEmbeddingCheckPort = pendingEmbeddingCheckPort;
     this.documentBlobPort = documentBlobPort;
     this.defaultRepositoryId = defaultRepositoryId;
+    this.clock = clock;
+    this.promotionRetryLimit = promotionRetryLimit;
+    this.promotionAlertAfter = promotionAlertAfter;
   }
 
   @Override
@@ -153,15 +165,42 @@ public class ConfirmAndWriteBackService implements ConfirmAndWriteBack, RetryCor
 
   @Override
   public int retryPendingPromotions() {
+    Instant now = clock.instant();
     int promoted = 0;
+    int overdue = 0;
     for (Finalization finalization :
         finalizationStatePort.findByStatus(FinalizationStatus.FINALIZED_INDEX_PENDING)) {
       if (promote(finalization) == FinalizationStatus.COMPLETED) {
         deleteBlobs(finalization.processId());
         promoted++;
+        continue;
+      }
+      Instant firstFailedAt =
+          finalization.firstFailedAt() != null ? finalization.firstFailedAt() : now;
+      Duration age = Duration.between(firstFailedAt, now);
+      if (age.compareTo(promotionRetryLimit) >= 0) {
+        giveUp(finalization.withFirstFailedAt(firstFailedAt));
+      } else if (age.compareTo(promotionAlertAfter) >= 0) {
+        overdue++;
       }
     }
+    if (overdue > 0) {
+      log.error(
+          "{} corpus promotion(s) pending longer than {} (FINALIZED_INDEX_PENDING)",
+          overdue,
+          promotionAlertAfter);
+    }
     return promoted;
+  }
+
+  /** Final failure (C-7): TTL cleanup may now delete embedding and blobs; the DMS keeps the doc. */
+  private void giveUp(Finalization finalization) {
+    finalizationStatePort.save(finalization.withStatus(FinalizationStatus.INDEX_FAILED));
+    auditPort.append(new AuditEvent("validation.promotion-abandoned", "", 0));
+    log.error(
+        "Corpus promotion for process {} abandoned after {}, now INDEX_FAILED",
+        finalization.processId(),
+        promotionRetryLimit);
   }
 
   /** Returns the resulting status; FINALIZED_INDEX_PENDING stays if the promotion fails. */
@@ -175,6 +214,9 @@ public class ConfirmAndWriteBackService implements ConfirmAndWriteBack, RetryCor
           finalization.processId(),
           ex.getClass().getSimpleName());
       auditPort.append(new AuditEvent("validation.promotion-failed", "", 0));
+      if (finalization.firstFailedAt() == null) {
+        finalizationStatePort.save(finalization.withFirstFailedAt(clock.instant()));
+      }
       return FinalizationStatus.FINALIZED_INDEX_PENDING;
     }
     finalizationStatePort.save(finalization.withStatus(FinalizationStatus.COMPLETED));

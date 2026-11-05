@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import ch.adeon.apps.docextract.validation.domain.Finalization;
 import ch.adeon.apps.docextract.validation.domain.FinalizationStatus;
 import ch.adeon.apps.docextract.validation.domain.PendingEmbeddingCheck;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 import javax.sql.DataSource;
@@ -99,6 +100,18 @@ class PgPendingEmbeddingDeleteAdapterTest {
         .contains(pending.withStatus(FinalizationStatus.COMPLETED));
     assertThat(finalizationState.findByStatus(FinalizationStatus.FINALIZED_INDEX_PENDING))
         .isEmpty();
+  }
+
+  @Test
+  void first_failed_at_round_trips() {
+    Instant failedAt = Instant.parse("2026-11-05T12:00:00Z");
+    Finalization pending =
+        new Finalization(
+                "p1", "tenant-a", FinalizationStatus.FINALIZED_INDEX_PENDING, "repo-1", "doc-1")
+            .withFirstFailedAt(failedAt);
+    finalizationState.save(pending);
+
+    assertThat(finalizationState.find("p1")).contains(pending);
   }
 
   @Test

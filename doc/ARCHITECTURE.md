@@ -199,15 +199,15 @@ Der Kern hängt ausschliesslich von diesen Ports ab. Jeder Adapter muss die **Co
 
 **Interne Staging-/Übergabe-Ports** (prozessbezogene Zwischenstände zwischen Pipeline-Stufen, alle im `application`-Paket):
 
-| Port                         | Modul      | Zweck                                                                               |
-| ---------------------------- | ---------- | ----------------------------------------------------------------------------------- |
-| `TextStagingPort`            | content    | Text der ersten _N_ Wörter, nur in-memory (ADR-006)                                 |
-| `ContentStagingPort`         | content    | Dokumentrepräsentation für FR-4, nur in-memory (ADR-006)                            |
-| `DocumentHashStagingPort`    | ingest     | SHA-256 der Upload-Bytes je Prozess                                                 |
-| `RetrievalResultPort`        | retrieval  | Top-5-Treffer je Prozess                                                            |
-| `DocumentTypeCandidatesPort` | retrieval  | Dokumenttyp-Kandidaten inkl. objdef/Top-5-Metadaten je Prozess (für FR-4)           |
-| `ExtractionResultPort`       | extraction | Attributvorschläge je Prozess                                                       |
-| `FinalizationStatePort`      | validation | Saga-Zustand (`FINALIZED_INDEX_PENDING`/`COMPLETED`) + DMS-IDs je Prozess (ADR-015) |
+| Port                         | Modul      | Zweck                                                                                                                  |
+| ---------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `TextStagingPort`            | content    | Text der ersten _N_ Wörter, nur in-memory (ADR-006)                                                                    |
+| `ContentStagingPort`         | content    | Dokumentrepräsentation für FR-4, nur in-memory (ADR-006)                                                               |
+| `DocumentHashStagingPort`    | ingest     | SHA-256 der Upload-Bytes je Prozess                                                                                    |
+| `RetrievalResultPort`        | retrieval  | Top-5-Treffer je Prozess                                                                                               |
+| `DocumentTypeCandidatesPort` | retrieval  | Dokumenttyp-Kandidaten inkl. objdef/Top-5-Metadaten je Prozess (für FR-4)                                              |
+| `ExtractionResultPort`       | extraction | Attributvorschläge je Prozess                                                                                          |
+| `FinalizationStatePort`      | validation | Saga-Zustand (`DMS_WRITE_STARTED`/`FINALIZED_INDEX_PENDING`/`COMPLETED`/`INDEX_FAILED`) + DMS-IDs je Prozess (ADR-015) |
 
 **Neutrales Datenformat im Kern (Auszug):** `DocumentRef`, `ExtractedText`, `DocumentContent`, `EmbeddingVector(modelId, dim, values)`, `ExtractionRequest`, `ExtractionResponse`, `ExtractedAttribute(propertyId, value, values, confidence, sourceExcerpt)`, `ModelInfo(provider, modelId)`, `LlmTool(name, description, inputSchema, handler)` (ADR-014), `LlmCapabilities(structuredOutput: NATIVE|NONE, inputs: TEXT|IMAGES)`.
 
@@ -692,14 +692,14 @@ ADR-001 bis ADR-003 wurden **bewusst nicht an die KI delegiert** (Krit. 18). Arc
   4. Zustand `COMPLETED`,
   5. Blobs löschen (`DocumentBlobPort.deleteByProcess`); die Bytes liegen jetzt im DMS, der Retry braucht nur die IDs.
 
-  Die Antwort enthält `indexStatus` (`COMPLETED` oder `FINALIZED_INDEX_PENDING`). Ein Retry führt nur die Schritte 3–5 aus: bei erneutem Confirm desselben Prozesses (Wiedereintritt, nur gleicher Tenant) oder durch den `FinalizationRecoveryScheduler` (alle `PT5M`, `docextract.validation.recovery-interval`). Ein Reject nach Schritt 1 wird mit `409` abgewiesen. Der gemeinsame TTL-Cleanup (`shared.cleanup.TtlCleanupJob`, ebenfalls `PT5M`) löscht abgelaufene `PENDING`-Embeddings und Blobs über den `TtlCleanupService` und überspringt dabei `FINALIZED_INDEX_PENDING`. `process_finalization` hat keine TTL; Zeilen werden nur auf Löschantrag je `tenant_id` entfernt (`FinalizationStatePort.deleteByTenant`). Kein Event, kein Broker.
+  Die Antwort enthält `indexStatus` (`COMPLETED`, `FINALIZED_INDEX_PENDING` oder `INDEX_FAILED`). Ein Retry führt nur die Schritte 3–5 aus: bei erneutem Confirm desselben Prozesses (Wiedereintritt, nur gleicher Tenant) oder durch den `FinalizationRecoveryScheduler` (alle `PT5M`, `docextract.validation.recovery-interval`). **Obergrenze:** Der erste Fehlversuch setzt `first_failed_at` (V15). Ab 1 h (`promotion-alert-after`) meldet jeder Retry-Lauf die überfälligen Prozesse als `ERROR` im Log (Alarm); nach 24 h (`promotion-retry-limit`) wechselt der Prozess nach `INDEX_FAILED` (Audit `validation.promotion-abandoned`, C-7 „endgültiger Fehler"). Ab dann schützt der TTL-Cleanup Embedding und Blobs nicht mehr; das Dokument bleibt im DMS. Ein Reject nach Schritt 1 wird mit `409` abgewiesen. Der gemeinsame TTL-Cleanup (`shared.cleanup.TtlCleanupJob`, ebenfalls `PT5M`) löscht abgelaufene `PENDING`-Embeddings und Blobs über den `TtlCleanupService` und überspringt dabei `FINALIZED_INDEX_PENDING`. `process_finalization` hat keine TTL; Zeilen werden nur auf Löschantrag je `tenant_id` entfernt (`FinalizationStatePort.deleteByTenant`). Kein Event, kein Broker.
 
 - **Preis:**
   - Zwischenzustand `FINALIZED_INDEX_PENDING`: Das Dokument ist im DMS final, fehlt aber bis zum erfolgreichen Retry im Retrieval-Korpus (keine Referenz für Folgedokumente).
   - Zusätzliche Zustandstabelle, Recovery-Job und ein Cleanup, der den Saga-Zustand kennen muss (Prüfung im Service **und** als SQL-Guard gegen die Race zwischen Lookup und Delete beim Embedding).
   - Kopplung über die gemeinsame DB: `validation` schreibt per Port in die `retrieval`-Tabelle `embedding` und löscht über den `ingest`-Port Blobs; die Modultrennung ist nur logisch (ADR-001). Eine Transaktion mit dem DMS gibt es nicht.
   - Confirm-Latenz = DMS-Write + Promotion (synchron).
-  - Retry ohne Obergrenze und ohne Backoff (Empfehlung siehe § 11); ein Promote ohne `PENDING`-Zeile ist nicht von „nichts zu tun" unterscheidbar.
+  - Retry ohne Backoff, begrenzt auf 24 h; danach fehlt das Dokument dauerhaft im Korpus. Ein Promote ohne `PENDING`-Zeile ist nicht von „nichts zu tun" unterscheidbar.
   - `process_finalization` wächst ohne TTL (nur IDs, keine PII).
 - **Störfall:**
   - _DMS-Finalisierung ok, Promotion schlägt fehl_ (z. B. DB-Verbindung kurz weg): `FINALIZED_INDEX_PENDING` ist bereits vor der Promotion gespeichert und bleibt stehen; Audit `validation.promotion-failed`; Confirm antwortet mit `200`, `writtenBack = true` und `indexStatus = FINALIZED_INDEX_PENDING`, weil das DMS final ist. Es folgt **kein** zweiter DMS-Write. Der nächste Recovery-Lauf (beliebige Instanz) promotet ohne Neuberechnung. Bis dahin bleibt das Embedding `PENDING`, also unsichtbar für das Retrieval; der TTL-Cleanup lässt es auch nach Ablauf von `expires_at` stehen.
@@ -710,11 +710,12 @@ ADR-001 bis ADR-003 wurden **bewusst nicht an die KI delegiert** (Krit. 18). Arc
     - Reihenfolge DMS → Zustand → Promotion → Blobs: `writes_dms_before_promotion_and_completes_the_saga`
     - Promotion-Fehler → `FINALIZED_INDEX_PENDING`, kein zweiter DMS-Write: `promotion_failure_leaves_finalized_index_pending_without_second_dms_write`
     - Retry nur Promotion: `repeated_confirm_in_finalized_index_pending_only_promotes`, `background_retry_only_promotes_and_never_writes_dms`, `background_retry_keeps_finalized_index_pending_when_promotion_fails_again`, `repeated_confirm_after_completion_neither_writes_nor_promotes`
+    - Obergrenze: `background_retry_gives_up_after_the_retry_limit`, `background_retry_keeps_trying_within_the_retry_limit`
     - Vorprüfung: `confirm_of_another_tenant_s_process_never_writes_dms`, `pending_embedding_of_another_tenant_blocks_the_dms_write`, `expired_pending_embedding_blocks_the_dms_write`, `confirm_without_pending_embedding_still_writes_dms`, `repeated_confirm_by_another_tenant_is_not_found`
     - Marker/Restfenster: `dms_rejection_after_unknown_outcome_is_reported_as_possibly_finalized`, `earlier_unknown_outcome_with_successful_retry_completes_the_saga`, `dms_failure_with_unknown_outcome_keeps_the_marker`, `must_reject_and_not_promote_when_dms_rejects_attributes`
   - `RejectSuggestionServiceTest` — `refuses_reject_in_finalized_index_pending`, `reject_of_another_tenant_s_process_is_not_found`, `deletes_pending_embedding_and_blobs`
-  - `TtlCleanupServiceTest` — `skips_embeddings_of_processes_in_finalized_index_pending`, `skips_blobs_of_processes_in_finalized_index_pending`
-  - `PgPendingEmbeddingDeleteAdapterTest` — `delete_expired_never_removes_embedding_of_finalized_index_pending_process` (SQL-Guard), `finalization_state_is_deleted_only_for_the_requested_tenant`, `pending_check_reports_owner_tenant_and_expiry` (Testcontainers)
+  - `TtlCleanupServiceTest` — `skips_embeddings_of_processes_in_finalized_index_pending`, `skips_blobs_of_processes_in_finalized_index_pending`, `cleans_up_processes_whose_promotion_was_abandoned`
+  - `PgPendingEmbeddingDeleteAdapterTest` — `delete_expired_never_removes_embedding_of_finalized_index_pending_process` (SQL-Guard), `finalization_state_is_deleted_only_for_the_requested_tenant`, `pending_check_reports_owner_tenant_and_expiry`, `first_failed_at_round_trips` (Testcontainers)
   - `PgDocumentBlobAdapterTest` — `ttl_cleanup_finds_and_deletes_only_expired_blobs`, `delete_by_process_removes_original_and_preview`
   - `PgVectorSearchAdapterTest.finds_only_approved_embeddings_for_the_caller_s_tenant` — `PENDING` erscheint nie im Retrieval
   - `SchedulingWiringTest` — beide Jobs registriert, `PT5M` wird geparst
@@ -765,7 +766,7 @@ T-1 Prompt Injection → untrusted data + Schema-Validierung + lesende Tools nur
 - **Externe Anbieter:** Ausfälle, Rate-Limits, Preisänderungen → Timeouts, definierter Fehlerzustand, Kosten je Anbieter ausweisen (NfA-7).
 - **Erosion der Modul- und Portgrenzen** → ArchUnit im CI-Gate.
 - **SSE hinter Proxy / NOTIFY-Limits** → Heartbeat, ungepuffertes Streaming, nur IDs im Payload.
-- **Verwaiste `PENDING`-Einträge und Blobs** → kurze TTL, gemeinsamer Cleanup-Job (`TtlCleanupJob`, alle `PT5M`, deckt `embedding`, `document_blob`, `retrieval_result`, `document_type_candidate`, `extraction_result` ab), Metriken. Offene Grenze: Bleibt ein Prozess dauerhaft in `FINALIZED_INDEX_PENDING`, bleiben auch dessen Embedding und ggf. Blobs bestehen. **Empfehlung (nicht umgesetzt):** Obergrenze 24 h ab erstem Fehlversuch (≈ 288 Versuche bei `PT5M`), Alarm/Metrik ab 1 h; danach Status `INDEX_FAILED` mit Audit, Schutz aufheben, damit der TTL-Cleanup Embedding und Blobs löscht (C-7 „endgültiger Fehler"). Das Dokument bleibt im DMS.
+- **Verwaiste `PENDING`-Einträge und Blobs** → kurze TTL, gemeinsamer Cleanup-Job (`TtlCleanupJob`, alle `PT5M`, deckt `embedding`, `document_blob`, `retrieval_result`, `document_type_candidate`, `extraction_result` ab), Metriken. Offene Grenze: Ein Prozess in `FINALIZED_INDEX_PENDING` behält Embedding und ggf. Blobs bis zur Retry-Obergrenze (24 h, ADR-015); danach `INDEX_FAILED` und regulärer Cleanup. Der Alarm ist log-basiert (`ERROR`), eine Micrometer-Metrik fehlt noch (kein Actuator im Projekt).
 - **TODO: Löschantrag je Mandant (NfA-5)** fehlt. `FinalizationStatePort.deleteByTenant` existiert, wird aber noch nirgends aufgerufen; `process_finalization` hat bewusst keine TTL.
 - **Self-Learning-Loop (Ausbaustufe):** Vergiftungsrisiko → nur mit separatem Consent, Quarantäne und Rollback.
 

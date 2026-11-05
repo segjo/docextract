@@ -51,6 +51,20 @@ class TtlCleanupServiceTest {
   }
 
   @Test
+  void cleans_up_processes_whose_promotion_was_abandoned() {
+    when(embeddingPort.findExpiredProcessIds()).thenReturn(List.of("p-failed"));
+    when(finalizationStatePort.find("p-failed"))
+        .thenReturn(
+            Optional.of(
+                new Finalization(
+                    "p-failed", "tenant-a", FinalizationStatus.INDEX_FAILED, "repo-1", "doc-1")));
+
+    service.purgeExpired();
+
+    verify(embeddingPort).deleteExpired("p-failed");
+  }
+
+  @Test
   void skips_blobs_of_processes_in_finalized_index_pending() {
     when(blobPort.findExpiredProcessIds()).thenReturn(List.of("p-pending", "p-orphan"));
 

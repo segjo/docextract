@@ -135,6 +135,10 @@ docextract:
   validation:
     # Interval of the promotion retry for FINALIZED_INDEX_PENDING (ADR-015).
     recovery-interval: PT5M
+    # Promotion retries stop after this age of the first failure -> INDEX_FAILED (C-7 final failure).
+    promotion-retry-limit: PT24H
+    # Retry runs log an ERROR (alarm) for promotions still pending after this age.
+    promotion-alert-after: PT1H
   cleanup:
     # Interval of the TTL cleanup job over all expires_at tables (shared.cleanup.TtlCleanupJob).
     interval: PT5M

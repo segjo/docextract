@@ -31,6 +31,10 @@ import ch.adeon.apps.docextract.validation.port.DmsWriteFailedException;
 import ch.adeon.apps.docextract.validation.port.DmsWritePort;
 import ch.adeon.apps.docextract.validation.port.DmsWriteRejectedException;
 import ch.adeon.apps.docextract.validation.port.PendingEmbeddingCheckPort;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -40,6 +44,7 @@ import org.mockito.InOrder;
 
 class ConfirmAndWriteBackServiceTest {
 
+  private static final Instant NOW = Instant.parse("2026-11-05T12:00:00Z");
   private static final Finalization INDEX_PENDING =
       new Finalization(
           "p1", "tenant-a", FinalizationStatus.FINALIZED_INDEX_PENDING, "repo-1", "doc-1");
@@ -86,7 +91,10 @@ class ConfirmAndWriteBackServiceTest {
             finalizationStatePort,
             pendingEmbeddingCheckPort,
             documentBlobPort,
-            "default-repo");
+            "default-repo",
+            Clock.fixed(NOW, ZoneOffset.UTC),
+            Duration.ofHours(24),
+            Duration.ofHours(1));
   }
 
   @Test
@@ -172,6 +180,7 @@ class ConfirmAndWriteBackServiceTest {
     assertThat(result.writtenBack()).isTrue();
     assertThat(result.indexStatus()).isEqualTo(FinalizationStatus.FINALIZED_INDEX_PENDING);
     verify(finalizationStatePort).save(INDEX_PENDING);
+    verify(finalizationStatePort).save(INDEX_PENDING.withFirstFailedAt(NOW));
     verify(finalizationStatePort, never())
         .save(INDEX_PENDING.withStatus(FinalizationStatus.COMPLETED));
     verify(dmsWritePort).writeAttributes(any(), any(), any(), any(), any(), any());
@@ -277,8 +286,39 @@ class ConfirmAndWriteBackServiceTest {
     int promoted = service.retryPendingPromotions();
 
     assertThat(promoted).isZero();
-    verify(finalizationStatePort, never()).save(any());
+    verify(finalizationStatePort).save(INDEX_PENDING.withFirstFailedAt(NOW));
+    verify(finalizationStatePort, never())
+        .save(INDEX_PENDING.withStatus(FinalizationStatus.COMPLETED));
     verify(dmsWritePort, never()).writeAttributes(any(), any(), any(), any(), any(), any());
+  }
+
+  // Obergrenze: 24 h nach dem ersten Fehlversuch → INDEX_FAILED (C-7 endgültiger Fehler).
+  @Test
+  void background_retry_gives_up_after_the_retry_limit() {
+    Finalization failingSince = INDEX_PENDING.withFirstFailedAt(NOW.minus(Duration.ofHours(25)));
+    when(finalizationStatePort.findByStatus(FinalizationStatus.FINALIZED_INDEX_PENDING))
+        .thenReturn(List.of(failingSince));
+    doThrow(new IllegalStateException("db down"))
+        .when(corpusPromotionPort)
+        .promote(anyString(), anyString(), anyString());
+
+    service.retryPendingPromotions();
+
+    verify(finalizationStatePort).save(failingSince.withStatus(FinalizationStatus.INDEX_FAILED));
+  }
+
+  @Test
+  void background_retry_keeps_trying_within_the_retry_limit() {
+    Finalization failingSince = INDEX_PENDING.withFirstFailedAt(NOW.minus(Duration.ofHours(2)));
+    when(finalizationStatePort.findByStatus(FinalizationStatus.FINALIZED_INDEX_PENDING))
+        .thenReturn(List.of(failingSince));
+    doThrow(new IllegalStateException("db down"))
+        .when(corpusPromotionPort)
+        .promote(anyString(), anyString(), anyString());
+
+    service.retryPendingPromotions();
+
+    verify(finalizationStatePort, never()).save(any());
   }
 
   @Test

@@ -959,3 +959,41 @@ Fehlversuchs.
 **Reflexion:** Die Rückmeldung „anders melden" deckte eine zweite Ursache auf: Der Adapter hat
 unbekannte Ausgänge (Timeout) bisher selbst als Ablehnung getarnt. Ohne diese Korrektur hätte der
 Marker genau im wichtigsten Fall gefehlt.
+
+---
+
+## 2026-11-05 — ADR-015: Retry-Obergrenze umgesetzt (Block 3)
+
+**Tool/Modell:** GitHub Copilot Chat (Agent-Modus), Branch `feat/coding-agent`.
+
+**Auftrag (Prompt-Zusammenfassung):** (1) Empfehlung zur Retry-Obergrenze übernehmen, (2) `2xx`
+ohne `Location` bleibt Ablehnung, (3) Reject in `DMS_WRITE_STARTED` → `409` bleibt.
+
+**Geänderte Dateien:**
+
+- neu: `V15__process_finalization_first_failed_at.sql` (V14 ist inzwischen committet, daher neue
+  Migration), `shared/config/ClockConfig.java`
+- geändert: `FinalizationStatus` (+`INDEX_FAILED`), `Finalization` (+`firstFailedAt`, 5-Argument-
+  Konstruktor bleibt), `PgFinalizationStateAdapter`, `ConfirmAndWriteBackService` (erster
+  Fehlversuch setzt `firstFailedAt`; Retry-Lauf: nach `promotion-retry-limit` → `INDEX_FAILED` +
+  Audit `validation.promotion-abandoned`, ab `promotion-alert-after` eine `ERROR`-Logzeile je Lauf),
+  `application.yml` (`PT24H`/`PT1H`), Frontend `validation.model.ts`, OpenAPI-Snapshot (Enum)
+- Tests: `ConfirmAndWriteBackServiceTest` (15 → 17), `TtlCleanupServiceTest` (2 → 3),
+  `PgPendingEmbeddingDeleteAdapterTest` (6 → 7)
+- Doku: `ARCHITECTURE.md` (ADR-015 Entscheidung/Preis/Prüfung, § 5.2, § 11)
+
+**Übernommen (generiert):** `INDEX_FAILED` ist bewusst nicht vor dem TTL-Cleanup geschützt; so
+greift C-7 „endgültiger Fehler" ohne eigenen Löschpfad. `java.time.Clock` als Bean, damit die
+Zeitregel ohne Wartezeiten testbar ist. `mvn -o clean verify` und `ng test` grün.
+
+**Verworfen / Veto:** Keine Micrometer-Metrik: Das Projekt hat keinen Actuator, eine neue
+Abhängigkeit nur dafür wäre über den Auftrag hinaus. Der Alarm ist log-basiert (§ 11 vermerkt).
+
+**Zu prüfen durch Mensch:**
+
+- Log-basierter Alarm (`ERROR` alle 5 min, solange überfällig) ausreichend, oder Actuator/Micrometer
+  einführen?
+- TODO bleibt: Löschantrag je Mandant (§ 11).
+
+**Reflexion:** Die vorab als Empfehlung formulierte Grenze liess sich direkt umsetzen, weil Daten
+(`first_failed_at`) und Ablauf (`INDEX_FAILED` → regulärer Cleanup) schon im Vorschlag benannt waren.

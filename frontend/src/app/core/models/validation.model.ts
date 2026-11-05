@@ -10,7 +10,7 @@ export interface ConfirmationResult {
   documentId: string;
   repositoryId: string;
   writtenBack: boolean;
-  indexStatus: 'COMPLETED' | 'FINALIZED_INDEX_PENDING';
+  indexStatus: 'COMPLETED' | 'FINALIZED_INDEX_PENDING' | 'INDEX_FAILED';
 }
 
 export interface RejectRequest {
