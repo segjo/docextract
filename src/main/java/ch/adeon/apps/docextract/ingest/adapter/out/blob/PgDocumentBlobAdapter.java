@@ -1,11 +1,11 @@
 package ch.adeon.apps.docextract.ingest.adapter.out.blob;
 
 import ch.adeon.apps.docextract.ingest.application.BlobNotFoundException;
-import ch.adeon.apps.docextract.ingest.port.DocumentBlobPort;
 import ch.adeon.apps.docextract.ingest.domain.BlobKind;
 import ch.adeon.apps.docextract.ingest.domain.BlobRef;
 import ch.adeon.apps.docextract.ingest.domain.MediaType;
 import ch.adeon.apps.docextract.ingest.domain.PageRange;
+import ch.adeon.apps.docextract.ingest.port.DocumentBlobPort;
 import java.io.ByteArrayOutputStream;
 import java.sql.Timestamp;
 import java.time.Duration;
@@ -55,6 +55,7 @@ public class PgDocumentBlobAdapter implements DocumentBlobPort {
     }
 
     UUID blobId = UUID.randomUUID();
+    // TODO: no cleanup job deletes expired rows yet (ARCHITECTURE § 11).
     Timestamp expiresAt = Timestamp.from(Instant.now().plus(blobTtl));
     jdbcTemplate.update(
         """

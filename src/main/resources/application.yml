@@ -130,6 +130,8 @@ docextract:
     # TTL for the extraction result handed to the validation UI, persisted in Postgres (not
     # per-instance memory) so any cluster node can serve it (ADR-004).
     result-ttl: PT2H
+    # Read-only LLM tool calls (lookup_value_list) per extraction (ADR-014).
+    max-tool-calls: 10
 ---
 spring:
   config:

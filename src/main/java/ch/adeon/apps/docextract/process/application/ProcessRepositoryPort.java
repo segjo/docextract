@@ -4,12 +4,12 @@ import java.util.Optional;
 
 /**
  * Cross-module port (same role as {@code ProcessEventPort}/{@code
- * ingest.application.DocumentHashStagingPort}) staging the repository the user picked in the
- * import mask for a given {@code processId}, so every later step of that same process (retrieval's
+ * ingest.application.DocumentHashStagingPort}) staging the repository the user picked in the import
+ * mask for a given {@code processId}, so every later step of that same process (retrieval's
  * object-definition fallback, extraction's value-list lookups) targets the user's chosen repository
- * instead of a single globally configured one. Kept in-memory alongside the other per-process job
- * state (ADR-006) — the repository id is not PII, but is only ever needed transiently for the
- * lifetime of one process.
+ * instead of a single globally configured one. Must be readable from any instance (ADR-004): the
+ * confirm request can land on a different node than the upload. The repository id is not PII.
+ * {@code stage} requires the process's ORIGINAL blob to exist.
  */
 public interface ProcessRepositoryPort {
 

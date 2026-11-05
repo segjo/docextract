@@ -471,3 +471,270 @@ laufenden Baustelle gehört, wurde die Verifikation stattdessen über eine **tem
 rückgängig gemachte** Stub-Änderung erreicht statt über einen bleibenden Fremd-Fix. Lehre: bei
 halbfertigen, uncommitteten Nachbar-Dateien lohnt sich vor dem Testlauf ein kurzer `git diff`-Check,
 um vorbestehende von selbst verursachten Kompilierfehlern zu unterscheiden.
+
+---
+
+## 2026-11-05 — Port-Namen in ARCHITECTURE.md an § 5.2 und Code angleichen (Block 3)
+
+**Tool/Modell:** GitHub Copilot Chat (Agent-Modus), Branch `feat/coding-agent`.
+
+**Auftrag (Prompt-Zusammenfassung):** Widersprüche in `doc/ARCHITECTURE.md` beheben, ohne Inhalte
+fachlich zu ändern: (1) § 5.4 statt `VectorStorePort`/`DmsReadPort` auf die schmalen Ports aus
+§ 5.2/§ 5.5 umstellen, (2) Modulzuordnung von `ValueListPort`, `DmsObjectDefinitionPort`,
+`DmsObjectMetadataPort` am Code prüfen und § 5.4/§ 5.5 daran angleichen, (3) in § 5.2 genannte,
+im Code fehlende Ports auflisten (nicht implementieren). Akzeptanz: kein Port-Name in
+ARCHITECTURE.md, der weder in § 5.2 noch im Code existiert.
+
+**Geänderte Dateien:** `doc/ARCHITECTURE.md`, `doc/ENTWICKLUNGSTAGEBUCH.md`. Kein Code geändert
+(ArchUnit/`mvn verify` dadurch nicht betroffen).
+
+**Übernommen (generiert):**
+
+- § 5.2: Modulzuordnung ergänzt — `DmsObjectDefinitionPort`/`DmsObjectMetadataPort` (retrieval),
+  `ValueListPort` (retrieval, von extraction mitgenutzt).
+- § 5.4: retrieval → `EmbeddingPort`, `PendingEmbeddingPort`, `VectorSearchPort`,
+  `DmsObjectDefinitionPort`, `DmsObjectMetadataPort`, `ValueListPort`, `AuthContextPort`;
+  extraction → `LlmPort`, `ValueListPort` (aus retrieval), `DocumentTypeCandidatesPort` (aus
+  retrieval); validation → `DmsWritePort`, `CorpusPromotionPort`, `PendingEmbeddingDeletePort`.
+  Tabelle per Prettier neu ausgerichtet.
+- § 5.5: `DmsValueListWebhookAdapter` unter `retrieval/adapter.out/dms` ergänzt; Hinweis bei
+  `extraction/port`, dass `ValueListPort` aus `retrieval.port` mitgenutzt wird.
+- § 6.1: Participant `retrieval (EmbeddingPort / VectorStorePort)` →
+  `(EmbeddingPort / PendingEmbeddingPort / VectorSearchPort)` (nötig für das Akzeptanzkriterium).
+- Abschnittsnummern unverändert.
+
+**Abweichung Code ↔ Doku (Doku folgt dem Code):** Alle drei Ports liegen im Code in
+`ch.adeon.apps.docextract.retrieval.port`. Genutzt werden `DmsObjectDefinitionPort`/
+`DmsObjectMetadataPort` nur von `retrieval` (`FindSimilarService`, `GetObjectDefinitionsService`);
+`ValueListPort` zusätzlich von `extraction.application.ExtractAttributesService`. Die frühere
+§ 5.4-Zuordnung „extraction → `DmsReadPort`" entsprach nicht dem Code: extraction liest objdef/
+Top-5-Metadaten nicht selbst aus dem DMS, sondern über `retrieval.application.DocumentTypeCandidatesPort`.
+
+**Ports aus § 5.2 ohne Entsprechung im Code:**
+
+| Port               | in Doku | im Code                                                                                                |
+| ------------------ | ------- | ------------------------------------------------------------------------------------------------------ |
+| `PreviewPort`      | § 5.2   | nein — nächster Kandidat: `ingest.port.PreviewRenderPort`                                              |
+| `ProcessStatePort` | § 5.2   | nein — vorhanden: `process.application.ProcessEventPort`/`ProcessDocumentPort`/`ProcessRepositoryPort` |
+| `AuditLogPort`     | § 5.2   | nein — nächster Kandidat: `audit.application.AuditPort`                                                |
+
+Alle übrigen § 5.2-Ports existieren im Code.
+
+**Verworfen / Veto:** Keine Umbenennung im Code und keine Umbenennung der drei fehlenden Ports in
+der Doku — beides wäre eine Entscheidung, nicht nur eine Angleichung (siehe OFFEN-Punkte).
+
+**Zu prüfen durch Mensch:**
+
+- OFFEN: `PreviewPort` (Doku) vs. `PreviewRenderPort` (Code) — Doku oder Code umbenennen?
+- OFFEN: `ProcessStatePort` (Doku) — welchem der Code-Ports `ProcessEventPort`/`ProcessDocumentPort`/
+  `ProcessRepositoryPort` entspricht er, bzw. soll § 5.2/§ 5.4 diese stattdessen nennen?
+- OFFEN: `AuditLogPort` (Doku) vs. `AuditPort` (Code) — Doku oder Code umbenennen?
+- OFFEN: Sollen die Modulzuordnungen `DmsObjectDefinitionPort`/`DmsObjectMetadataPort`/
+  `ValueListPort` → retrieval dauerhaft so bleiben, oder ist eine Verschiebung nach extraction
+  (ursprüngliche Doku-Intention) gewünscht?
+- OFFEN: § 6.1 zeigt `EXT->>DMS: objdef + Metadaten Top-5 (live)`; im Code ruft `retrieval`
+  (`FindSimilarService`) die DMS-Leseports auf. Laufzeitsicht anpassen? (bewusst nicht geändert, da
+  Verhalten statt Port-Name)
+- OFFEN: Im Code existierende, in § 5.2 nicht gelistete Ports (`DocumentTypeCandidatesPort`,
+  `DmsRepositoryPort`, `ProcessRepositoryPort` sowie interne Staging-Ports) in § 5.2 aufnehmen?
+- Prüfen: neue § 5.4-Zeile extraction nennt `DocumentTypeCandidatesPort` — fachlich korrekt als
+  Ersatz für `DmsReadPort`?
+
+**Reflexion:** Ein Akzeptanzkriterium über die ganze Datei („kein Port-Name ausserhalb § 5.2/Code")
+fand eine zusätzliche Fundstelle in § 6.1, die im Auftrag nicht explizit genannt war — per
+Skript (`grep` aller `*Port`-Namen gegen § 5.2 und `src/main/java`) statt per Augenmass prüfen.
+
+---
+
+## 2026-11-05 — OFFEN-Punkte der Port-Angleichung umsetzen (Block 3)
+
+**Tool/Modell:** GitHub Copilot Chat (Agent-Modus), Branch `feat/coding-agent`.
+
+**Auftrag (Prompt-Zusammenfassung):** Entscheide des Menschen zu den OFFEN-Punkten des
+vorherigen Eintrags umsetzen: `PreviewRenderPort` und `AuditPort` (Code) behalten, Doku anpassen;
+`ProcessStatePort` in der Doku durch die Code-Ports ersetzen; DMS-Ports nur nach extraction
+verschieben, falls fachlich besser; § 6.1 anpassen (LLM soll dynamische/abhängige Wertelisten aus
+dem DMS nachladen können); alle Code-Ports in § 5.2 aufnehmen.
+
+**Geänderte Dateien:** `doc/ARCHITECTURE.md`, `doc/ENTWICKLUNGSTAGEBUCH.md`. Kein Code geändert.
+
+**Übernommen (generiert):**
+
+- § 5.2: `PreviewPort` → `PreviewRenderPort`. Die Fliesstext-Aufzählung der internen Ports ist
+  durch zwei Tabellen ersetzt (Port | Modul (Paket) | Zweck): Outbound-Ports und
+  Staging-/Übergabe-Ports. Neu aufgenommen: `DmsRepositoryPort`, `OutboundCredentialPort`,
+  `IdentityProviderPort`, `AppConfigPort`, `AuditPort`, `ProcessEventPort`, `ProcessDocumentPort`,
+  `ProcessRepositoryPort`, `CorpusMaintenancePort`, `TextStagingPort`, `ContentStagingPort`,
+  `DocumentHashStagingPort`, `RetrievalResultPort`, `DocumentTypeCandidatesPort`,
+  `ExtractionResultPort`. Entfernt: `ProcessStatePort`, `AuditLogPort`.
+- § 5.4: ingest → `PreviewRenderPort` (+ `DmsRepositoryPort`); process → `ProcessEventPort`,
+  `ProcessDocumentPort`, `ProcessRepositoryPort`; audit → `AuditPort`.
+- § 5.5: `PreviewRenderPort` bei ingest; Ports bei process und audit ergänzt.
+- § 6.1: DMS-Lesezugriffe (Metadaten Top-5, Wertelisten, objdef-Fallback) liegen jetzt bei
+  retrieval, wie im Code (`FindSimilarService`). extraction lädt Kandidaten/Top-5 aus den
+  Staging-Ports und lädt bei Bedarf Wertelisten über `ValueListPort` nach (`opt`-Block).
+  Kurzer Hinweis unter dem Diagramm: Nachladen erfolgt durch `ExtractAttributesService` anhand der
+  LLM-Antwort, nicht per LLM-Tool-Call (T-1, C-3), nur lesend (C-2), sonst „unbekannt" (E-5).
+- Prüfung beidseitig per Skript: jeder Port-Name in ARCHITECTURE.md existiert im Code und in
+  § 5.2, und jeder `*Port.java` im Code steht in § 5.2.
+
+**Verworfen / Veto:**
+
+- Keine Verschiebung von `DmsObjectDefinitionPort`/`DmsObjectMetadataPort`/`ValueListPort` nach
+  extraction. Begründung aus dem Code: `FindSimilarService` (retrieval) braucht die ersten beiden
+  vor der Extraktion (Anreicherung der Treffer, objdef-Fallback, Dokumenttyp-Kandidaten), und
+  `DmsObjectMetadataAdapter` (retrieval) nutzt `ValueListPort` bereits beim Anreichern. Ein Umzug
+  nach `extraction.port` würde retrieval von extraction abhängig machen, also gegen die
+  Pipeline-Richtung. extraction nutzt `ValueListPort` weiterhin aus `retrieval.port` (ArchUnit
+  erlaubt modulübergreifende `port`/`application`-Imports).
+
+**Zu prüfen durch Mensch:**
+
+- OFFEN: Soll das LLM Wertelisten künftig selbst per Tool-Call nachladen können? Das widerspräche
+  C-3 („LLM hat keinen direkten Zugriff auf die DMS-API") und T-1 („keine aus Inhalt ableitbaren
+  Tool-Calls") und bräuchte ein ADR. Der aktuelle Stand (Nachladen durch die Application-Schicht)
+  ist so dokumentiert.
+- OFFEN: `ProcessRepositoryPort` hat nur einen In-Memory-Adapter
+  (`InMemoryProcessRepositoryAdapter`). Ist das im Cluster-Modus (ADR-004) ausreichend, solange ein
+  Job Ende-zu-Ende auf einer Instanz läuft? (nur festgestellt, nicht geändert)
+- Prüfen: Die Zweck-Spalten der neuen § 5.2-Tabellen sind aus den Interface-Signaturen und
+  Adaptern abgeleitet.
+
+**Reflexion:** Der Abgleich in beide Richtungen (Doku → Code und Code → Doku) macht § 5.2 zur
+vollständigen Port-Liste; per Skript wiederholbar.
+
+---
+
+## 2026-11-05 — `ProcessRepositoryPort` cluster-fähig in Postgres (Block 3)
+
+**Tool/Modell:** GitHub Copilot Chat (Agent-Modus), Branch `feat/coding-agent`.
+
+**Auftrag (Prompt-Zusammenfassung):** (1) Das LLM soll Wertelisten über DocExtract nachladen können
+(kein MCP). (2) Der In-Memory-Adapter für `ProcessRepositoryPort` reicht nicht, die Ablage soll in
+PostgreSQL erfolgen. Nachgeschärft: keine neue Tabelle, die `repository_id` soll beim bestehenden
+Prozess-Datensatz liegen. Gewählt per Rückfrage: ORIGINAL-Zeile in `document_blob` (wie
+`dms_location`/`filename` aus V12) statt `process_step`, weil `process_step` ein Event-Log mit
+mehreren Zeilen pro Prozess ist.
+
+**Geänderte Dateien:**
+
+- neu: `V13__document_blob_repository.sql` (Spalte `document_blob.repository_id`),
+  `process/adapter/out/postgres/PgProcessRepositoryAdapter.java`,
+  `PgProcessRepositoryAdapterTest.java` (Testcontainers, 3 Tests)
+- gelöscht: `process/adapter/out/memory/InMemoryProcessRepositoryAdapter.java`
+- geändert: `IngestDocumentService` (`stage` läuft jetzt per `thenApply` direkt nach dem
+  Blob-Insert und vor allen abhängigen Schritten), Javadoc `ProcessRepositoryPort`
+
+**Übernommen:** Gleiches Muster wie `PgProcessDocumentAdapter`, TTL/Cleanup über den Blob. Der
+Bestätigungs-Request liest die `repository_id` damit auf jeder Instanz (ADR-004). Vorher fiel er
+auf einer fremden Instanz still auf das Default-Repository zurück. `mvn -o clean verify` ist grün,
+inkl. `HexagonalArchitectureTest`.
+
+**Korrigiert:** Ein erster Entwurf mit eigener Tabelle `process_repository` wurde nach dem Hinweis
+des Menschen verworfen. Ein Commit erfolgte nicht.
+
+**Verworfen / Veto:** Punkt (1) ist **nicht** umgesetzt. Ein LLM-initiierter Tool-Call widerspricht
+SPEC C-2 („Keine LLM-Ausgabe löst selbsttätig einen Schreib-/Tool-Call aus") und T-1 („keine aus
+Inhalt ableitbaren Tool-Calls"). Das braucht einen Entscheid des Menschen bzw. ein ADR.
+
+**Zu prüfen durch Mensch:**
+
+- OFFEN: LLM-Tool-Call „Werteliste nachladen" gegen C-2/T-1. Soll C-2 auf schreibende Tool-Calls
+  eingeschränkt werden (ADR + SPEC-Änderung), mit Mitigationen wie nur lesend, Allowlist auf die
+  Properties des gewählten Dokumenttyps, `repositoryId`/Credentials serverseitig, Max-Anzahl Calls,
+  Audit je Call (C-4)?
+- OFFEN: Es existiert kein TTL-Cleanup-Job, der abgelaufene `document_blob`-Zeilen löscht (gilt
+  bereits für alle `expires_at`-Tabellen). Das ist eine vorbestehende Lücke.
+
+**Reflexion:** „Prozess-Tabelle" war mehrdeutig. Eine kurze Rückfrage mit zwei konkreten Optionen
+war günstiger als eine falsche Migration.
+
+---
+
+## 2026-11-05 — Lesender LLM-Tool-Call für Wertelisten (ADR-014) + TODO Cleanup-Job (Block 3)
+
+**Tool/Modell:** GitHub Copilot Chat (Agent-Modus), Branch `feat/coding-agent`.
+
+**Auftrag (Prompt-Zusammenfassung):** Entscheid des Menschen: Ein lesender LLM-Tool-Call soll möglich
+sein (Hinweis: der lesende Wertelisten-Call ist ein HTTP `POST`). Den fehlenden TTL-Cleanup-Job als
+TODO markieren.
+
+**Geänderte Dateien:**
+
+- Code: `extraction/domain/LlmTool.java` (neu), `extraction/port/LlmPort.java` (4-Argument-`generate`
+  mit Tools, 3-Argument-Variante als Default), `OpenAiCompatibleLlmAdapter` (`LlmTool` →
+  Spring-AI-`ToolCallback`), `extraction/application/ValueListLookupTool.java` (neu),
+  `ExtractAttributesService` (Tool angeboten, System-Prompt ergänzt),
+  `PgDocumentBlobAdapter` (TODO-Kommentar), `application.yml`
+  (`docextract.extraction.max-tool-calls: 10`)
+- Test: `ValueListLookupToolTest.java` (neu, 4 Tests)
+- Doku: `ARCHITECTURE.md` (ADR-014 neu; § 5.2 `LlmPort`/`LlmTool`, § 5.5 TODO, § 6.1 Tool-Loop im
+  Diagramm + Hinweis, § 8.2, ADR-003-Status, § 10.3, § 11 TODO), `SPEC.md` (C-2, T-1), `CONTEXT.md`
+  (C-2, T-1)
+
+**Übernommen (generiert):**
+
+- Das Tool `lookup_value_list` wird nur angeboten, wenn eine beschreibbare Eigenschaft eine
+  Werteliste hat. Guardrails sitzen im Code, nicht im Prompt:
+  - Allowlist auf die Wertelisten-Eigenschaften des gewählten Typs; Filter nur auf beschreibbare
+    Nicht-System-Eigenschaften.
+  - Repository, Objektdefinition und Credential setzt der Server.
+  - Höchstens N Calls je Extraktion.
+  - Audit je Call nur mit SHA-256 der Argumente (C-4).
+  - Fehler gehen als JSON-`error` an das LLM zurück, nicht als Exception.
+- Die bestehende serverseitige Prüfung der Vorschläge gegen die Werteliste (`resolveValueLists`)
+  bleibt als zweite Linie bestehen.
+- `POST` ≠ Write: Im ADR ist festgehalten, dass die Semantik zählt. `ValueListPort` hat keine
+  schreibende Methode.
+- Spring-AI-API per `javap` gegen die lokalen 2.0.0-Jars geprüft: `ToolCallback`, `ToolDefinition`,
+  `OpenAiChatOptions.Builder#toolCallbacks`. `OpenAiChatModel.Builder` erzeugt standardmässig einen
+  `DefaultToolCallingManager`.
+- `mvn -o clean verify` grün (67 Tests, inkl. ArchUnit).
+
+**Verworfen / Veto:** Kein MCP. Keine schreibenden Tools.
+
+**Zu prüfen durch Mensch:**
+
+- Nicht gegen ein echtes LLM getestet: Unterstützen die konfigurierte Runtime bzw. das Modell
+  Tool-Calls zusammen mit `response_format: json_schema`? Bitte einmal live mit dem aktuellen
+  Foundry/Ollama-Setup prüfen.
+- `promptTokenCount` im Audit stammt aus der letzten Antwort der Tool-Schleife. Ob Spring AI die
+  Usage über alle Runden aufsummiert, ist nicht verifiziert (NfA-7).
+- TODO: TTL-Cleanup-Job fehlt (ARCHITECTURE § 11, § 5.5, Kommentar in `PgDocumentBlobAdapter`).
+
+**Reflexion:** Die Guardrail-Änderung (C-2/T-1) kam erst nach dem expliziten Entscheid des Menschen
+und ist als ADR dokumentiert, nicht still im Code. Die Schutzmechanismen liegen im Tool-Code und sind
+dort testbar, statt sich auf Prompt-Anweisungen zu verlassen.
+
+---
+
+## 2026-11-05 — Bugfix: „no content returned" nach LLM-Tool-Call (Block 3)
+
+**Tool/Modell:** GitHub Copilot Chat (Agent-Modus), Branch `feat/coding-agent`.
+
+**Auftrag (Prompt-Zusammenfassung):** Live-Fehler beim ersten Lauf mit ADR-014:
+`LlmException: no content returned for model gpt-5.6-sol` in `suggestAttributes`.
+
+**Ursache:** Meine Annahme aus dem vorherigen Eintrag war falsch. Der `DefaultToolCallingManager`
+von `OpenAiChatModel` wird in Spring AI 2.0 nur zum Auflösen der Tool-Definitionen genutzt;
+`call()` führt Tool-Calls **nicht** mehr selbst aus. Per `javap` geprüft: `internalCall` ruft nur
+`resolveToolDefinitions`, nie `executeToolCalls`. Das Modell lieferte deshalb nur einen Tool-Call
+ohne Text zurück.
+
+**Geändert:** `OpenAiCompatibleLlmAdapter` führt die Tool-Schleife jetzt selbst aus. Solange
+`response.hasToolCalls()` gilt: `ToolCallingManager.executeToolCalls(prompt, response)`, dann erneuter
+Call mit der Konversations-History. Als Sicherheitsnetz gilt ein Limit von 20 Runden (T-4); das Tool
+selbst begrenzt weiterhin auf `max-tool-calls`. Die Prompt-Tokens werden jetzt über alle Runden
+summiert, damit ist der NfA-7-Prüfpunkt aus dem vorherigen Eintrag erledigt.
+`mvn -o clean verify` ist grün (67 Tests).
+
+**Zu prüfen durch Mensch:**
+
+- Erneuter Live-Lauf mit `gpt-5.6-sol`: Akzeptiert der Endpunkt `tools` zusammen mit
+  `response_format: json_schema`, und kommt nach den Tool-Runden JSON-Text zurück?
+- Es gibt keinen automatisierten Test für die Tool-Schleife im Adapter, weil der Adapter das
+  `OpenAiChatModel` intern baut. Mittelfristig per WireMock-Stub des Chat-Endpunkts abdecken?
+
+**Reflexion:** „Builder erzeugt einen ToolCallingManager" wurde vorschnell als „Tools werden
+ausgeführt" gelesen. Bytecode-Prüfung auf den tatsächlichen Aufruf (`executeToolCalls`) statt nur
+auf das Feld hätte den Fehler vor dem Live-Lauf gefunden.

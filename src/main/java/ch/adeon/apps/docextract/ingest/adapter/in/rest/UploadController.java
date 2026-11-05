@@ -40,7 +40,7 @@ public class UploadController {
   @PostMapping(consumes = "multipart/form-data")
   public ResponseEntity<IngestedDocument> upload(
       @RequestParam("file") MultipartFile file,
-      @RequestParam(value = "repositoryId", required = false) String repositoryId)
+      @RequestParam(value = "repositoryId", required = true) String repositoryId)
       throws IOException {
     IngestCommand command =
         IngestCommand.of(

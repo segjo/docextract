@@ -19,8 +19,8 @@ import ch.adeon.apps.docextract.ingest.domain.MediaType;
 import ch.adeon.apps.docextract.ingest.domain.ValidationResult;
 import ch.adeon.apps.docextract.ingest.port.DmsChunkUploadPort;
 import ch.adeon.apps.docextract.ingest.port.DocumentBlobPort;
-import ch.adeon.apps.docextract.process.application.ProcessEventPort;
 import ch.adeon.apps.docextract.process.application.ProcessDocumentPort;
+import ch.adeon.apps.docextract.process.application.ProcessEventPort;
 import ch.adeon.apps.docextract.process.application.ProcessRepositoryPort;
 import ch.adeon.apps.docextract.process.domain.ProcessEvent;
 import ch.adeon.apps.docextract.process.domain.ProcessStep;
@@ -148,24 +148,26 @@ public class IngestDocumentService implements IngestDocument {
     // Hashes the raw upload bytes (not a conversion/preview derivative) so retrieval can recognize
     // a byte-identical re-upload and skip re-embedding it (CHANGES.md duplicate-detection step).
     documentHashStagingPort.stage(processId, Sha256.hex(upload.content()));
-    // Stages the user's chosen repository (import mask) so every later step of this same process
-    // (retrieval's object-definition fallback, extraction's value-list lookups) targets it instead
-    // of the globally configured default.
-    if (command.repositoryId() != null && !command.repositoryId().isBlank()) {
-      processRepositoryPort.stage(processId, command.repositoryId());
-    }
 
     CompletableFuture<BlobRef> blobFuture =
         CompletableFuture.supplyAsync(
-            () ->
-                documentBlobPort.store(
-                    BlobKind.ORIGINAL,
-                    upload.mediaType(),
-                    upload.content(),
-                    processId,
-                    auth.tenantId(),
-                    auth.userId()),
-            executor);
+                () ->
+                    documentBlobPort.store(
+                        BlobKind.ORIGINAL,
+                        upload.mediaType(),
+                        upload.content(),
+                        processId,
+                        auth.tenantId(),
+                        auth.userId()),
+                executor)
+            .thenApply(blob -> {
+              // Persisted on the ORIGINAL blob row, so it must run after the insert but before
+              // any dependent step (retrieval objdef fallback, value lists, confirm).
+              if (command.repositoryId() != null && !command.repositoryId().isBlank()) {
+                processRepositoryPort.stage(processId, command.repositoryId());
+              }
+              return blob;
+            });
 
     CompletableFuture<DmsLocation> dmsFuture =
         CompletableFuture.supplyAsync(
@@ -175,18 +177,17 @@ public class IngestDocumentService implements IngestDocument {
             executor);
 
     CompletableFuture<Optional<UUID>> previewFuture =
-        blobFuture.thenCompose(
-            blob -> {
-              log.info("blob stored processId={} blobId={}", processId, blob.blobId());
-              processEventPort.publish(
-                  new ProcessEvent(
-                      processId,
-                      ProcessStep.BLOB_STORED,
-                      StepStatus.COMPLETED,
-                      blob.blobId().toString()));
-              return generatePreview.generate(
-                  processId, blob.blobId(), upload.mediaType(), auth.tenantId(), auth.userId());
-            });
+        blobFuture.thenCompose(blob -> {
+          log.info("blob stored processId={} blobId={}", processId, blob.blobId());
+          processEventPort.publish(
+              new ProcessEvent(
+                  processId,
+                  ProcessStep.BLOB_STORED,
+                  StepStatus.COMPLETED,
+                  blob.blobId().toString()));
+          return generatePreview.generate(
+              processId, blob.blobId(), upload.mediaType(), auth.tenantId(), auth.userId());
+        });
 
     // Content extraction normally runs off the ORIGINAL blob, independently of preview rendering
     // and the DMS upload, so a slow/failed conversion doesn't delay the 202 response
@@ -195,14 +196,12 @@ public class IngestDocumentService implements IngestDocument {
     // accepts PDF, per GeneratePreview's contract). Failures are already reported via the
     // TEXT_EXTRACTED/FAILED process event.
     blobFuture
-        .thenCompose(
-            blob ->
-                resolveContentSource(blob, upload.mediaType(), extractText::supports, previewFuture)
-                    .thenCombine(
-                        resolveContentSource(
-                            blob, upload.mediaType(), provideContent::supports, previewFuture),
-                        (textSource, contentSource) ->
-                            new ContentSources(textSource, contentSource)))
+        .thenCompose(blob ->
+            resolveContentSource(blob, upload.mediaType(), extractText::supports, previewFuture)
+                .thenCombine(
+                    resolveContentSource(
+                        blob, upload.mediaType(), provideContent::supports, previewFuture),
+                    (textSource, contentSource) -> new ContentSources(textSource, contentSource)))
         .thenAcceptAsync(
             sources -> {
               try {
@@ -299,13 +298,12 @@ public class IngestDocumentService implements IngestDocument {
     if (supports.test(mediaType)) {
       return CompletableFuture.completedFuture(new ContentSource(originalBlob.blobId(), mediaType));
     }
-    return previewFuture.thenApply(
-        preview ->
-            preview
-                .map(previewBlobId -> new ContentSource(previewBlobId, MediaType.PDF))
-                // preview rendering failed too: surface the original mismatch as a ContentException
-                // rather than silently mislabeling the still-unsupported bytes as PDF.
-                .orElseGet(() -> new ContentSource(originalBlob.blobId(), mediaType)));
+    return previewFuture.thenApply(preview ->
+        preview
+            .map(previewBlobId -> new ContentSource(previewBlobId, MediaType.PDF))
+            // preview rendering failed too: surface the original mismatch as a ContentException
+            // rather than silently mislabeling the still-unsupported bytes as PDF.
+            .orElseGet(() -> new ContentSource(originalBlob.blobId(), mediaType)));
   }
 
   private record ContentSource(UUID blobId, MediaType mediaType) {}

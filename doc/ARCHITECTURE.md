@@ -163,18 +163,51 @@ C4Container
 
 Der Kern hängt ausschliesslich von diesen Ports ab. Jeder Adapter muss die **Contract-Test-Suite** seines Ports bestehen (NfA-8, C-8).
 
-| Port                              | Vertrag (Mindestanforderung)                                                                                                 | Referenzadapter                             | Mögliche Alternativen                                                         |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ----------------------------------------------------------------------------- |
-| **PreviewPort**                   | Dokument → PDF-Vorschau; Limits & Timeout einhaltbar                                                                         | Gotenberg                                   | JODConverter/LibreOffice headless, Aspose, …                                  |
-| **TextExtractionPort** (nur FR-3) | Dokument → Klartext der ersten _N_ Wörter; leerer/zu kurzer Text wird gemeldet                                               | Apache PDFBox (in-process)                  | Apache Tika (Library/Server), Docling                                         |
-| **DocumentContentPort** (FR-4)    | Dokument → konfigurierte Repräsentation (`FULLTEXT`, `MARKDOWN`, `PAGE_IMAGES`) passend zu den Capabilities des LLM-Adapters | Volltext via PDFBox                         | Markdown via Docling, Seitenbilder via PDFBox-Rendering                       |
-| **LlmPort**                       | Prompt + JSON-Schema (+ Repräsentation) → Antwort; liefert Anbieter, Modell-ID, Token-Verbrauch; deklariert Capabilities     | OpenAI-kompatibler Adapter (lokale Runtime) | beliebige OpenAI-kompatible Runtime oder Anbieter, weitere Spring-AI-Provider |
-| **EmbeddingPort**                 | Text → Vektor + Embedding-Modell-ID + Dimension                                                                              | OpenAI-kompatibler Adapter (lokale Runtime) | wie LlmPort                                                                   |
-| **VectorSearchPort**              | Nur lesend: Ähnlichkeitssuche mit **Pre-Filter** (`tenant_id`, `status`, `embedding_model`, `extraction_source`)             | pgvector                                    | Qdrant, OpenSearch (sofern Pre-Filter garantiert)                             |
+| Port                              | Vertrag (Mindestanforderung)                                                                                                                                 | Referenzadapter                             | Mögliche Alternativen                                                         |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- | ----------------------------------------------------------------------------- |
+| **PreviewRenderPort**             | Dokument → PDF-Vorschau; Limits & Timeout einhaltbar                                                                                                         | Gotenberg                                   | JODConverter/LibreOffice headless, Aspose, …                                  |
+| **TextExtractionPort** (nur FR-3) | Dokument → Klartext der ersten _N_ Wörter; leerer/zu kurzer Text wird gemeldet                                                                               | Apache PDFBox (in-process)                  | Apache Tika (Library/Server), Docling                                         |
+| **DocumentContentPort** (FR-4)    | Dokument → konfigurierte Repräsentation (`FULLTEXT`, `MARKDOWN`, `PAGE_IMAGES`) passend zu den Capabilities des LLM-Adapters                                 | Volltext via PDFBox                         | Markdown via Docling, Seitenbilder via PDFBox-Rendering                       |
+| **LlmPort**                       | Prompt + JSON-Schema (+ Repräsentation, + optionale lesende Tools, ADR-014) → Antwort; liefert Anbieter, Modell-ID, Token-Verbrauch; deklariert Capabilities | OpenAI-kompatibler Adapter (lokale Runtime) | beliebige OpenAI-kompatible Runtime oder Anbieter, weitere Spring-AI-Provider |
+| **EmbeddingPort**                 | Text → Vektor + Embedding-Modell-ID + Dimension                                                                                                              | OpenAI-kompatibler Adapter (lokale Runtime) | wie LlmPort                                                                   |
+| **VectorSearchPort**              | Nur lesend: Ähnlichkeitssuche mit **Pre-Filter** (`tenant_id`, `status`, `embedding_model`, `extraction_source`)                                             | pgvector                                    | Qdrant, OpenSearch (sofern Pre-Filter garantiert)                             |
 
-**Weitere, interne Outbound-Ports** (nicht produktgebunden), bewusst schmal statt eines einzelnen breiten Ports (C-3 Least Privilege): `PendingEmbeddingPort` (retrieval: `PENDING` stagen), `CorpusPromotionPort` (validation: `PENDING → APPROVED` promoten — einzige Schreibberechtigung auf `status`), `PendingEmbeddingDeletePort` (validation/Cleanup: Ablehnung/TTL löschen), `DmsObjectDefinitionPort` (`GET .../objdef`), `DmsObjectMetadataPort` (`GET .../o2/{document_id}/`), `DmsWritePort`, `DmsChunkUploadPort`, `ValueListPort`, `DocumentBlobPort`, `ProcessStatePort`, `AuditLogPort`, `AuthContextPort`.
+**Weitere, interne Outbound-Ports** (nicht produktgebunden), bewusst schmal statt eines einzelnen breiten Ports (C-3 Least Privilege):
 
-**Neutrales Datenformat im Kern (Auszug):** `DocumentRef`, `ExtractedText`, `DocumentContent`, `EmbeddingVector(modelId, dim, values)`, `ExtractionRequest`, `ExtractionResponse`, `ExtractedAttribute(propertyId, value, values, confidence, sourceExcerpt)`, `ModelInfo(provider, modelId)`, `LlmCapabilities(structuredOutput: NATIVE|NONE, inputs: TEXT|IMAGES)`.
+| Port                         | Modul (Paket)                                 | Zweck                                                                                     |
+| ---------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `PendingEmbeddingPort`       | retrieval (`port`)                            | `PENDING` stagen; Duplikat-Lookup `APPROVED` per `document_hash`                          |
+| `DmsObjectDefinitionPort`    | retrieval (`port`)                            | `GET .../objdef` (lesend)                                                                 |
+| `DmsObjectMetadataPort`      | retrieval (`port`)                            | `GET .../o2/{document_id}/` (lesend)                                                      |
+| `ValueListPort`              | retrieval (`port`), von extraction mitgenutzt | Wertelisten JIT, gefiltert (`searchTerm`) und abhängig von anderen Eigenschaften (lesend) |
+| `CorpusPromotionPort`        | validation (`port`)                           | `PENDING → APPROVED` — einzige Schreibberechtigung auf `status`                           |
+| `PendingEmbeddingDeletePort` | validation (`port`)                           | Ablehnung/TTL: `PENDING` löschen                                                          |
+| `DmsWritePort`               | validation (`port`)                           | einziger DMS-Schreibpfad (nur nach Freigabe, C-2)                                         |
+| `DmsChunkUploadPort`         | ingest (`port`)                               | Original als Chunk ins DMS (write-only)                                                   |
+| `DmsRepositoryPort`          | ingest (`port`)                               | DMS-Repositories lesen (`GET /repo/repositories`)                                         |
+| `DocumentBlobPort`           | ingest (`port`)                               | transiente Roh-/Preview-Bytes (TTL, ADR-008)                                              |
+| `AuthContextPort`            | security (`application`)                      | Session → `tenant_id`, Benutzer                                                           |
+| `OutboundCredentialPort`     | security (`application`)                      | d.velop-Credential für ausgehende DMS-Aufrufe                                             |
+| `IdentityProviderPort`       | security (`application`)                      | Session-Cookie/Bearer-Token beim IdP validieren                                           |
+| `AppConfigPort`              | security (`application`)                      | System-Basis-URI                                                                          |
+| `AuditPort`                  | audit (`application`)                         | append-only Audit-Ereignis ohne Roh-PII (C-4)                                             |
+| `ProcessEventPort`           | process (`application`)                       | Fortschritt publizieren/abonnieren (`PROCESS_STEP`, LISTEN/NOTIFY, ADR-004)               |
+| `ProcessDocumentPort`        | process (`application`)                       | DMS-Location und Dateiname je Prozess                                                     |
+| `ProcessRepositoryPort`      | process (`application`)                       | Import-Repository je Prozess                                                              |
+| `CorpusMaintenancePort`      | retrieval (`application`)                     | Embeddings eines abgelösten Modells als `STALE` markieren (Re-Indexierung, ADR-012)       |
+
+**Interne Staging-/Übergabe-Ports** (prozessbezogene Zwischenstände zwischen Pipeline-Stufen, alle im `application`-Paket):
+
+| Port                         | Modul      | Zweck                                                                     |
+| ---------------------------- | ---------- | ------------------------------------------------------------------------- |
+| `TextStagingPort`            | content    | Text der ersten _N_ Wörter, nur in-memory (ADR-006)                       |
+| `ContentStagingPort`         | content    | Dokumentrepräsentation für FR-4, nur in-memory (ADR-006)                  |
+| `DocumentHashStagingPort`    | ingest     | SHA-256 der Upload-Bytes je Prozess                                       |
+| `RetrievalResultPort`        | retrieval  | Top-5-Treffer je Prozess                                                  |
+| `DocumentTypeCandidatesPort` | retrieval  | Dokumenttyp-Kandidaten inkl. objdef/Top-5-Metadaten je Prozess (für FR-4) |
+| `ExtractionResultPort`       | extraction | Attributvorschläge je Prozess                                             |
+
+**Neutrales Datenformat im Kern (Auszug):** `DocumentRef`, `ExtractedText`, `DocumentContent`, `EmbeddingVector(modelId, dim, values)`, `ExtractionRequest`, `ExtractionResponse`, `ExtractedAttribute(propertyId, value, values, confidence, sourceExcerpt)`, `ModelInfo(provider, modelId)`, `LlmTool(name, description, inputSchema, handler)` (ADR-014), `LlmCapabilities(structuredOutput: NATIVE|NONE, inputs: TEXT|IMAGES)`.
 
 ### 5.3 Adapterwahl per Konfiguration
 
@@ -211,17 +244,17 @@ docextract:
 
 ### 5.4 Fachmodule
 
-| Modul            | Verantwortung                                                                                            | Inbound-Port                      | Wichtigste Outbound-Ports                               |
-| ---------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------- | ------------------------------------------------------- |
-| **ingest**       | Upload, Limits, Ablage der Roh-Bytes, DMS-Chunk-Upload, Vorschau-Streaming (FR-1)                        | `IngestDocument`, `StreamPreview` | `DocumentBlobPort`, `PreviewPort`, `DmsChunkUploadPort` |
-| **content**      | Textextraktion der ersten _N_ Wörter (FR-2) und Dokumentrepräsentation für FR-4; nichts wird persistiert | `ExtractText`, `ProvideContent`   | `TextExtractionPort`, `DocumentContentPort`             |
-| **retrieval**    | Ein Embedding je Dokument, Staging als `PENDING`, Top-5-Suche mit Pre-Filter (FR-3)                      | `FindSimilar`                     | `EmbeddingPort`, `VectorStorePort`, `AuthContextPort`   |
-| **extraction**   | KI-Attributvorschläge mit objdef, Top-5-Metadaten, Wertelisten; Schema-Validierung, Retry (FR-4)         | `ExtractAttributes`               | `LlmPort`, `DmsReadPort`, `ValueListPort`               |
-| **validation**   | Freigabe, DMS-Rückschreiben, Promotion `PENDING → APPROVED`, separater Vorlagen-Consent (FR-5)           | `Confirm`, `Reject`               | `DmsWritePort`, `VectorStorePort`                       |
-| **agentgateway** | MCP-Tool, nutzt dieselben Application-Services (FR-6)                                                    | `McpTool`                         | wie UI-Pfad                                             |
-| **process**      | Async-Orchestrierung, SSE, Lease/Heartbeat, Recovery                                                     | `SubscribeProgress`               | `ProcessStatePort`                                      |
-| **audit**        | Append-only Protokoll, Token/Kosten (C-4, NfA-7)                                                         | —                                 | `AuditLogPort`                                          |
-| **security**     | Session → `tenant_id`, Consent-Gate                                                                      | `AuthContextPort`                 | —                                                       |
+| Modul            | Verantwortung                                                                                            | Inbound-Port                      | Wichtigste Outbound-Ports                                                                                                                           |
+| ---------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **ingest**       | Upload, Limits, Ablage der Roh-Bytes, DMS-Chunk-Upload, Vorschau-Streaming (FR-1)                        | `IngestDocument`, `StreamPreview` | `DocumentBlobPort`, `PreviewRenderPort`, `DmsChunkUploadPort`, `DmsRepositoryPort`                                                                  |
+| **content**      | Textextraktion der ersten _N_ Wörter (FR-2) und Dokumentrepräsentation für FR-4; nichts wird persistiert | `ExtractText`, `ProvideContent`   | `TextExtractionPort`, `DocumentContentPort`                                                                                                         |
+| **retrieval**    | Ein Embedding je Dokument, Staging als `PENDING`, Top-5-Suche mit Pre-Filter (FR-3)                      | `FindSimilar`                     | `EmbeddingPort`, `PendingEmbeddingPort`, `VectorSearchPort`, `DmsObjectDefinitionPort`, `DmsObjectMetadataPort`, `ValueListPort`, `AuthContextPort` |
+| **extraction**   | KI-Attributvorschläge mit objdef, Top-5-Metadaten, Wertelisten; Schema-Validierung, Retry (FR-4)         | `ExtractAttributes`               | `LlmPort`, `ValueListPort` (aus retrieval), `DocumentTypeCandidatesPort` (aus retrieval; objdef/Top-5-Metadaten)                                    |
+| **validation**   | Freigabe, DMS-Rückschreiben, Promotion `PENDING → APPROVED`, separater Vorlagen-Consent (FR-5)           | `Confirm`, `Reject`               | `DmsWritePort`, `CorpusPromotionPort`, `PendingEmbeddingDeletePort`                                                                                 |
+| **agentgateway** | MCP-Tool, nutzt dieselben Application-Services (FR-6)                                                    | `McpTool`                         | wie UI-Pfad                                                                                                                                         |
+| **process**      | Async-Orchestrierung, SSE, Lease/Heartbeat, Recovery                                                     | `SubscribeProgress`               | `ProcessEventPort`, `ProcessDocumentPort`, `ProcessRepositoryPort`                                                                                  |
+| **audit**        | Append-only Protokoll, Token/Kosten (C-4, NfA-7)                                                         | —                                 | `AuditPort`                                                                                                                                         |
+| **security**     | Session → `tenant_id`, Consent-Gate                                                                      | `AuthContextPort`                 | —                                                                                                                                                   |
 
 ### 5.5 Paketstruktur
 
@@ -230,7 +263,7 @@ ch.adeon.apps.docextract
 ├─ ingest
 │  ├─ domain        # DocumentUpload, Limits, BlobRef, DmsLocation, DmsRepository, ImportInfo
 │  ├─ application   # IngestDocumentService, PreviewStreamService, GetImportInfoService
-│  ├─ port          # PreviewPort, DocumentBlobPort, DmsChunkUploadPort, DmsRepositoryPort
+│  ├─ port          # PreviewRenderPort, DocumentBlobPort, DmsChunkUploadPort, DmsRepositoryPort
 │  └─ adapter
 │     ├─ in.rest    # UploadController (202 + processId), PreviewController (Range), ImportInfoController
 │     ├─ out.preview # GotenbergPreviewAdapter (Paketname folgt dem Port, nicht dem Produkt)
@@ -245,11 +278,11 @@ ch.adeon.apps.docextract
 │  ├─ domain        # SimilarityQuery, TenantFilter, EmbeddingSpec, DmsDocumentMetadata
 │  ├─ application   # FindSimilarService, StagePendingService, ReindexService
 │  ├─ port          # EmbeddingPort, VectorSearchPort, PendingEmbeddingPort, DmsObjectDefinitionPort, DmsObjectMetadataPort, ValueListPort
-│  └─ adapter.out   # openai-compatible | springai.* | pgvector | dms (DmsObjectDefinitionAdapter, DmsObjectMetadataAdapter)
+│  └─ adapter.out   # openai-compatible | springai.* | pgvector | dms (DmsObjectDefinitionAdapter, DmsObjectMetadataAdapter, DmsValueListWebhookAdapter)
 ├─ extraction
 │  ├─ domain        # AttributeSchema, ExtractionResult, Confidence, ModelInfo, ExtractedAttribute(sourceExcerpt)
 │  ├─ application   # ExtractAttributesService (Schema-Validierung, Retry)
-│  ├─ port          # LlmPort
+│  ├─ port          # LlmPort (ValueListPort wird aus retrieval.port mitgenutzt)
 │  └─ adapter.out   # openai-compatible | springai.*
 ├─ validation
 │  ├─ domain        # ConfirmationCommand, ConfirmationResult
@@ -257,10 +290,10 @@ ch.adeon.apps.docextract
 │  ├─ port          # DmsWritePort, CorpusPromotionPort, PendingEmbeddingDeletePort
 │  └─ adapter.out   # dms | postgres
 ├─ agentgateway     # adapter.in.mcp
-├─ process          # Orchestrator, SSE, PgNotify, StaleJobRecovery, ProcessRepositoryPort (Import-Repository je Prozess)
-├─ audit            # append-only, ohne Roh-PII
+├─ process          # Orchestrator, SSE, PgNotify, StaleJobRecovery; ProcessEventPort, ProcessDocumentPort, ProcessRepositoryPort (Import-Repository je Prozess)
+├─ audit            # AuditPort; append-only, ohne Roh-PII
 ├─ security         # AuthContext, TenantResolver, ConsentGuard
-└─ shared           # Fehler, Config, Observability, TtlCleanupJob
+└─ shared           # Fehler, Config, Observability, TtlCleanupJob (TODO: noch nicht implementiert, § 11)
 ```
 
 **Verantwortlichkeitsprinzip:** `domain`, `application` und `port` enthalten **keine Produkt- oder Framework-Typen**. Produktspezifischer Code liegt ausschliesslich in `adapter.*`. Security und Audit werden per DI/Aspekten eingezogen, damit REST und MCP dieselben Guardrails durchlaufen. Erzwungen per ArchUnit (§ 10.1).
@@ -282,8 +315,8 @@ sequenceDiagram
     participant BLB as Blobstore (Postgres, TTL)
     participant DMS as d.velop DMS-API
     participant CNT as content (TextExtractionPort / DocumentContentPort)
-    participant RET as retrieval (EmbeddingPort / VectorStorePort)
-    participant EXT as extraction (LlmPort)
+    participant RET as retrieval (EmbeddingPort / PendingEmbeddingPort / VectorSearchPort / DMS-Leseports)
+    participant EXT as extraction (LlmPort / ValueListPort)
     participant AUD as audit
 
     SB->>FE: Dokument hochladen
@@ -297,7 +330,7 @@ sequenceDiagram
     alt PDF
         API-->>FE: preview_ready (Stream aus ORIGINAL)
     else Nicht-PDF
-        API->>API: PreviewPort → PREVIEW-Blob
+        API->>API: PreviewRenderPort → PREVIEW-Blob
         API-->>FE: preview_ready
     end
     API->>CNT: ExtractText(erste N Wörter)
@@ -307,17 +340,30 @@ sequenceDiagram
     RET->>RET: EmbeddingPort → 1 Vektor
     RET->>RET: als PENDING speichern (TTL)
     RET->>RET: Suche: tenant_id ∧ APPROVED ∧ gleiches Modell/Quelle
+    RET->>DMS: Metadaten Top-5 (live, DmsObjectMetadataPort) + Wertelisten (JIT, ValueListPort)
+    opt keine Treffer
+        RET->>DMS: objdef (DmsObjectDefinitionPort)
+    end
+    RET->>RET: Dokumenttyp-Kandidaten stagen (DocumentTypeCandidatesPort)
     RET-->>API: Top-5 (document_id, repository_id)
     API-->>FE: retrieved
-    API->>EXT: ExtractAttributes(Content, Top-5)
-    EXT->>DMS: objdef + Metadaten Top-5 (live)
-    EXT->>EXT: Wertelisten (JIT)
+    API->>EXT: ExtractAttributes(processId)
+    EXT->>EXT: Content + Dokumenttyp-Kandidaten + Top-5 laden (Staging-Ports)
     EXT->>EXT: LlmPort (Schema-constrained, falls unterstützt)
+    loop LLM-Tool-Call lookup_value_list (Allowlist, max. N je Extraktion, ADR-014)
+        EXT->>DMS: Werteliste lesen (ValueListPort, HTTP POST, nur lesend)
+        EXT->>AUD: Tool-Call (nur Hash der Argumente)
+    end
+    opt vorgeschlagener Wert nicht in bekannter Werteliste (leer/gekappt oder abhängig)
+        EXT->>DMS: Werteliste nachladen (ValueListPort, searchTerm + bereits ermittelte Eigenschaften, lesend)
+    end
     EXT->>EXT: Server-seitige Schema-Validierung (+ Retry)
     EXT->>AUD: Anbieter, Modell-ID, local/external, HMAC, Token, Status
     API-->>FE: extracted → Validierungs-UI
     FE-->>SB: Vorschläge mit Konfidenz, Quellen, Modellinfo
 ```
+
+**Nachladen von Wertelisten (dynamisch/abhängig):** Das LLM kann während der Extraktion das lesende Tool `lookup_value_list` aufrufen; DocExtract führt es aus (ADR-014, C-3). Danach prüft die Application-Schicht (`ExtractAttributesService`) jeden Vorschlag zusätzlich serverseitig gegen die Werteliste. Bleibt ein Wert ohne Treffer, wird er als „unbekannt" zurückgegeben (E-5).
 
 ### 6.2 Freigabe und Korpus-Promotion (C-2, C-7)
 
@@ -408,7 +454,7 @@ flowchart TB
 
 - **AuthN/AuthZ:** d.velop-Session → `tenant_id` → Pre-Filter im Retrieval (NfA-4). Consent-Gate vor jeder irreversiblen Aktion (C-2).
 - **Least Privilege (C-3):** LLM- und Embedding-Adapter erhalten nur Eingabedaten und haben keinen Zugriff auf DB, Vektor-Store oder DMS. Nur der Validierungspfad setzt `APPROVED`. Das MCP-Tool hat minimale Scopes.
-- **Prompt Injection (T-1):** Der Dokumentinhalt wird im Prompt klar als _untrusted data_ abgegrenzt. Die Antwort wird immer serverseitig gegen das JSON-Schema validiert. Aus LLM-Ausgaben werden keine Tool-Calls abgeleitet.
+- **Prompt Injection (T-1):** Der Dokumentinhalt wird im Prompt klar als _untrusted data_ abgegrenzt. Die Antwort wird immer serverseitig gegen das JSON-Schema validiert. Aus LLM-Ausgaben werden keine schreibenden Tool-Calls abgeleitet; lesende nur per Allowlist (ADR-014).
 - **Datenminimierung (NfA-5):** Extrahierter Text und Dokumentrepräsentation leben nur im Job-Kontext. Persistiert werden ausschliesslich Embeddings (mit TTL bis zur Freigabe), Metadaten und Audit-Hashes. Roh-/Preview-Bytes liegen TTL-begrenzt im Blobstore. Die Löschkaskade umfasst Dokument, Blobs und Embeddings; Audit-Einträge bleiben ohne Roh-PII erhalten.
 
 ### 8.3 Observability & Audit
@@ -564,7 +610,7 @@ ADR-001 bis ADR-003 wurden **bewusst nicht an die KI delegiert** (Krit. 18). Arc
 
 ### ADR-003 — Human-in-the-Loop mit hartem Consent-Gate (auch MCP)
 
-- **Status:** akzeptiert
+- **Status:** akzeptiert (präzisiert durch ADR-014: gilt für schreibende Tool-Calls)
 - **Entscheidung:** Keine LLM-Ausgabe löst selbsttätig einen Write oder Tool-Call aus. DMS-Write, Promotion und Vorlagen-Aufnahme erfolgen nur nach expliziter Freigabe, in UI und MCP gleich.
 - **Konsequenz:** `DmsWritePort` ist der einzige Schreibpfad. Der initiale Chunk-Upload ohne Attribute gilt nicht als irreversibler Write.
 
@@ -623,6 +669,14 @@ ADR-001 bis ADR-003 wurden **bewusst nicht an die KI delegiert** (Krit. 18). Arc
 - **Begründung:** Kein SEO-Bedarf (iframe, Session-gebunden); vermeidet einen zweiten, backend-ähnlichen Server mit eigener Cookie-Weiterleitung, zusätzlicher Angriffsfläche und Betriebskomplexität (C-6, Docker Compose); passt zum reaktiven, formularlastigen Validierungs-UI, das ohnehin erst nach dem initialen Laden über Upload → SSE-Fortschritt → Validierung mit Daten gefüllt wird.
 - **Konsequenz:** Statisches Hosting der Angular-Build-Artefakte hinter dem Reverse Proxy (kein eigener Rendering-Container, keine zusätzliche Zeile im Compose-Setup, § 7). Performance-Ziel ist das **Initial-Bundle-Budget** (NfA-F3, FRONTEND-SPEC.md) statt serverseitiger Render-Metriken. Barrierefreiheit (NfA-F1) und XSS-Vermeidung (NfA-F2) bleiben rein clientseitige Prüfkriterien.
 
+### ADR-014 — Lesende LLM-Tool-Calls für Wertelisten
+
+- **Status:** akzeptiert (präzisiert C-2/T-1 und ADR-003)
+- **Kontext:** Wertelisten können dynamisch sein und von anderen Eigenschaften abhängen. Das LLM soll während der Extraktion passende Werte nachladen können. Ein MCP-Server existiert nicht.
+- **Entscheidung:** Der `LlmPort` nimmt optional neutrale `LlmTool`-Definitionen entgegen. Die Extraktion bietet genau ein Tool an: `lookup_value_list` über `ValueListPort`. Der Wertelisten-Webhook ist technisch ein HTTP `POST`, fachlich aber rein lesend; massgeblich ist die Semantik, nicht die HTTP-Methode. DocExtract führt das Tool aus, das LLM erhält weder Credentials noch direkten DMS-Zugriff (C-3).
+- **Guardrails:** Allowlist auf die beschreibbaren Eigenschaften mit Werteliste des gewählten Dokumenttyps; Filter nur auf beschreibbare Nicht-System-Eigenschaften; Repository, Objektdefinition und Credential serverseitig fix; maximale Anzahl Calls je Extraktion (`docextract.extraction.max-tool-calls`, Default 10); Audit je Call nur mit Hash der Argumente (C-4); Tool-Ergebnisse gelten als Daten, nicht als Instruktion. Die serverseitige Prüfung der Vorschläge gegen die Werteliste bleibt bestehen.
+- **Konsequenz:** Schreibende Tool-Calls bleiben ausgeschlossen (C-2). Jedes weitere Tool braucht eine eigene ADR-Ergänzung.
+
 ---
 
 ## 10. Test-, Sicherheits- und Betriebsstrategie
@@ -651,7 +705,7 @@ Je FR ein prüfbares Exit-Kriterium gemäss SPEC § 7 (M1–M3). Die KI-Funktion
 
 ### 10.3 Bedrohungsmodell (SPEC § 6)
 
-T-1 Prompt Injection → untrusted data + Schema-Validierung · T-2 Datenvergiftung → Quarantäne, Consent, Herkunft · T-3 Cross-Tenant → Pre-Filter · T-4 DoS → Limits/Timeouts je Adapter · T-5 Modellmanipulation → Digest/versionierte Modell-ID · T-6 MCP-Missbrauch → Consent + minimale Scopes.
+T-1 Prompt Injection → untrusted data + Schema-Validierung + lesende Tools nur per Allowlist (ADR-014) · T-2 Datenvergiftung → Quarantäne, Consent, Herkunft · T-3 Cross-Tenant → Pre-Filter · T-4 DoS → Limits/Timeouts je Adapter · T-5 Modellmanipulation → Digest/versionierte Modell-ID · T-6 MCP-Missbrauch → Consent + minimale Scopes.
 
 ---
 
@@ -664,7 +718,7 @@ T-1 Prompt Injection → untrusted data + Schema-Validierung · T-2 Datenvergift
 - **Externe Anbieter:** Ausfälle, Rate-Limits, Preisänderungen → Timeouts, definierter Fehlerzustand, Kosten je Anbieter ausweisen (NfA-7).
 - **Erosion der Modul- und Portgrenzen** → ArchUnit im CI-Gate.
 - **SSE hinter Proxy / NOTIFY-Limits** → Heartbeat, ungepuffertes Streaming, nur IDs im Payload.
-- **Verwaiste `PENDING`-Einträge und Blobs** → kurze TTL, gemeinsamer Cleanup-Job, Metriken.
+- **Verwaiste `PENDING`-Einträge und Blobs** → kurze TTL, gemeinsamer Cleanup-Job, Metriken. **TODO:** Der Cleanup-Job ist noch nicht implementiert; abgelaufene Zeilen (`expires_at`) werden bisher in keiner Tabelle gelöscht.
 - **Self-Learning-Loop (Ausbaustufe):** Vergiftungsrisiko → nur mit separatem Consent, Quarantäne und Rollback.
 
 ---

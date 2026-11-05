@@ -57,7 +57,8 @@ Diese Regeln haben **immer** Vorrang. Code, der dagegen verstößt, ist nicht ak
   lokale Betriebsgrenze **nie**. Egress ist per Netzwerk-Policy unterbunden und in CI per **Egress-Test** verifiziert.
   Nach außen fließen **ausschließlich** Metadaten-Lese/-Schreibzugriffe auf die DMS-API, IdP-Session-Validierung
   und JIT-Wertelisten-Abrufe. Original-/Preview-Bytes dürfen **nur** an die autorisierte DMS-API gehen.
-- **C-2 Kein automatischer Schreibzugriff:** Keine LLM-Ausgabe löst selbsttätig einen Schreib-/Tool-Call aus.
+- **C-2 Kein automatischer Schreibzugriff:** Keine LLM-Ausgabe löst selbsttätig einen schreibenden Tool-Call aus.
+  Lesende Tool-Calls (z. B. Wertelisten) nur per serverseitiger Allowlist (ADR-014).
   DMS-Write **nur nach expliziter menschlicher Freigabe** (Consent-Gate) — UI **und** MCP identisch.
 - **C-3 Least Privilege:** Der LLM-/Inferenz-Service hat **keinen** direkten Zugriff auf PostgreSQL/pgvector oder
   die DMS-API. Der Retrieval-Adapter darf Embeddings **nur als `PENDING` mit TTL** schreiben. Nur der
@@ -74,7 +75,8 @@ Diese Regeln haben **immer** Vorrang. Code, der dagegen verstößt, ist nicht ak
 ### 3.2 Bedrohungen → Pflicht-Mitigationen
 
 - **T-1 Prompt Injection:** Dokument strikt als _untrusted data_, **nie** als Instruktion/System-Prompt;
-  **schema-constrained Decoding** + Output-Validierung gegen JSON-Schema; keine aus Inhalt ableitbaren Tool-Calls.
+  **schema-constrained Decoding** + Output-Validierung gegen JSON-Schema; keine aus Inhalt ableitbaren schreibenden
+  Tool-Calls; lesende nur per Allowlist (ADR-014).
 - **T-2 Datenvergiftung (Self-Learning):** Embeddings vor Freigabe nur als **nicht-retrievalfähige `PENDING`**
   mit TTL; Aktivierung erst nach Consent; Herkunfts-/Quarantäne-Markierung; Rollback unterstützen.
 - **T-3 Cross-Tenant-/Cross-ACL-Leak:** **Pre-Filter** (Tenant- und ACL-Prädikate) _in_ die Vektor-Query,
