@@ -3,6 +3,7 @@ package ch.adeon.apps.docextract.extraction.adapter.out.postgres;
 import ch.adeon.apps.docextract.extraction.application.ExtractionResultPort;
 import ch.adeon.apps.docextract.extraction.domain.ExtractedAttribute;
 import ch.adeon.apps.docextract.extraction.domain.ExtractionResult;
+import ch.adeon.apps.docextract.shared.cleanup.TtlPurger;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -22,7 +23,7 @@ import tools.jackson.databind.type.CollectionType;
  * row per process, replaced wholesale on each store.
  */
 @Component
-public class PgExtractionResultAdapter implements ExtractionResultPort {
+public class PgExtractionResultAdapter implements ExtractionResultPort, TtlPurger {
 
   private final JdbcTemplate jdbcTemplate;
   private final ObjectMapper objectMapper;
@@ -70,5 +71,10 @@ public class PgExtractionResultAdapter implements ExtractionResultPort {
     List<ExtractedAttribute> attributes =
         objectMapper.readValue(rs.getString("attributes"), listType);
     return new ExtractionResult(rs.getString("document_type_id"), attributes);
+  }
+
+  @Override
+  public int purgeExpired() {
+    return jdbcTemplate.update("DELETE FROM extraction_result WHERE expires_at < now()");
   }
 }

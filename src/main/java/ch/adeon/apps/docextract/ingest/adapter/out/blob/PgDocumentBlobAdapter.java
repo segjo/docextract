@@ -21,8 +21,9 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Transient blobstore for Roh-/Preview-Bytes (ADR-008): header data lives in {@code document_blob},
  * content in 1-MiB {@code document_blob_page} segments so reads stay range-capable without
- * materializing the whole object. TTL-Cleanup and the actual ACL pre-filter enforcement (NfA-4)
- * live in the application layer; this adapter only persists what it is given.
+ * materializing the whole object. TTL cleanup runs in validation's {@code TtlCleanupService} (skips
+ * FINALIZED_INDEX_PENDING); the ACL pre-filter enforcement (NfA-4) lives in the application layer.
+ * This adapter only persists what it is given.
  */
 @Component
 public class PgDocumentBlobAdapter implements DocumentBlobPort {
@@ -55,7 +56,6 @@ public class PgDocumentBlobAdapter implements DocumentBlobPort {
     }
 
     UUID blobId = UUID.randomUUID();
-    // TODO: no cleanup job deletes expired rows yet (ARCHITECTURE § 11).
     Timestamp expiresAt = Timestamp.from(Instant.now().plus(blobTtl));
     jdbcTemplate.update(
         """
@@ -144,5 +144,22 @@ public class PgDocumentBlobAdapter implements DocumentBlobPort {
   @Override
   public void delete(UUID blobId) {
     jdbcTemplate.update("DELETE FROM document_blob WHERE blob_id = ?", blobId);
+  }
+
+  @Override
+  public void deleteByProcess(String processId) {
+    jdbcTemplate.update("DELETE FROM document_blob WHERE process_id = ?", processId);
+  }
+
+  @Override
+  public List<String> findExpiredProcessIds() {
+    return jdbcTemplate.queryForList(
+        "SELECT DISTINCT process_id FROM document_blob WHERE expires_at < now()", String.class);
+  }
+
+  @Override
+  public void deleteExpired(String processId) {
+    jdbcTemplate.update(
+        "DELETE FROM document_blob WHERE process_id = ? AND expires_at < now()", processId);
   }
 }

@@ -4,6 +4,7 @@ import ch.adeon.apps.docextract.ingest.domain.BlobKind;
 import ch.adeon.apps.docextract.ingest.domain.BlobRef;
 import ch.adeon.apps.docextract.ingest.domain.MediaType;
 import ch.adeon.apps.docextract.ingest.domain.PageRange;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -27,4 +28,12 @@ public interface DocumentBlobPort {
   byte[] readRange(UUID blobId, PageRange range);
 
   void delete(UUID blobId);
+
+  /** Deletes all blobs (ORIGINAL, PREVIEW) of a process, e.g. after finalization (§ 6.2). */
+  void deleteByProcess(String processId);
+
+  /** Process ids with at least one blob past {@code expires_at}. */
+  List<String> findExpiredProcessIds();
+
+  void deleteExpired(String processId);
 }

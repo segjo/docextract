@@ -2,6 +2,7 @@ package ch.adeon.apps.docextract.retrieval.adapter.out.postgres;
 
 import ch.adeon.apps.docextract.retrieval.application.RetrievalResultPort;
 import ch.adeon.apps.docextract.retrieval.domain.RetrievalResult;
+import ch.adeon.apps.docextract.shared.cleanup.TtlPurger;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
@@ -19,7 +20,7 @@ import org.springframework.stereotype.Component;
  * TTL cleanup rather than deleted eagerly on read.
  */
 @Component
-public class PgRetrievalResultAdapter implements RetrievalResultPort {
+public class PgRetrievalResultAdapter implements RetrievalResultPort, TtlPurger {
 
   private final JdbcTemplate jdbcTemplate;
   private final Duration ttl;
@@ -71,5 +72,10 @@ public class PgRetrievalResultAdapter implements RetrievalResultPort {
                     rs.getString("properties")),
             processId);
     return results.isEmpty() ? Optional.empty() : Optional.of(results);
+  }
+
+  @Override
+  public int purgeExpired() {
+    return jdbcTemplate.update("DELETE FROM retrieval_result WHERE expires_at < now()");
   }
 }

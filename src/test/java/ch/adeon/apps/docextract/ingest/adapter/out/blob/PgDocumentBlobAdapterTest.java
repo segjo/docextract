@@ -138,13 +138,38 @@ class PgDocumentBlobAdapterTest {
   }
 
   @Test
+  void ttl_cleanup_finds_and_deletes_only_expired_blobs() {
+    PgDocumentBlobAdapter expiredStore =
+        new PgDocumentBlobAdapter(jdbcTemplate, Duration.ofMinutes(-1));
+    expiredStore.store(BlobKind.ORIGINAL, MediaType.PDF, new byte[] {1}, "p-old", "t", "u");
+    adapter.store(BlobKind.ORIGINAL, MediaType.PDF, new byte[] {1}, "p-new", "t", "u");
+
+    assertThat(adapter.findExpiredProcessIds()).containsExactly("p-old");
+    adapter.deleteExpired("p-old");
+    adapter.deleteExpired("p-new");
+
+    assertThat(jdbcTemplate.queryForList("SELECT process_id FROM document_blob", String.class))
+        .containsExactly("p-new");
+  }
+
+  @Test
+  void delete_by_process_removes_original_and_preview() {
+    adapter.store(BlobKind.ORIGINAL, MediaType.PDF, new byte[] {1}, "p1", "t", "u");
+    adapter.store(BlobKind.PREVIEW, MediaType.PDF, new byte[] {1}, "p1", "t", "u");
+    adapter.store(BlobKind.ORIGINAL, MediaType.PDF, new byte[] {1}, "p2", "t", "u");
+
+    adapter.deleteByProcess("p1");
+
+    assertThat(jdbcTemplate.queryForList("SELECT process_id FROM document_blob", String.class))
+        .containsExactly("p2");
+  }
+
+  @Test
   void store_rejects_content_above_the_50_mb_hard_cap() {
     byte[] tooLarge = new byte[(int) PgDocumentBlobAdapter.MAX_BLOB_SIZE_BYTES + 1];
 
-    assertThatThrownBy(
-            () ->
-                adapter.store(
-                    BlobKind.ORIGINAL, MediaType.PDF, tooLarge, "p", "tenant-a", "user-1"))
+    assertThatThrownBy(() ->
+            adapter.store(BlobKind.ORIGINAL, MediaType.PDF, tooLarge, "p", "tenant-a", "user-1"))
         .isInstanceOf(IllegalArgumentException.class);
   }
 }

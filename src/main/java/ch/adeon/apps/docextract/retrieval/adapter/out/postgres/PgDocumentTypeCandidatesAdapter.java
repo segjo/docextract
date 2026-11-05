@@ -2,6 +2,7 @@ package ch.adeon.apps.docextract.retrieval.adapter.out.postgres;
 
 import ch.adeon.apps.docextract.retrieval.application.DocumentTypeCandidatesPort;
 import ch.adeon.apps.docextract.retrieval.domain.DmsDocumentMetadata;
+import ch.adeon.apps.docextract.shared.cleanup.TtlPurger;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
@@ -19,7 +20,7 @@ import tools.jackson.databind.type.CollectionType;
  * (ADR-004). One row per process, replaced wholesale on each store.
  */
 @Component
-public class PgDocumentTypeCandidatesAdapter implements DocumentTypeCandidatesPort {
+public class PgDocumentTypeCandidatesAdapter implements DocumentTypeCandidatesPort, TtlPurger {
 
   private final JdbcTemplate jdbcTemplate;
   private final ObjectMapper objectMapper;
@@ -68,5 +69,10 @@ public class PgDocumentTypeCandidatesAdapter implements DocumentTypeCandidatesPo
             .getTypeFactory()
             .constructCollectionType(List.class, DmsDocumentMetadata.class);
     return Optional.of(objectMapper.readValue(rows.get(0), listType));
+  }
+
+  @Override
+  public int purgeExpired() {
+    return jdbcTemplate.update("DELETE FROM document_type_candidate WHERE expires_at < now()");
   }
 }

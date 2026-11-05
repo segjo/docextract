@@ -174,38 +174,40 @@ Der Kern hängt ausschliesslich von diesen Ports ab. Jeder Adapter muss die **Co
 
 **Weitere, interne Outbound-Ports** (nicht produktgebunden), bewusst schmal statt eines einzelnen breiten Ports (C-3 Least Privilege):
 
-| Port                         | Modul (Paket)                                 | Zweck                                                                                     |
-| ---------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `PendingEmbeddingPort`       | retrieval (`port`)                            | `PENDING` stagen; Duplikat-Lookup `APPROVED` per `document_hash`                          |
-| `DmsObjectDefinitionPort`    | retrieval (`port`)                            | `GET .../objdef` (lesend)                                                                 |
-| `DmsObjectMetadataPort`      | retrieval (`port`)                            | `GET .../o2/{document_id}/` (lesend)                                                      |
-| `ValueListPort`              | retrieval (`port`), von extraction mitgenutzt | Wertelisten JIT, gefiltert (`searchTerm`) und abhängig von anderen Eigenschaften (lesend) |
-| `CorpusPromotionPort`        | validation (`port`)                           | `PENDING → APPROVED` — einzige Schreibberechtigung auf `status`                           |
-| `PendingEmbeddingDeletePort` | validation (`port`)                           | Ablehnung/TTL: `PENDING` löschen                                                          |
-| `DmsWritePort`               | validation (`port`)                           | einziger DMS-Schreibpfad (nur nach Freigabe, C-2)                                         |
-| `DmsChunkUploadPort`         | ingest (`port`)                               | Original als Chunk ins DMS (write-only)                                                   |
-| `DmsRepositoryPort`          | ingest (`port`)                               | DMS-Repositories lesen (`GET /repo/repositories`)                                         |
-| `DocumentBlobPort`           | ingest (`port`)                               | transiente Roh-/Preview-Bytes (TTL, ADR-008)                                              |
-| `AuthContextPort`            | security (`application`)                      | Session → `tenant_id`, Benutzer                                                           |
-| `OutboundCredentialPort`     | security (`application`)                      | d.velop-Credential für ausgehende DMS-Aufrufe                                             |
-| `IdentityProviderPort`       | security (`application`)                      | Session-Cookie/Bearer-Token beim IdP validieren                                           |
-| `AppConfigPort`              | security (`application`)                      | System-Basis-URI                                                                          |
-| `AuditPort`                  | audit (`application`)                         | append-only Audit-Ereignis ohne Roh-PII (C-4)                                             |
-| `ProcessEventPort`           | process (`application`)                       | Fortschritt publizieren/abonnieren (`PROCESS_STEP`, LISTEN/NOTIFY, ADR-004)               |
-| `ProcessDocumentPort`        | process (`application`)                       | DMS-Location und Dateiname je Prozess                                                     |
-| `ProcessRepositoryPort`      | process (`application`)                       | Import-Repository je Prozess                                                              |
-| `CorpusMaintenancePort`      | retrieval (`application`)                     | Embeddings eines abgelösten Modells als `STALE` markieren (Re-Indexierung, ADR-012)       |
+| Port                         | Modul (Paket)                                 | Zweck                                                                                          |
+| ---------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `PendingEmbeddingPort`       | retrieval (`port`)                            | `PENDING` stagen; Duplikat-Lookup `APPROVED` per `document_hash`                               |
+| `DmsObjectDefinitionPort`    | retrieval (`port`)                            | `GET .../objdef` (lesend)                                                                      |
+| `DmsObjectMetadataPort`      | retrieval (`port`)                            | `GET .../o2/{document_id}/` (lesend)                                                           |
+| `ValueListPort`              | retrieval (`port`), von extraction mitgenutzt | Wertelisten JIT, gefiltert (`searchTerm`) und abhängig von anderen Eigenschaften (lesend)      |
+| `CorpusPromotionPort`        | validation (`port`)                           | `PENDING → APPROVED` — einzige Schreibberechtigung auf `status`                                |
+| `PendingEmbeddingDeletePort` | validation (`port`)                           | Ablehnung/TTL: `PENDING` löschen; TTL-Löschung überspringt `FINALIZED_INDEX_PENDING` (ADR-015) |
+| `PendingEmbeddingCheckPort`  | validation (`port`)                           | Vorprüfung vor dem DMS-Write: Tenant und Ablauf des `PENDING`-Embeddings (§ 6.2, ADR-015)      |
+| `DmsWritePort`               | validation (`port`)                           | einziger DMS-Schreibpfad (nur nach Freigabe, C-2)                                              |
+| `DmsChunkUploadPort`         | ingest (`port`)                               | Original als Chunk ins DMS (write-only)                                                        |
+| `DmsRepositoryPort`          | ingest (`port`)                               | DMS-Repositories lesen (`GET /repo/repositories`)                                              |
+| `DocumentBlobPort`           | ingest (`port`)                               | transiente Roh-/Preview-Bytes (TTL, ADR-008); Löschen je Prozess nach Freigabe/Ablehnung       |
+| `AuthContextPort`            | security (`application`)                      | Session → `tenant_id`, Benutzer                                                                |
+| `OutboundCredentialPort`     | security (`application`)                      | d.velop-Credential für ausgehende DMS-Aufrufe                                                  |
+| `IdentityProviderPort`       | security (`application`)                      | Session-Cookie/Bearer-Token beim IdP validieren                                                |
+| `AppConfigPort`              | security (`application`)                      | System-Basis-URI                                                                               |
+| `AuditPort`                  | audit (`application`)                         | append-only Audit-Ereignis ohne Roh-PII (C-4)                                                  |
+| `ProcessEventPort`           | process (`application`)                       | Fortschritt publizieren/abonnieren (`PROCESS_STEP`, LISTEN/NOTIFY, ADR-004)                    |
+| `ProcessDocumentPort`        | process (`application`)                       | DMS-Location und Dateiname je Prozess                                                          |
+| `ProcessRepositoryPort`      | process (`application`)                       | Import-Repository je Prozess                                                                   |
+| `CorpusMaintenancePort`      | retrieval (`application`)                     | Embeddings eines abgelösten Modells als `STALE` markieren (Re-Indexierung, ADR-012)            |
 
 **Interne Staging-/Übergabe-Ports** (prozessbezogene Zwischenstände zwischen Pipeline-Stufen, alle im `application`-Paket):
 
-| Port                         | Modul      | Zweck                                                                     |
-| ---------------------------- | ---------- | ------------------------------------------------------------------------- |
-| `TextStagingPort`            | content    | Text der ersten _N_ Wörter, nur in-memory (ADR-006)                       |
-| `ContentStagingPort`         | content    | Dokumentrepräsentation für FR-4, nur in-memory (ADR-006)                  |
-| `DocumentHashStagingPort`    | ingest     | SHA-256 der Upload-Bytes je Prozess                                       |
-| `RetrievalResultPort`        | retrieval  | Top-5-Treffer je Prozess                                                  |
-| `DocumentTypeCandidatesPort` | retrieval  | Dokumenttyp-Kandidaten inkl. objdef/Top-5-Metadaten je Prozess (für FR-4) |
-| `ExtractionResultPort`       | extraction | Attributvorschläge je Prozess                                             |
+| Port                         | Modul      | Zweck                                                                               |
+| ---------------------------- | ---------- | ----------------------------------------------------------------------------------- |
+| `TextStagingPort`            | content    | Text der ersten _N_ Wörter, nur in-memory (ADR-006)                                 |
+| `ContentStagingPort`         | content    | Dokumentrepräsentation für FR-4, nur in-memory (ADR-006)                            |
+| `DocumentHashStagingPort`    | ingest     | SHA-256 der Upload-Bytes je Prozess                                                 |
+| `RetrievalResultPort`        | retrieval  | Top-5-Treffer je Prozess                                                            |
+| `DocumentTypeCandidatesPort` | retrieval  | Dokumenttyp-Kandidaten inkl. objdef/Top-5-Metadaten je Prozess (für FR-4)           |
+| `ExtractionResultPort`       | extraction | Attributvorschläge je Prozess                                                       |
+| `FinalizationStatePort`      | validation | Saga-Zustand (`FINALIZED_INDEX_PENDING`/`COMPLETED`) + DMS-IDs je Prozess (ADR-015) |
 
 **Neutrales Datenformat im Kern (Auszug):** `DocumentRef`, `ExtractedText`, `DocumentContent`, `EmbeddingVector(modelId, dim, values)`, `ExtractionRequest`, `ExtractionResponse`, `ExtractedAttribute(propertyId, value, values, confidence, sourceExcerpt)`, `ModelInfo(provider, modelId)`, `LlmTool(name, description, inputSchema, handler)` (ADR-014), `LlmCapabilities(structuredOutput: NATIVE|NONE, inputs: TEXT|IMAGES)`.
 
@@ -244,17 +246,17 @@ docextract:
 
 ### 5.4 Fachmodule
 
-| Modul            | Verantwortung                                                                                            | Inbound-Port                      | Wichtigste Outbound-Ports                                                                                                                           |
-| ---------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **ingest**       | Upload, Limits, Ablage der Roh-Bytes, DMS-Chunk-Upload, Vorschau-Streaming (FR-1)                        | `IngestDocument`, `StreamPreview` | `DocumentBlobPort`, `PreviewRenderPort`, `DmsChunkUploadPort`, `DmsRepositoryPort`                                                                  |
-| **content**      | Textextraktion der ersten _N_ Wörter (FR-2) und Dokumentrepräsentation für FR-4; nichts wird persistiert | `ExtractText`, `ProvideContent`   | `TextExtractionPort`, `DocumentContentPort`                                                                                                         |
-| **retrieval**    | Ein Embedding je Dokument, Staging als `PENDING`, Top-5-Suche mit Pre-Filter (FR-3)                      | `FindSimilar`                     | `EmbeddingPort`, `PendingEmbeddingPort`, `VectorSearchPort`, `DmsObjectDefinitionPort`, `DmsObjectMetadataPort`, `ValueListPort`, `AuthContextPort` |
-| **extraction**   | KI-Attributvorschläge mit objdef, Top-5-Metadaten, Wertelisten; Schema-Validierung, Retry (FR-4)         | `ExtractAttributes`               | `LlmPort`, `ValueListPort` (aus retrieval), `DocumentTypeCandidatesPort` (aus retrieval; objdef/Top-5-Metadaten)                                    |
-| **validation**   | Freigabe, DMS-Rückschreiben, Promotion `PENDING → APPROVED`, separater Vorlagen-Consent (FR-5)           | `Confirm`, `Reject`               | `DmsWritePort`, `CorpusPromotionPort`, `PendingEmbeddingDeletePort`                                                                                 |
-| **agentgateway** | MCP-Tool, nutzt dieselben Application-Services (FR-6)                                                    | `McpTool`                         | wie UI-Pfad                                                                                                                                         |
-| **process**      | Async-Orchestrierung, SSE, Lease/Heartbeat, Recovery                                                     | `SubscribeProgress`               | `ProcessEventPort`, `ProcessDocumentPort`, `ProcessRepositoryPort`                                                                                  |
-| **audit**        | Append-only Protokoll, Token/Kosten (C-4, NfA-7)                                                         | —                                 | `AuditPort`                                                                                                                                         |
-| **security**     | Session → `tenant_id`, Consent-Gate                                                                      | `AuthContextPort`                 | —                                                                                                                                                   |
+| Modul            | Verantwortung                                                                                            | Inbound-Port                                                           | Wichtigste Outbound-Ports                                                                                                                                  |
+| ---------------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **ingest**       | Upload, Limits, Ablage der Roh-Bytes, DMS-Chunk-Upload, Vorschau-Streaming (FR-1)                        | `IngestDocument`, `StreamPreview`                                      | `DocumentBlobPort`, `PreviewRenderPort`, `DmsChunkUploadPort`, `DmsRepositoryPort`                                                                         |
+| **content**      | Textextraktion der ersten _N_ Wörter (FR-2) und Dokumentrepräsentation für FR-4; nichts wird persistiert | `ExtractText`, `ProvideContent`                                        | `TextExtractionPort`, `DocumentContentPort`                                                                                                                |
+| **retrieval**    | Ein Embedding je Dokument, Staging als `PENDING`, Top-5-Suche mit Pre-Filter (FR-3)                      | `FindSimilar`                                                          | `EmbeddingPort`, `PendingEmbeddingPort`, `VectorSearchPort`, `DmsObjectDefinitionPort`, `DmsObjectMetadataPort`, `ValueListPort`, `AuthContextPort`        |
+| **extraction**   | KI-Attributvorschläge mit objdef, Top-5-Metadaten, Wertelisten; Schema-Validierung, Retry (FR-4)         | `ExtractAttributes`                                                    | `LlmPort`, `ValueListPort` (aus retrieval), `DocumentTypeCandidatesPort` (aus retrieval; objdef/Top-5-Metadaten)                                           |
+| **validation**   | Freigabe, DMS-Rückschreiben, Promotion `PENDING → APPROVED`, separater Vorlagen-Consent (FR-5)           | `Confirm`, `Reject`, `RetryCorpusPromotion`, `TtlPurger` (TTL-Cleanup) | `DmsWritePort`, `CorpusPromotionPort`, `PendingEmbeddingDeletePort`, `PendingEmbeddingCheckPort`, `FinalizationStatePort`, `DocumentBlobPort` (aus ingest) |
+| **agentgateway** | MCP-Tool, nutzt dieselben Application-Services (FR-6)                                                    | `McpTool`                                                              | wie UI-Pfad                                                                                                                                                |
+| **process**      | Async-Orchestrierung, SSE, Lease/Heartbeat, Recovery                                                     | `SubscribeProgress`                                                    | `ProcessEventPort`, `ProcessDocumentPort`, `ProcessRepositoryPort`                                                                                         |
+| **audit**        | Append-only Protokoll, Token/Kosten (C-4, NfA-7)                                                         | —                                                                      | `AuditPort`                                                                                                                                                |
+| **security**     | Session → `tenant_id`, Consent-Gate                                                                      | `AuthContextPort`                                                      | —                                                                                                                                                          |
 
 ### 5.5 Paketstruktur
 
@@ -285,15 +287,15 @@ ch.adeon.apps.docextract
 │  ├─ port          # LlmPort (ValueListPort wird aus retrieval.port mitgenutzt)
 │  └─ adapter.out   # openai-compatible | springai.*
 ├─ validation
-│  ├─ domain        # ConfirmationCommand, ConfirmationResult
-│  ├─ application   # ConfirmAndWriteBackService (Consent-Gate, Saga), RejectService
-│  ├─ port          # DmsWritePort, CorpusPromotionPort, PendingEmbeddingDeletePort
-│  └─ adapter.out   # dms | postgres
+│  ├─ domain        # ConfirmationCommand,  ConfirmationResult, Finalization, FinalizationStatus, PendingEmbeddingCheck
+│  ├─ application   # ConfirmAndWriteBackService (Consent-Gate, Saga, Promotion-Retry), RejectSuggestionService, TtlCleanupService (Embeddings + Blobs), FinalizationStatePort
+│  ├─ port          # DmsWritePort, CorpusPromotionPort, PendingEmbeddingDeletePort, PendingEmbeddingCheckPort
+│  └─ adapter       # in.rest, in.scheduler (FinalizationRecoveryScheduler), out.dms, out.postgres
 ├─ agentgateway     # adapter.in.mcp
 ├─ process          # Orchestrator, SSE, PgNotify, StaleJobRecovery; ProcessEventPort, ProcessDocumentPort, ProcessRepositoryPort (Import-Repository je Prozess)
 ├─ audit            # AuditPort; append-only, ohne Roh-PII
 ├─ security         # AuthContext, TenantResolver, ConsentGuard
-└─ shared           # Fehler, Config, Observability, TtlCleanupJob (TODO: noch nicht implementiert, § 11)
+└─ shared           # Fehler, Config, Observability, cleanup (TtlCleanupJob + TtlPurger: jedes Modul löscht nur eigene abgelaufene Zeilen)
 ```
 
 **Verantwortlichkeitsprinzip:** `domain`, `application` und `port` enthalten **keine Produkt- oder Framework-Typen**. Produktspezifischer Code liegt ausschliesslich in `adapter.*`. Security und Audit werden per DI/Aspekten eingezogen, damit REST und MCP dieselben Guardrails durchlaufen. Erzwungen per ArchUnit (§ 10.1).
@@ -388,8 +390,8 @@ sequenceDiagram
     VAL->>AUD: Consent-, Write- und Promotion-Ereignis
 ```
 
-**Konsistenz (Saga):** Zuerst DMS-Finalisierung, dann Promotion. Schlägt die Promotion fehl, bleibt der Prozess in `FINALIZED_INDEX_PENDING`; ein idempotenter Retry promotet erneut. Der TTL-Cleanup überspringt diesen Zustand.
-**Ablehnung/Abbruch/TTL-Ablauf:** `PENDING`-Embedding und Blobs werden gelöscht.
+**Konsistenz (Saga):** Zuerst DMS-Finalisierung, dann Promotion. Schlägt die Promotion fehl, bleibt der Prozess in `FINALIZED_INDEX_PENDING`; ein idempotenter Retry promotet erneut. Der TTL-Cleanup überspringt diesen Zustand. Entscheid, Preis und Störfälle: ADR-015.
+**Ablehnung/Abbruch/TTL-Ablauf:** `PENDING`-Embedding und Blobs werden gelöscht. Nach dem DMS-Write ist keine Ablehnung mehr möglich (`409`).
 **Vorlage:** Nur mit separatem, explizitem Consent (FR-5), herkunftsmarkiert.
 
 ### 6.3 Agent-Pfad (MCP)
@@ -677,6 +679,51 @@ ADR-001 bis ADR-003 wurden **bewusst nicht an die KI delegiert** (Krit. 18). Arc
 - **Guardrails:** Allowlist auf die beschreibbaren Eigenschaften mit Werteliste des gewählten Dokumenttyps; Filter nur auf beschreibbare Nicht-System-Eigenschaften; Repository, Objektdefinition und Credential serverseitig fix; maximale Anzahl Calls je Extraktion (`docextract.extraction.max-tool-calls`, Default 10); Audit je Call nur mit Hash der Argumente (C-4); Tool-Ergebnisse gelten als Daten, nicht als Instruktion. Die serverseitige Prüfung der Vorschläge gegen die Werteliste bleibt bestehen.
 - **Konsequenz:** Schreibende Tool-Calls bleiben ausgeschlossen (C-2). Jedes weitere Tool braucht eine eigene ADR-Ergänzung.
 
+### ADR-015 — Freigabe-Saga: validation → DMS und validation → Retrieval-Korpus synchron orchestriert
+
+> Block-3-TRANSFER-Entscheid. Im Auftrag als „ADR-014" bezeichnet; die Nummer war bereits vergeben (lesende LLM-Tool-Calls).
+
+- **Status:** akzeptiert
+- **Kontext:** Nach der Freigabe (§ 6.2) muss `validation` zwei Dinge tun: die Attribute über den `DmsWritePort` ins DMS schreiben (externes System, HTTP) und das `PENDING`-Embedding über den `CorpusPromotionPort` auf `APPROVED` setzen (Tabelle `embedding`, fachlich im Besitz von `retrieval`). Beide Schritte liegen nicht in einer gemeinsamen ACID-Transaktion (CONTEXT § 6). Nur der Validierungspfad darf `APPROVED` setzen (C-3), und erst nach menschlicher Freigabe (C-2). Der DMS-Write ist **nicht idempotent**: ein zweiter Write auf dieselbe Location wird vom DMS mit `400` abgewiesen.
+- **Entscheidung:** Synchron, in-process, über Ports, orchestriert vom `ConfirmAndWriteBackService` im Confirm-Request: 0. Vorprüfung: Prozess existiert und gehört dem `tenant_id` der Session (`ProcessDocumentPort`), das `PENDING`-Embedding (falls vorhanden) gehört demselben Tenant und ist nicht abgelaufen (`PendingEmbeddingCheckPort`). Sonst `404` bzw. `410`, ohne DMS-Write. Fehlt das Embedding, weil das Retrieval übersprungen wurde (§ 6.5), bleibt die Freigabe möglich.
+  1. Marker `DMS_WRITE_STARTED` speichern, dann `DmsWritePort.writeAttributes` (Finalisierung). Bei sauberer Ablehnung (`4xx`) wird der Marker verworfen (`422`); bei Server-/Netzfehler bleibt er stehen (`502`, Ausgang unbekannt),
+  2. `FinalizationStatePort.save(FINALIZED_INDEX_PENDING, tenant_id, repository_id, dms_document_id)` (Tabelle `process_finalization`, V14),
+  3. `CorpusPromotionPort.promote` (idempotentes `UPDATE … WHERE status = 'PENDING'`),
+  4. Zustand `COMPLETED`,
+  5. Blobs löschen (`DocumentBlobPort.deleteByProcess`); die Bytes liegen jetzt im DMS, der Retry braucht nur die IDs.
+
+  Die Antwort enthält `indexStatus` (`COMPLETED` oder `FINALIZED_INDEX_PENDING`). Ein Retry führt nur die Schritte 3–5 aus: bei erneutem Confirm desselben Prozesses (Wiedereintritt, nur gleicher Tenant) oder durch den `FinalizationRecoveryScheduler` (alle `PT5M`, `docextract.validation.recovery-interval`). Ein Reject nach Schritt 1 wird mit `409` abgewiesen. Der gemeinsame TTL-Cleanup (`shared.cleanup.TtlCleanupJob`, ebenfalls `PT5M`) löscht abgelaufene `PENDING`-Embeddings und Blobs über den `TtlCleanupService` und überspringt dabei `FINALIZED_INDEX_PENDING`. `process_finalization` hat keine TTL; Zeilen werden nur auf Löschantrag je `tenant_id` entfernt (`FinalizationStatePort.deleteByTenant`). Kein Event, kein Broker.
+
+- **Preis:**
+  - Zwischenzustand `FINALIZED_INDEX_PENDING`: Das Dokument ist im DMS final, fehlt aber bis zum erfolgreichen Retry im Retrieval-Korpus (keine Referenz für Folgedokumente).
+  - Zusätzliche Zustandstabelle, Recovery-Job und ein Cleanup, der den Saga-Zustand kennen muss (Prüfung im Service **und** als SQL-Guard gegen die Race zwischen Lookup und Delete beim Embedding).
+  - Kopplung über die gemeinsame DB: `validation` schreibt per Port in die `retrieval`-Tabelle `embedding` und löscht über den `ingest`-Port Blobs; die Modultrennung ist nur logisch (ADR-001). Eine Transaktion mit dem DMS gibt es nicht.
+  - Confirm-Latenz = DMS-Write + Promotion (synchron).
+  - Retry ohne Obergrenze und ohne Backoff (Empfehlung siehe § 11); ein Promote ohne `PENDING`-Zeile ist nicht von „nichts zu tun" unterscheidbar.
+  - `process_finalization` wächst ohne TTL (nur IDs, keine PII).
+- **Störfall:**
+  - _DMS-Finalisierung ok, Promotion schlägt fehl_ (z. B. DB-Verbindung kurz weg): `FINALIZED_INDEX_PENDING` ist bereits vor der Promotion gespeichert und bleibt stehen; Audit `validation.promotion-failed`; Confirm antwortet mit `200`, `writtenBack = true` und `indexStatus = FINALIZED_INDEX_PENDING`, weil das DMS final ist. Es folgt **kein** zweiter DMS-Write. Der nächste Recovery-Lauf (beliebige Instanz) promotet ohne Neuberechnung. Bis dahin bleibt das Embedding `PENDING`, also unsichtbar für das Retrieval; der TTL-Cleanup lässt es auch nach Ablauf von `expires_at` stehen.
+  - _Instanzausfall nach Schritt 2:_ Der Client sieht einen Verbindungsabbruch. Eine andere Instanz findet den Zustand per Recovery-Job und promotet; ein erneuter Confirm liefert die gespeicherten DMS-IDs und den aktuellen `indexStatus`, schreibt aber nicht ins DMS.
+  - _Instanzausfall zwischen DMS-Antwort und Schritt 2_ (kurzes Fenster, ebenso ein DB-Fehler genau bei Schritt 2 oder ein DMS-Timeout): Es bleibt der Marker `DMS_WRITE_STARTED`. Ein erneuter Confirm versucht den DMS-Write erneut. Weist das DMS ihn mit `400` ab, entsteht **kein** Duplikat, und der Client erhält `409` „Dokument möglicherweise bereits im DMS gespeichert" statt „ungültige Attribute". Gelingt der Write, läuft die Saga normal weiter. Das `PENDING`-Embedding und die Blobs laufen im Fall `409` per TTL ab; das Dokument liegt im DMS, fehlt aber im Retrieval-Korpus. Dieses Restrisiko wird akzeptiert.
+- **Prüfung:**
+  - `ConfirmAndWriteBackServiceTest`
+    - Reihenfolge DMS → Zustand → Promotion → Blobs: `writes_dms_before_promotion_and_completes_the_saga`
+    - Promotion-Fehler → `FINALIZED_INDEX_PENDING`, kein zweiter DMS-Write: `promotion_failure_leaves_finalized_index_pending_without_second_dms_write`
+    - Retry nur Promotion: `repeated_confirm_in_finalized_index_pending_only_promotes`, `background_retry_only_promotes_and_never_writes_dms`, `background_retry_keeps_finalized_index_pending_when_promotion_fails_again`, `repeated_confirm_after_completion_neither_writes_nor_promotes`
+    - Vorprüfung: `confirm_of_another_tenant_s_process_never_writes_dms`, `pending_embedding_of_another_tenant_blocks_the_dms_write`, `expired_pending_embedding_blocks_the_dms_write`, `confirm_without_pending_embedding_still_writes_dms`, `repeated_confirm_by_another_tenant_is_not_found`
+    - Marker/Restfenster: `dms_rejection_after_unknown_outcome_is_reported_as_possibly_finalized`, `earlier_unknown_outcome_with_successful_retry_completes_the_saga`, `dms_failure_with_unknown_outcome_keeps_the_marker`, `must_reject_and_not_promote_when_dms_rejects_attributes`
+  - `RejectSuggestionServiceTest` — `refuses_reject_in_finalized_index_pending`, `reject_of_another_tenant_s_process_is_not_found`, `deletes_pending_embedding_and_blobs`
+  - `TtlCleanupServiceTest` — `skips_embeddings_of_processes_in_finalized_index_pending`, `skips_blobs_of_processes_in_finalized_index_pending`
+  - `PgPendingEmbeddingDeleteAdapterTest` — `delete_expired_never_removes_embedding_of_finalized_index_pending_process` (SQL-Guard), `finalization_state_is_deleted_only_for_the_requested_tenant`, `pending_check_reports_owner_tenant_and_expiry` (Testcontainers)
+  - `PgDocumentBlobAdapterTest` — `ttl_cleanup_finds_and_deletes_only_expired_blobs`, `delete_by_process_removes_original_and_preview`
+  - `PgVectorSearchAdapterTest.finds_only_approved_embeddings_for_the_caller_s_tenant` — `PENDING` erscheint nie im Retrieval
+  - `SchedulingWiringTest` — beide Jobs registriert, `PT5M` wird geparst
+  - `HexagonalArchitectureTest` — keine Framework-Typen in `domain`/`port`, keine Adapter-Zugriffe über Modulgrenzen
+- **Alternativen:**
+  - _Choreografie (Event über `PROCESS_STEP`/`NOTIFY`, retrieval promotet selbst):_ verworfen. `NOTIFY` ist flüchtig; fällt der Empfänger aus, geht das Ereignis verloren, und eine Zustellgarantie bräuchte Outbox und Konsumenten-Offset, also mehr Mechanik als der eine Zustand hier. `PROCESS_STEP` ist ein PII-freies Fortschritts-Log für SSE (ADR-004), kein Befehlskanal. Ein Listener in `retrieval`, der `APPROVED` setzt, würde zudem C-3 aufweichen.
+  - _Orchestrierung (`ConfirmAndWriteBackService`):_ gewählt. Ein Service kennt die Reihenfolge, der Zustand ist explizit gespeichert, und das Verhalten ist mit gemockten Ports testbar. Das passt zu ADR-001 (in-process, kein Netz-Hop) und zu ADR-004 (Postgres als einzige gemeinsame Basis).
+- **Konsequenz:** Synchron genügt hier: Ein Mensch wartet auf genau eine Bestätigung, es gibt keinen Fan-out und keine weiteren Konsumenten (Block 3, Artefakt 5). `FINALIZED_INDEX_PENDING` ist ein persistierter Zustand, den jeder TTL-Purger für prozessbezogene Quarantänedaten respektieren muss. Bei einem späteren Modul-Split (ADR-001) wird die Promotion zu einem Remote-Call; dann braucht es Outbox und idempotenten Empfänger statt der gemeinsamen DB.
+
 ---
 
 ## 10. Test-, Sicherheits- und Betriebsstrategie
@@ -718,7 +765,8 @@ T-1 Prompt Injection → untrusted data + Schema-Validierung + lesende Tools nur
 - **Externe Anbieter:** Ausfälle, Rate-Limits, Preisänderungen → Timeouts, definierter Fehlerzustand, Kosten je Anbieter ausweisen (NfA-7).
 - **Erosion der Modul- und Portgrenzen** → ArchUnit im CI-Gate.
 - **SSE hinter Proxy / NOTIFY-Limits** → Heartbeat, ungepuffertes Streaming, nur IDs im Payload.
-- **Verwaiste `PENDING`-Einträge und Blobs** → kurze TTL, gemeinsamer Cleanup-Job, Metriken. **TODO:** Der Cleanup-Job ist noch nicht implementiert; abgelaufene Zeilen (`expires_at`) werden bisher in keiner Tabelle gelöscht.
+- **Verwaiste `PENDING`-Einträge und Blobs** → kurze TTL, gemeinsamer Cleanup-Job (`TtlCleanupJob`, alle `PT5M`, deckt `embedding`, `document_blob`, `retrieval_result`, `document_type_candidate`, `extraction_result` ab), Metriken. Offene Grenze: Bleibt ein Prozess dauerhaft in `FINALIZED_INDEX_PENDING`, bleiben auch dessen Embedding und ggf. Blobs bestehen. **Empfehlung (nicht umgesetzt):** Obergrenze 24 h ab erstem Fehlversuch (≈ 288 Versuche bei `PT5M`), Alarm/Metrik ab 1 h; danach Status `INDEX_FAILED` mit Audit, Schutz aufheben, damit der TTL-Cleanup Embedding und Blobs löscht (C-7 „endgültiger Fehler"). Das Dokument bleibt im DMS.
+- **TODO: Löschantrag je Mandant (NfA-5)** fehlt. `FinalizationStatePort.deleteByTenant` existiert, wird aber noch nirgends aufgerufen; `process_finalization` hat bewusst keine TTL.
 - **Self-Learning-Loop (Ausbaustufe):** Vergiftungsrisiko → nur mit separatem Consent, Quarantäne und Rollback.
 
 ---

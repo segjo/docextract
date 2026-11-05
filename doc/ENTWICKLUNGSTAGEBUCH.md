@@ -738,3 +738,224 @@ summiert, damit ist der NfA-7-Prüfpunkt aus dem vorherigen Eintrag erledigt.
 **Reflexion:** „Builder erzeugt einen ToolCallingManager" wurde vorschnell als „Tools werden
 ausgeführt" gelesen. Bytecode-Prüfung auf den tatsächlichen Aufruf (`executeToolCalls`) statt nur
 auf das Feld hätte den Fehler vor dem Live-Lauf gefunden.
+
+---
+
+## 2026-11-05 — TRANSFER-Entscheid Freigabe-Saga (ADR-015) + `FINALIZED_INDEX_PENDING` (Block 3)
+
+**Tool/Modell:** GitHub Copilot Chat (Agent-Modus), Branch `feat/coding-agent`.
+
+**Auftrag (Prompt-Zusammenfassung):** Block-3-Prompt P1: neues ADR (Status, Kontext, Entscheidung,
+Preis, Störfall, Prüfung, Alternativen, Konsequenz) für die Naht validation → retrieval
+(`CorpusPromotionPort`) bzw. validation → DMS (`DmsWritePort`). Danach im Code prüfen, ob
+`ConfirmAndWriteBackService` die Reihenfolge DMS-Write → Promotion einhält und bei Promotion-Fehler
+`FINALIZED_INDEX_PENDING` setzt, sonst implementieren; Tests a–d; Testnamen im ADR eintragen.
+
+**Befund vorher:** Die Reihenfolge stimmte, aber `FINALIZED_INDEX_PENDING` existierte nur in der
+Doku. Ein Promotion-Fehler warf einfach eine Exception (500), ein erneuter Confirm hätte den
+DMS-Write wiederholt. Retry und TTL-Cleanup gab es nicht.
+
+**Geänderte Dateien:**
+
+- neu: `V14__process_finalization.sql`, `validation/domain/Finalization.java`,
+  `validation/domain/FinalizationStatus.java`, `validation/application/FinalizationStatePort.java`,
+  `validation/application/RetryCorpusPromotion.java`,
+  `validation/application/CleanupExpiredPendingEmbeddings.java`,
+  `validation/application/CleanupExpiredPendingEmbeddingsService.java`,
+  `validation/adapter/out/postgres/PgFinalizationStateAdapter.java`,
+  `validation/adapter/in/scheduler/FinalizationRecoveryScheduler.java`
+- geändert: `ConfirmAndWriteBackService` (Zustand vor der Promotion speichern, Promotion-Fehler
+  abfangen, Wiedereintritt, `retryPendingPromotions`), `PendingEmbeddingDeletePort` +
+  `PgPendingEmbeddingDeleteAdapter` (`findExpiredProcessIds`, `deleteExpired` mit SQL-Guard),
+  `application.yml` (`docextract.validation.recovery-interval: PT5M`)
+- Tests: `ConfirmAndWriteBackServiceTest` (1 → 7 Tests), neu
+  `CleanupExpiredPendingEmbeddingsServiceTest` (1), `PgPendingEmbeddingDeleteAdapterTest`
+  (3, Testcontainers)
+- Doku: `ARCHITECTURE.md` (ADR-015 neu; § 5.2, § 5.4, § 5.5, § 6.2, § 11 ergänzt)
+
+**Übernommen (generiert):**
+
+- ADR-015 mit den geforderten Abschnitten. Die Testklassen und Testmethoden stehen unter
+  „Prüfung".
+- Saga: DMS-Write → `FINALIZED_INDEX_PENDING` speichern → Promotion → `COMPLETED`. Der Zustand
+  wird **vor** der Promotion gespeichert, damit auch ein Instanzausfall danach nur noch zur
+  Promotion führt.
+- Retry auf zwei Wegen: erneuter Confirm (Wiedereintritt) und ein Recovery-Job. Beide rufen den
+  `DmsWritePort` nicht auf.
+- TTL-Cleanup für `PENDING`-Embeddings: überspringt `FINALIZED_INDEX_PENDING` im Service (Test c) und
+  zusätzlich im `DELETE` per `NOT EXISTS` (Race zwischen Lookup und Delete).
+- Test d bestand bereits (`PgVectorSearchAdapterTest.finds_only_approved_embeddings_for_the_caller_s_tenant`)
+  und ist im ADR referenziert, nicht dupliziert.
+- `mvn -o clean verify` grün, inkl. `HexagonalArchitectureTest`.
+
+**Korrigiert:** Die ADR-Nummer. Der Prompt verlangt „ADR-014", diese Nummer ist aber schon durch
+„Lesende LLM-Tool-Calls" vergeben und in SPEC/CONTEXT referenziert. Nummern sollen nicht verschoben
+werden, daher ADR-015.
+
+**Verworfen / Veto:** Kein Event/Listener in `retrieval` (Choreografie, siehe ADR-015). Keine
+Änderung am REST-Vertrag von `/validation/confirm`.
+
+**Zu prüfen durch Mensch:**
+
+- OFFEN: ADR-Nummer. Der Prompt (und `Block-3-Prompts.md`) nennt ADR-014, vergeben wurde ADR-015.
+  Soll `Block-3-Prompts.md`/die Abgabe auf ADR-015 verweisen?
+- OFFEN: Der TRANSFER-Entscheid muss laut `Block-3-Prompts.md` der eigene sein. Status steht auf
+  „vorgeschlagen", bitte Inhalt bestätigen.
+- OFFEN: Ist der DMS-Write (`DmsWriteAdapter`) idempotent? Fällt die Instanz zwischen DMS-Antwort
+  und dem Speichern von `FINALIZED_INDEX_PENDING` aus, wiederholt ein erneuter Confirm den Write.
+  Braucht es einen Zustand vor dem Write?
+- OFFEN: Antwort von `/validation/confirm` bei Promotion-Fehler. Aktuell `200` mit
+  `writtenBack = true` (DMS ist final); der Index-Status ist für Client/UI nicht sichtbar. Soll er
+  im Vertrag erscheinen?
+- OFFEN: Retry-Intervall (`recovery-interval: PT5M` ist ein Platzhalter), Obergrenze und Backoff
+  für Promotion-Retries; ab wann gilt ein Prozess als „endgültiger Fehler" (SPEC C-7)?
+- OFFEN: Aufbewahrung der Zeilen in `process_finalization` (nur IDs, keine TTL). Gehört sie in die
+  Löschkaskade (NfA-5)?
+- OFFEN: `RejectSuggestion` prüft den Saga-Zustand nicht. Ein Reject nach erfolgreichem DMS-Write
+  würde das `PENDING`-Embedding löschen. Soll Reject in `FINALIZED_INDEX_PENDING` abgewiesen werden?
+- OFFEN: § 6.2 „PENDING prüfen (vorhanden, gültig, gleicher Tenant)" vor dem DMS-Write und „Blobs
+  löschen" nach der Promotion sind weiterhin nicht implementiert.
+- OFFEN: § 5.5 sieht den `TtlCleanupJob` in `shared` vor. Der Embedding-Cleanup liegt jetzt in
+  `validation`, weil er den Saga-Zustand braucht. Blob- und Ergebnis-Tabellen fehlen weiterhin (§ 11).
+- Kein Boot-Smoke-Test gelaufen (`@EnableScheduling`/`@Scheduled` mit `PT5M`); es gibt kein
+  `@SpringBootTest` im Repo.
+
+**Reflexion:** Die Doku beschrieb einen Zustand, den der Code nicht kannte. Erst das Schreiben des
+Störfalls im ADR hat gezeigt, dass der Zustand **vor** der Promotion gespeichert werden muss und
+dass ein Restfenster vor diesem Speichern bleibt. Das ADR nennt dieses Fenster deshalb offen.
+
+---
+
+## 2026-11-05 — ADR-015: OFFEN-Punkte entschieden und umgesetzt (Block 3)
+
+**Tool/Modell:** GitHub Copilot Chat (Agent-Modus), Branch `feat/coding-agent`.
+
+**Auftrag (Prompt-Zusammenfassung):** Antworten des Menschen auf die 10 Prüfpunkte des vorherigen
+Eintrags: (1) ADR-015 übernehmen, (2) Inhalt bestätigt, (3) DMS-Write nicht idempotent, ein
+zweiter Write liefert `400`, (4) Index-Status in den Vertrag, (5) `PT5M` ok, (6) `process_finalization`
+ohne Ablauf, Löschung nur auf Antrag je `tenant_id`, (7) Reject in `FINALIZED_INDEX_PENDING`
+abweisen, (8) „PENDING prüfen" und „Blobs löschen" aus § 6.2 implementieren, (9) TTL-Cleanup für die
+übrigen Tabellen nach sauberster Lösung implementieren, (10) wenn einfach: Test für die
+Scheduler-Verdrahtung.
+
+**Geänderte Dateien:**
+
+- neu: `shared/cleanup/TtlPurger.java`, `shared/cleanup/TtlCleanupJob.java`,
+  `shared/config/SchedulingConfig.java`, `validation/application/TtlCleanupService.java`,
+  `validation/application/{ProcessNotFoundException,ProcessExpiredException,AlreadyFinalizedException}.java`,
+  `validation/domain/PendingEmbeddingCheck.java`, `validation/port/PendingEmbeddingCheckPort.java`,
+  `validation/adapter/out/postgres/PgPendingEmbeddingCheckAdapter.java`
+- gelöscht (aus dem vorherigen Eintrag, ersetzt): `CleanupExpiredPendingEmbeddings(.java|Service.java|ServiceTest.java)`
+- geändert: `ConfirmAndWriteBackService` (Vorprüfung Tenant/Ablauf, Blobs löschen, `indexStatus`;
+  ungenutzten `AppConfigPort`-Parameter entfernt), `RejectSuggestionService` (Tenant-Prüfung, `409`
+  nach DMS-Write, Blobs löschen), `FinalizationRecoveryScheduler` (nur noch Retry),
+  `Finalization`/`ConfirmationResult` (+`tenantId`/`indexStatus`), `FinalizationStatePort` +
+  `PgFinalizationStateAdapter` (+`deleteByTenant`), `V14__process_finalization.sql` (+`tenant_id`,
+  in place, weil noch nicht committet), `ProcessDocumentPort.StoredDocument` +
+  `PgProcessDocumentAdapter` (+`tenantId`), `DocumentBlobPort` + `PgDocumentBlobAdapter`
+  (`deleteByProcess`, `findExpiredProcessIds`, `deleteExpired`), `PgRetrievalResultAdapter`,
+  `PgDocumentTypeCandidatesAdapter`, `PgExtractionResultAdapter` (je `TtlPurger`),
+  `GlobalExceptionHandler` (`404`/`410`/`409`), `application.yml` (`docextract.cleanup.interval: PT5M`)
+- Tests: `ConfirmAndWriteBackServiceTest` (7 → 12), neu `RejectSuggestionServiceTest` (3),
+  `TtlCleanupServiceTest` (2), `SchedulingWiringTest` (2); erweitert
+  `PgPendingEmbeddingDeleteAdapterTest` (3 → 5), `PgDocumentBlobAdapterTest` (6 → 8)
+- Frontend: `validation.model.ts` (`indexStatus`), `mock-data.ts`, `process-page.spec.ts`
+- Doku: `ARCHITECTURE.md` (ADR-015 Status/Entscheidung/Preis/Störfall/Prüfung, § 5.2, § 5.4, § 5.5,
+  § 6.2, § 11), `Block-3-Prompts.md` (ADR-014 → ADR-015 für den TRANSFER-Entscheid),
+  `doc/api/docextract-api-docs.json` (`ConfirmationResult`, Fehlerantworten confirm/reject)
+
+**Übernommen (generiert):**
+
+- TTL-Cleanup: `shared.cleanup.TtlCleanupJob` ruft alle `TtlPurger`-Beans auf; jedes Modul löscht
+  nur eigene Tabellen. Das deckt die Platzierung „shared: TtlCleanupJob" aus § 5.5 ab, ohne dass
+  `shared` Fachmodule kennt. Einfache Ergebnistabellen löschen direkt per SQL im Adapter;
+  Embeddings und Blobs laufen über den `TtlCleanupService` in `validation`, weil sie
+  `FINALIZED_INDEX_PENDING` überspringen müssen (ADR-008: „derselbe TTL-Cleanup wie für
+  Embeddings").
+- Blobs werden nach Promotion-Versuch gelöscht, unabhängig vom Ergebnis: Die Bytes liegen im DMS,
+  der Retry braucht nur die IDs. So bleiben Roh-Bytes nicht bis zum erfolgreichen Retry liegen.
+- Vorprüfung: Tenant über die ORIGINAL-Blob-Zeile (immer vorhanden) und zusätzlich über das
+  `PENDING`-Embedding; fremder Tenant und unbekannter Prozess liefern beide `404` (NfA-4).
+- `mvn -o clean verify` grün (inkl. `HexagonalArchitectureTest`), Frontend `ng test` 54/54 grün.
+
+**Korrigiert / eigene Entscheide (bitte gegenlesen):**
+
+- Fehlt das `PENDING`-Embedding (Retrieval übersprungen, § 6.5), bleibt die Freigabe erlaubt. § 6.2
+  sagt „vorhanden"; ein hartes Verbot würde Scans ohne Textlayer blockieren.
+- Reject wird nicht nur in `FINALIZED_INDEX_PENDING`, sondern auch in `COMPLETED` mit `409`
+  abgewiesen (nach dem DMS-Write gibt es nichts mehr abzulehnen). Reject löscht jetzt auch die
+  Blobs (§ 6.2 „Ablehnung … Blobs werden gelöscht") und prüft den Tenant.
+- Abgelaufenes `PENDING` beim Confirm → `410 Gone`.
+
+**Verworfen / Veto:** Kein Zustand vor dem DMS-Write: Da das DMS einen zweiten Write mit `400`
+abweist, entsteht kein Duplikat; das Restrisiko (Dokument fehlt im Korpus) ist im ADR als
+akzeptiert festgehalten. Keine UI-Anzeige für `FINALIZED_INDEX_PENDING` (nur Vertrag).
+
+**Zu prüfen durch Mensch:**
+
+- OFFEN: Es gibt noch keinen Löschantrag-Flow (NfA-5). `FinalizationStatePort.deleteByTenant`
+  existiert, wird aber noch nirgends aufgerufen.
+- OFFEN: Retry ohne Obergrenze/Backoff; ein dauerhaft scheiternder Promote hält Embedding (und bei
+  Crash vor dem Blob-Löschen auch Blobs) unbegrenzt fest. Wann gilt ein Prozess als „endgültiger
+  Fehler" (C-7)?
+- OFFEN: Im Restfenster (Crash zwischen DMS-Antwort und Zustand) meldet ein erneuter Confirm `422`
+  „Invalid attributes", obwohl das Dokument im DMS liegt. Soll der `400` dieses Falls erkannt und
+  anders gemeldet werden?
+- `V14` wurde in place geändert. Falls lokal bereits angewendet: Datenbank neu aufsetzen oder
+  `flyway repair`.
+- Soll das UI bei `indexStatus = FINALIZED_INDEX_PENDING` einen Hinweis zeigen?
+
+**Reflexion:** Die offenen Punkte als konkrete Ja/Nein-Fragen zu stellen hat sich gelohnt: Zehn
+kurze Antworten genügten für eine eindeutige Umsetzung. Die Info „zweiter Write liefert 400" hat
+eine geplante Zusatzmechanik (Zustand vor dem Write) überflüssig gemacht.
+
+---
+
+## 2026-11-05 — ADR-015: Restfenster anders melden, TODO Löschantrag, Empfehlung Retry-Grenze (Block 3)
+
+**Tool/Modell:** GitHub Copilot Chat (Agent-Modus), Branch `feat/coding-agent`.
+
+**Auftrag (Prompt-Zusammenfassung):** (1) Fehlenden Löschantrag-Flow als TODO markieren,
+(2) Empfehlung für eine Retry-Obergrenze, (3) den `400` im Restfenster anders melden als
+„ungültige Attribute", (4) keine UI-Anzeige für `FINALIZED_INDEX_PENDING` nötig.
+
+**Geänderte Dateien:**
+
+- neu: `validation/port/DmsWriteFailedException.java`,
+  `validation/application/PossiblyAlreadyFinalizedException.java`
+- geändert: `FinalizationStatus` (+`DMS_WRITE_STARTED`), `ConfirmAndWriteBackService` (Marker vor
+  dem DMS-Write, `rejected(...)`), `DmsWriteAdapter` (Server-/Netzfehler → `DmsWriteFailedException`
+  statt `null`), `FinalizationStatePort` + `PgFinalizationStateAdapter` (`discardWriteStarted`,
+  Upsert aktualisiert auch die IDs, TODO an `deleteByTenant`), `V14__process_finalization.sql`
+  (`dms_document_id` nullable, erneut in place), `GlobalExceptionHandler` (`409`, `502`)
+- Tests: `ConfirmAndWriteBackServiceTest` (12 → 15), `PgPendingEmbeddingDeleteAdapterTest` (5 → 6)
+- Doku: `ARCHITECTURE.md` (ADR-015 Schritt 1, Störfall, Prüfung; § 11 Empfehlung + TODO),
+  `doc/api/docextract-api-docs.json` (confirm `409`/`502`)
+
+**Übernommen (generiert):** Den `400` selbst kann man nicht vom „ungültige Attribute"-`400`
+unterscheiden. Darum speichert der Service vor dem DMS-Write den Marker `DMS_WRITE_STARTED`. Eine
+saubere Ablehnung verwirft ihn (`422` wie bisher). Bleibt er nach einem Absturz oder Timeout stehen und
+lehnt das DMS den nächsten Versuch ab, antwortet der Confirm mit `409` „Dokument möglicherweise
+bereits im DMS gespeichert". `mvn -o clean verify` grün.
+
+**Korrigiert:** `DmsWriteAdapter` hat Timeouts/5xx bisher als `null` gemeldet, also als „ungültige
+Attribute". Das ist ein unbekannter Ausgang und wird jetzt als `502` gemeldet; der Marker bleibt.
+
+**Empfehlung (nicht umgesetzt):** Retry-Obergrenze zeitbasiert, 24 h ab dem ersten Fehlversuch
+(≈ 288 Versuche bei `PT5M`), Alarm ab 1 h; danach `INDEX_FAILED` mit Audit, Schutz aufheben, damit
+der TTL-Cleanup Embedding und Blobs löscht. Kein Backoff nötig, der Versuch ist ein billiges
+`UPDATE`. Für die Umsetzung braucht `process_finalization` zusätzlich einen Zeitstempel des ersten
+Fehlversuchs.
+
+**Zu prüfen durch Mensch:**
+
+- OFFEN: Empfehlung zur Retry-Obergrenze übernehmen (24 h / Alarm 1 h / `INDEX_FAILED`)?
+- OFFEN: Ein `2xx` ohne verwertbaren `Location`-Header gilt weiterhin als Ablehnung (`422`, Marker
+  verworfen), obwohl das DMS gespeichert hat (bestehendes Verhalten vom 2026-10-24).
+- Ein Reject im Zustand `DMS_WRITE_STARTED` wird mit `409` abgewiesen (Ausgang unbekannt).
+- TODO: Löschantrag je Mandant (ARCHITECTURE § 11, `FinalizationStatePort.deleteByTenant`).
+- `V14` erneut in place geändert (`dms_document_id` nullable): ggf. lokale DB neu aufsetzen.
+
+**Reflexion:** Die Rückmeldung „anders melden" deckte eine zweite Ursache auf: Der Adapter hat
+unbekannte Ausgänge (Timeout) bisher selbst als Ablehnung getarnt. Ohne diese Korrektur hätte der
+Marker genau im wichtigsten Fall gefehlt.

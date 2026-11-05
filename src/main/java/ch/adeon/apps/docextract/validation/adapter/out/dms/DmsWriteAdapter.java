@@ -2,6 +2,7 @@ package ch.adeon.apps.docextract.validation.adapter.out.dms;
 
 import ch.adeon.apps.docextract.security.application.AppConfigPort;
 import ch.adeon.apps.docextract.security.domain.DvelopCredential;
+import ch.adeon.apps.docextract.validation.port.DmsWriteFailedException;
 import ch.adeon.apps.docextract.validation.port.DmsWritePort;
 import ch.adeon.apps.docextract.validation.port.DmsWriteRejectedException;
 import java.util.ArrayList;
@@ -24,8 +25,9 @@ import org.springframework.web.client.RestClientException;
  * property keys already present in {@code attributes} (d.3 property ids) are applied directly
  * without a tenant-specific translation. On success the new DMS object's id is parsed out of the
  * {@code Location} response header (e.g. {@code .../o2m/T000004242?sourceid=...} -> {@code
- * T000004242}); any failure or a missing {@code Location} is reported as {@code null} so the caller
- * (ConfirmAndWriteBackService) can treat it as a rejected write-back.
+ * T000004242}); a client error is reported as {@link DmsWriteRejectedException}, a missing {@code
+ * Location} as {@code null}, and server/network errors (outcome unknown) as {@link
+ * DmsWriteFailedException}.
  */
 @Component
 public class DmsWriteAdapter implements DmsWritePort {
@@ -78,7 +80,7 @@ public class DmsWriteAdapter implements DmsWritePort {
       throw new DmsWriteRejectedException(extractReason(ex));
     } catch (RestClientException ex) {
       LOG.warn("Storing the document in the d.velop DMS failed", ex);
-      return null;
+      throw new DmsWriteFailedException("DMS write failed, outcome unknown", ex);
     }
   }
 

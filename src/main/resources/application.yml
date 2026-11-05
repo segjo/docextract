@@ -132,6 +132,12 @@ docextract:
     result-ttl: PT2H
     # Read-only LLM tool calls (lookup_value_list) per extraction (ADR-014).
     max-tool-calls: 10
+  validation:
+    # Interval of the promotion retry for FINALIZED_INDEX_PENDING (ADR-015).
+    recovery-interval: PT5M
+  cleanup:
+    # Interval of the TTL cleanup job over all expires_at tables (shared.cleanup.TtlCleanupJob).
+    interval: PT5M
 ---
 spring:
   config:

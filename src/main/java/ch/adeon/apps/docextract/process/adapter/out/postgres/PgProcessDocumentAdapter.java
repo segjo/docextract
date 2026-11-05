@@ -32,10 +32,14 @@ public class PgProcessDocumentAdapter implements ProcessDocumentPort {
     return jdbcTemplate
         .query(
             """
-            SELECT dms_location, filename FROM document_blob
+            SELECT dms_location, filename, tenant_id FROM document_blob
             WHERE process_id = ? AND kind = 'ORIGINAL' AND dms_location IS NOT NULL
             """,
-            (rs, i) -> new StoredDocument(rs.getString("dms_location"), rs.getString("filename")),
+            (rs, i) ->
+                new StoredDocument(
+                    rs.getString("dms_location"),
+                    rs.getString("filename"),
+                    rs.getString("tenant_id")),
             processId)
         .stream()
         .findFirst();
