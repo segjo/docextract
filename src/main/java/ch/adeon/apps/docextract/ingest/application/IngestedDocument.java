@@ -1,4 +1,4 @@
-package ch.adeon.apps.docextract.ingest.domain;
+package ch.adeon.apps.docextract.ingest.application;
 
 /**
  * Result of a synchronous ingest: the raw bytes are already written to the transient Postgres

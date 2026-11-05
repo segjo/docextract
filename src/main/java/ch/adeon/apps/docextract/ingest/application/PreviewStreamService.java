@@ -1,13 +1,13 @@
 package ch.adeon.apps.docextract.ingest.application;
 
 import ch.adeon.apps.docextract.ingest.domain.BlobKind;
-import ch.adeon.apps.docextract.ingest.domain.BlobRef;
-import ch.adeon.apps.docextract.ingest.domain.MediaType;
-import ch.adeon.apps.docextract.ingest.domain.PageRange;
+import ch.adeon.apps.docextract.ingest.port.BlobRef;
 import ch.adeon.apps.docextract.ingest.port.DocumentBlobPort;
+import ch.adeon.apps.docextract.ingest.port.PageRange;
 import ch.adeon.apps.docextract.ingest.port.PreviewRenderPort;
+import ch.adeon.apps.docextract.security.application.AuthContext;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
-import ch.adeon.apps.docextract.security.domain.AuthContext;
+import ch.adeon.apps.docextract.shared.media.MediaType;
 import java.util.Objects;
 import java.util.UUID;
 import org.springframework.stereotype.Service;

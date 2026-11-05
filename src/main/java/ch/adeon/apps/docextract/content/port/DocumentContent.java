@@ -1,4 +1,6 @@
-package ch.adeon.apps.docextract.content.domain;
+package ch.adeon.apps.docextract.content.port;
+
+import ch.adeon.apps.docextract.content.domain.Representation;
 
 /**
  * Document representation for FR-4 (attribute extraction), configured independently of {@link

@@ -1,7 +1,6 @@
 package ch.adeon.apps.docextract.retrieval.port;
 
 import ch.adeon.apps.docextract.retrieval.domain.EmbeddingVector;
-import ch.adeon.apps.docextract.retrieval.domain.RetrievalResult;
 import java.util.List;
 
 /**

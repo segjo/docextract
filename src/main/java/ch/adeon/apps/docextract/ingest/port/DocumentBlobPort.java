@@ -1,9 +1,7 @@
 package ch.adeon.apps.docextract.ingest.port;
 
 import ch.adeon.apps.docextract.ingest.domain.BlobKind;
-import ch.adeon.apps.docextract.ingest.domain.BlobRef;
-import ch.adeon.apps.docextract.ingest.domain.MediaType;
-import ch.adeon.apps.docextract.ingest.domain.PageRange;
+import ch.adeon.apps.docextract.shared.media.MediaType;
 import java.util.List;
 import java.util.UUID;
 

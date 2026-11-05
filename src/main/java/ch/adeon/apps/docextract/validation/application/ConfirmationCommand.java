@@ -1,4 +1,4 @@
-package ch.adeon.apps.docextract.validation.domain;
+package ch.adeon.apps.docextract.validation.application;
 
 import java.util.Map;
 

@@ -1,15 +1,15 @@
 package ch.adeon.apps.docextract.ingest.application;
 
 import ch.adeon.apps.docextract.ingest.domain.BlobKind;
-import ch.adeon.apps.docextract.ingest.domain.BlobRef;
-import ch.adeon.apps.docextract.ingest.domain.MediaType;
-import ch.adeon.apps.docextract.ingest.domain.PageRange;
+import ch.adeon.apps.docextract.ingest.port.BlobRef;
 import ch.adeon.apps.docextract.ingest.port.DocumentBlobPort;
+import ch.adeon.apps.docextract.ingest.port.PageRange;
 import ch.adeon.apps.docextract.ingest.port.PreviewRenderPort;
+import ch.adeon.apps.docextract.process.application.ProcessEvent;
 import ch.adeon.apps.docextract.process.application.ProcessEventPort;
-import ch.adeon.apps.docextract.process.domain.ProcessEvent;
-import ch.adeon.apps.docextract.process.domain.ProcessStep;
-import ch.adeon.apps.docextract.process.domain.StepStatus;
+import ch.adeon.apps.docextract.process.application.ProcessStep;
+import ch.adeon.apps.docextract.process.application.StepStatus;
+import ch.adeon.apps.docextract.shared.media.MediaType;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;

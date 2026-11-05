@@ -1,6 +1,5 @@
 package ch.adeon.apps.docextract.process.application;
 
-import ch.adeon.apps.docextract.process.domain.ProcessEvent;
 
 /**
  * Cross-module progress port (ADR-004): other modules publish step events directly through this

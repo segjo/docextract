@@ -1,6 +1,6 @@
 package ch.adeon.apps.docextract.retrieval.application;
 
-import ch.adeon.apps.docextract.retrieval.domain.RetrievalResult;
+import ch.adeon.apps.docextract.retrieval.port.RetrievalResult;
 import java.util.List;
 import org.springframework.stereotype.Service;
 

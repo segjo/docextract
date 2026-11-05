@@ -1,6 +1,6 @@
 package ch.adeon.apps.docextract.retrieval.application;
 
-import ch.adeon.apps.docextract.retrieval.domain.DmsValueList;
+import ch.adeon.apps.docextract.retrieval.port.DmsValueList;
 import java.util.List;
 import java.util.Map;
 

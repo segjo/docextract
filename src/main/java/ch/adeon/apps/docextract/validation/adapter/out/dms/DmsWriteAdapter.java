@@ -1,7 +1,7 @@
 package ch.adeon.apps.docextract.validation.adapter.out.dms;
 
 import ch.adeon.apps.docextract.security.application.AppConfigPort;
-import ch.adeon.apps.docextract.security.domain.DvelopCredential;
+import ch.adeon.apps.docextract.security.application.DvelopCredential;
 import ch.adeon.apps.docextract.validation.port.DmsWriteFailedException;
 import ch.adeon.apps.docextract.validation.port.DmsWritePort;
 import ch.adeon.apps.docextract.validation.port.DmsWriteRejectedException;

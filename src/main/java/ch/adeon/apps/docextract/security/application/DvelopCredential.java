@@ -1,4 +1,4 @@
-package ch.adeon.apps.docextract.security.domain;
+package ch.adeon.apps.docextract.security.application;
 
 /**
  * The raw header the current request was authenticated with, replayed on outbound DMS calls,

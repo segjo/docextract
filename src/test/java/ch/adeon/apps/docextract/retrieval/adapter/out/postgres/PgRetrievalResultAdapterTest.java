@@ -2,7 +2,7 @@ package ch.adeon.apps.docextract.retrieval.adapter.out.postgres;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import ch.adeon.apps.docextract.retrieval.domain.RetrievalResult;
+import ch.adeon.apps.docextract.retrieval.port.RetrievalResult;
 import java.time.Duration;
 import java.util.List;
 import javax.sql.DataSource;

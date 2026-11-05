@@ -1,7 +1,7 @@
 package ch.adeon.apps.docextract.security.adapter.out.session;
 
+import ch.adeon.apps.docextract.security.application.AuthContext;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
-import ch.adeon.apps.docextract.security.domain.AuthContext;
 import ch.adeon.apps.docextract.security.domain.DvelopUser;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;

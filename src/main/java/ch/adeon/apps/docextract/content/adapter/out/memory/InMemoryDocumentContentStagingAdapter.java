@@ -1,7 +1,7 @@
 package ch.adeon.apps.docextract.content.adapter.out.memory;
 
 import ch.adeon.apps.docextract.content.application.ContentStagingPort;
-import ch.adeon.apps.docextract.content.domain.DocumentContent;
+import ch.adeon.apps.docextract.content.port.DocumentContent;
 import ch.adeon.apps.docextract.shared.jobcontext.JobContextStore;
 import java.time.Duration;
 import java.util.Optional;

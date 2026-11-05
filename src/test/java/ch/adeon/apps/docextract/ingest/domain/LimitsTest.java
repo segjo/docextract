@@ -2,6 +2,7 @@ package ch.adeon.apps.docextract.ingest.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.adeon.apps.docextract.shared.media.MediaType;
 import org.junit.jupiter.api.Test;
 
 class LimitsTest {

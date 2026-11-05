@@ -1,7 +1,6 @@
 package ch.adeon.apps.docextract.retrieval.port;
 
-import ch.adeon.apps.docextract.retrieval.domain.DmsValueList;
-import ch.adeon.apps.docextract.security.domain.DvelopCredential;
+import ch.adeon.apps.docextract.security.application.DvelopCredential;
 import java.util.List;
 import java.util.Map;
 
@@ -17,7 +16,7 @@ import java.util.Map;
  * extendedProperties} carries the looked-up property's own id mapped to the search term) — useful
  * for a "load more"/typeahead UI without raising {@code maxValues}. Capped server-side to {@code
  * maxValues} to bound response size (T-4); {@link
- * ch.adeon.apps.docextract.retrieval.domain.DmsValueList#hasMore()} tells the caller whether more
+ * ch.adeon.apps.docextract.retrieval.port.DmsValueList#hasMore()} tells the caller whether more
  * values existed than the cap allowed through.
  */
 public interface ValueListPort {

@@ -1,4 +1,4 @@
-package ch.adeon.apps.docextract.process.domain;
+package ch.adeon.apps.docextract.process.application;
 
 /** Pipeline steps reported over SSE for a {@code processId} (ADR-004). */
 public enum ProcessStep {

@@ -4,7 +4,7 @@ import ch.adeon.apps.docextract.ingest.application.DmsRepositoryException;
 import ch.adeon.apps.docextract.ingest.domain.DmsRepository;
 import ch.adeon.apps.docextract.ingest.port.DmsRepositoryPort;
 import ch.adeon.apps.docextract.security.application.AppConfigPort;
-import ch.adeon.apps.docextract.security.domain.DvelopCredential;
+import ch.adeon.apps.docextract.security.application.DvelopCredential;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 import org.springframework.http.HttpHeaders;

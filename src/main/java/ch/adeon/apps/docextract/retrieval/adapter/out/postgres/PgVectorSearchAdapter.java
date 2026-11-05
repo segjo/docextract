@@ -1,7 +1,7 @@
 package ch.adeon.apps.docextract.retrieval.adapter.out.postgres;
 
 import ch.adeon.apps.docextract.retrieval.domain.EmbeddingVector;
-import ch.adeon.apps.docextract.retrieval.domain.RetrievalResult;
+import ch.adeon.apps.docextract.retrieval.port.RetrievalResult;
 import ch.adeon.apps.docextract.retrieval.port.VectorSearchPort;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;

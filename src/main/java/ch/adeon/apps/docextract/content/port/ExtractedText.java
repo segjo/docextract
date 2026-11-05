@@ -1,4 +1,4 @@
-package ch.adeon.apps.docextract.content.domain;
+package ch.adeon.apps.docextract.content.port;
 
 /**
  * Plain-text input for FR-3 (similarity search): the first {@code wordCount} words of the document,

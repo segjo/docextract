@@ -1,4 +1,4 @@
-package ch.adeon.apps.docextract.audit.domain;
+package ch.adeon.apps.docextract.audit.application;
 
 public record AuditEvent(String eventType, String promptHash, int tokenCount) {
 }

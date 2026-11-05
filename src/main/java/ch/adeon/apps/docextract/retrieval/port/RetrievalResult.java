@@ -1,4 +1,4 @@
-package ch.adeon.apps.docextract.retrieval.domain;
+package ch.adeon.apps.docextract.retrieval.port;
 
 /**
  * One of the top-K most similar already-{@code APPROVED} documents (FR-3, NfA-6). {@code

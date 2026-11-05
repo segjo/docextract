@@ -1,9 +1,9 @@
 package ch.adeon.apps.docextract.retrieval.adapter.out.dms;
 
-import ch.adeon.apps.docextract.retrieval.domain.DmsValueList;
+import ch.adeon.apps.docextract.retrieval.port.DmsValueList;
 import ch.adeon.apps.docextract.retrieval.port.ValueListPort;
 import ch.adeon.apps.docextract.security.application.AppConfigPort;
-import ch.adeon.apps.docextract.security.domain.DvelopCredential;
+import ch.adeon.apps.docextract.security.application.DvelopCredential;
 import ch.adeon.apps.docextract.shared.http.Http1RestClientFactory;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.HashMap;

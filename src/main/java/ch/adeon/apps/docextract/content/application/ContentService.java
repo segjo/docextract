@@ -1,13 +1,12 @@
 package ch.adeon.apps.docextract.content.application;
 
-import ch.adeon.apps.docextract.content.domain.ContentCommand;
 import ch.adeon.apps.docextract.content.domain.ContentException;
-import ch.adeon.apps.docextract.content.domain.DocumentContent;
+import ch.adeon.apps.docextract.content.port.DocumentContent;
 import ch.adeon.apps.docextract.content.port.DocumentContentPort;
-import ch.adeon.apps.docextract.ingest.domain.BlobRef;
-import ch.adeon.apps.docextract.ingest.domain.MediaType;
-import ch.adeon.apps.docextract.ingest.domain.PageRange;
+import ch.adeon.apps.docextract.ingest.port.BlobRef;
 import ch.adeon.apps.docextract.ingest.port.DocumentBlobPort;
+import ch.adeon.apps.docextract.ingest.port.PageRange;
+import ch.adeon.apps.docextract.shared.media.MediaType;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

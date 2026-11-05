@@ -1,12 +1,12 @@
 package ch.adeon.apps.docextract.retrieval.adapter.out.dms;
 
+import ch.adeon.apps.docextract.retrieval.port.DmsDocumentMetadata;
+import ch.adeon.apps.docextract.retrieval.port.DmsDocumentType;
 import ch.adeon.apps.docextract.retrieval.port.DmsObjectDefinitionPort;
-import ch.adeon.apps.docextract.retrieval.domain.DmsDocumentMetadata;
-import ch.adeon.apps.docextract.retrieval.domain.DmsDocumentType;
-import ch.adeon.apps.docextract.retrieval.domain.DmsPropertyDataType;
-import ch.adeon.apps.docextract.retrieval.domain.DmsPropertyDefinition;
+import ch.adeon.apps.docextract.retrieval.port.DmsPropertyDataType;
+import ch.adeon.apps.docextract.retrieval.port.DmsPropertyDefinition;
 import ch.adeon.apps.docextract.security.application.AppConfigPort;
-import ch.adeon.apps.docextract.security.domain.DvelopCredential;
+import ch.adeon.apps.docextract.security.application.DvelopCredential;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 import org.springframework.http.HttpHeaders;

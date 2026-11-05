@@ -1,4 +1,4 @@
-package ch.adeon.apps.docextract.retrieval.domain;
+package ch.adeon.apps.docextract.retrieval.port;
 
 import java.util.List;
 

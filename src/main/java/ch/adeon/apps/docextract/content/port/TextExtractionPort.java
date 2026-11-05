@@ -1,7 +1,6 @@
 package ch.adeon.apps.docextract.content.port;
 
-import ch.adeon.apps.docextract.content.domain.ExtractedText;
-import ch.adeon.apps.docextract.ingest.domain.MediaType;
+import ch.adeon.apps.docextract.shared.media.MediaType;
 
 /**
  * Outbound port for FR-3's text extraction (ADR-012): a document reduces to plain text of the first

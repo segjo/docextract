@@ -2,10 +2,10 @@ package ch.adeon.apps.docextract.ingest.adapter.out.blob;
 
 import ch.adeon.apps.docextract.ingest.application.BlobNotFoundException;
 import ch.adeon.apps.docextract.ingest.domain.BlobKind;
-import ch.adeon.apps.docextract.ingest.domain.BlobRef;
-import ch.adeon.apps.docextract.ingest.domain.MediaType;
-import ch.adeon.apps.docextract.ingest.domain.PageRange;
+import ch.adeon.apps.docextract.ingest.port.BlobRef;
 import ch.adeon.apps.docextract.ingest.port.DocumentBlobPort;
+import ch.adeon.apps.docextract.ingest.port.PageRange;
+import ch.adeon.apps.docextract.shared.media.MediaType;
 import java.io.ByteArrayOutputStream;
 import java.sql.Timestamp;
 import java.time.Duration;

@@ -1,4 +1,4 @@
-package ch.adeon.apps.docextract.process.domain;
+package ch.adeon.apps.docextract.process.application;
 
 /**
  * PII-free progress notification pushed to SSE subscribers of a {@code processId} (ADR-004, C-4).

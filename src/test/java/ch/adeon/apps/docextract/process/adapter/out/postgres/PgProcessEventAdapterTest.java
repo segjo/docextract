@@ -2,10 +2,10 @@ package ch.adeon.apps.docextract.process.adapter.out.postgres;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.adeon.apps.docextract.process.application.ProcessEvent;
 import ch.adeon.apps.docextract.process.application.ProcessEventListener;
-import ch.adeon.apps.docextract.process.domain.ProcessEvent;
-import ch.adeon.apps.docextract.process.domain.ProcessStep;
-import ch.adeon.apps.docextract.process.domain.StepStatus;
+import ch.adeon.apps.docextract.process.application.ProcessStep;
+import ch.adeon.apps.docextract.process.application.StepStatus;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;

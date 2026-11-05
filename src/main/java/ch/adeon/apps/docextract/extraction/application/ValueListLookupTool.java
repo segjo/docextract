@@ -1,12 +1,12 @@
 package ch.adeon.apps.docextract.extraction.application;
 
+import ch.adeon.apps.docextract.audit.application.AuditEvent;
 import ch.adeon.apps.docextract.audit.application.AuditPort;
-import ch.adeon.apps.docextract.audit.domain.AuditEvent;
 import ch.adeon.apps.docextract.extraction.domain.LlmTool;
-import ch.adeon.apps.docextract.retrieval.domain.DmsPropertyDefinition;
-import ch.adeon.apps.docextract.retrieval.domain.DmsValueList;
+import ch.adeon.apps.docextract.retrieval.port.DmsPropertyDefinition;
+import ch.adeon.apps.docextract.retrieval.port.DmsValueList;
 import ch.adeon.apps.docextract.retrieval.port.ValueListPort;
-import ch.adeon.apps.docextract.security.domain.DvelopCredential;
+import ch.adeon.apps.docextract.security.application.DvelopCredential;
 import ch.adeon.apps.docextract.shared.hash.Sha256;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;

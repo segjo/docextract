@@ -2,10 +2,10 @@ package ch.adeon.apps.docextract.ingest.adapter.out.dms;
 
 import ch.adeon.apps.docextract.ingest.application.DmsChunkUploadException;
 import ch.adeon.apps.docextract.ingest.domain.DmsLocation;
-import ch.adeon.apps.docextract.ingest.domain.MediaType;
 import ch.adeon.apps.docextract.ingest.port.DmsChunkUploadPort;
 import ch.adeon.apps.docextract.security.application.AppConfigPort;
-import ch.adeon.apps.docextract.security.domain.DvelopCredential;
+import ch.adeon.apps.docextract.security.application.DvelopCredential;
+import ch.adeon.apps.docextract.shared.media.MediaType;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;

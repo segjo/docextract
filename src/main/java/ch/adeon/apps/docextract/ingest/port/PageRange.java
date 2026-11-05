@@ -1,4 +1,4 @@
-package ch.adeon.apps.docextract.ingest.domain;
+package ch.adeon.apps.docextract.ingest.port;
 
 /**
  * Inclusive byte range for Range-fähiges reading from a blob, so the whole object never needs to be

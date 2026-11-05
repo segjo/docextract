@@ -11,13 +11,13 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ch.adeon.apps.docextract.audit.application.AuditEvent;
 import ch.adeon.apps.docextract.audit.application.AuditPort;
-import ch.adeon.apps.docextract.audit.domain.AuditEvent;
-import ch.adeon.apps.docextract.retrieval.domain.DmsPropertyDataType;
-import ch.adeon.apps.docextract.retrieval.domain.DmsPropertyDefinition;
-import ch.adeon.apps.docextract.retrieval.domain.DmsValueList;
+import ch.adeon.apps.docextract.retrieval.port.DmsPropertyDataType;
+import ch.adeon.apps.docextract.retrieval.port.DmsPropertyDefinition;
+import ch.adeon.apps.docextract.retrieval.port.DmsValueList;
 import ch.adeon.apps.docextract.retrieval.port.ValueListPort;
-import ch.adeon.apps.docextract.security.domain.DvelopCredential;
+import ch.adeon.apps.docextract.security.application.DvelopCredential;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;

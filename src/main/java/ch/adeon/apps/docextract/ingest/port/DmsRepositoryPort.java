@@ -1,7 +1,7 @@
 package ch.adeon.apps.docextract.ingest.port;
 
 import ch.adeon.apps.docextract.ingest.domain.DmsRepository;
-import ch.adeon.apps.docextract.security.domain.DvelopCredential;
+import ch.adeon.apps.docextract.security.application.DvelopCredential;
 import java.util.List;
 
 /**

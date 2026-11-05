@@ -1,12 +1,12 @@
 package ch.adeon.apps.docextract.agentgateway.adapter.in.mcp;
 
 import ch.adeon.apps.docextract.agentgateway.application.McpTool;
+import ch.adeon.apps.docextract.ingest.application.IngestCommand;
 import ch.adeon.apps.docextract.ingest.application.IngestDocument;
-import ch.adeon.apps.docextract.ingest.domain.IngestCommand;
-import ch.adeon.apps.docextract.ingest.domain.IngestedDocument;
+import ch.adeon.apps.docextract.ingest.application.IngestedDocument;
 import ch.adeon.apps.docextract.validation.application.ConfirmAndWriteBack;
-import ch.adeon.apps.docextract.validation.domain.ConfirmationCommand;
-import ch.adeon.apps.docextract.validation.domain.ConfirmationResult;
+import ch.adeon.apps.docextract.validation.application.ConfirmationCommand;
+import ch.adeon.apps.docextract.validation.application.ConfirmationResult;
 import java.util.Map;
 import org.springframework.stereotype.Component;
 

@@ -1,6 +1,6 @@
 package ch.adeon.apps.docextract.content.application;
 
-import ch.adeon.apps.docextract.content.domain.ExtractedText;
+import ch.adeon.apps.docextract.content.port.ExtractedText;
 import java.util.Optional;
 
 /**

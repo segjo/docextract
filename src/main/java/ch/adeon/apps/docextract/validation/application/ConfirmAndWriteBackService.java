@@ -1,15 +1,13 @@
 package ch.adeon.apps.docextract.validation.application;
 
+import ch.adeon.apps.docextract.audit.application.AuditEvent;
 import ch.adeon.apps.docextract.audit.application.AuditPort;
-import ch.adeon.apps.docextract.audit.domain.AuditEvent;
 import ch.adeon.apps.docextract.ingest.port.DocumentBlobPort;
-import ch.adeon.apps.docextract.process.application.ProcessDocumentPort;
 import ch.adeon.apps.docextract.process.application.ProcessDocumentPort.StoredDocument;
+import ch.adeon.apps.docextract.process.application.ProcessDocumentPort;
 import ch.adeon.apps.docextract.process.application.ProcessRepositoryPort;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
 import ch.adeon.apps.docextract.security.application.OutboundCredentialPort;
-import ch.adeon.apps.docextract.validation.domain.ConfirmationCommand;
-import ch.adeon.apps.docextract.validation.domain.ConfirmationResult;
 import ch.adeon.apps.docextract.validation.domain.Finalization;
 import ch.adeon.apps.docextract.validation.domain.FinalizationStatus;
 import ch.adeon.apps.docextract.validation.domain.PendingEmbeddingCheck;

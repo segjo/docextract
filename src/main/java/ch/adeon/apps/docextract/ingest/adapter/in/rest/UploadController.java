@@ -1,10 +1,10 @@
 package ch.adeon.apps.docextract.ingest.adapter.in.rest;
 
+import ch.adeon.apps.docextract.ingest.application.IngestCommand;
 import ch.adeon.apps.docextract.ingest.application.IngestDocument;
-import ch.adeon.apps.docextract.ingest.domain.IngestCommand;
-import ch.adeon.apps.docextract.ingest.domain.IngestedDocument;
+import ch.adeon.apps.docextract.ingest.application.IngestedDocument;
+import ch.adeon.apps.docextract.security.application.AuthContext;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
-import ch.adeon.apps.docextract.security.domain.AuthContext;
 import java.io.IOException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;

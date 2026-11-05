@@ -1,17 +1,16 @@
 package ch.adeon.apps.docextract.content.application;
 
-import ch.adeon.apps.docextract.content.domain.ContentCommand;
 import ch.adeon.apps.docextract.content.domain.ContentException;
-import ch.adeon.apps.docextract.content.domain.ExtractedText;
+import ch.adeon.apps.docextract.content.port.ExtractedText;
 import ch.adeon.apps.docextract.content.port.TextExtractionPort;
+import ch.adeon.apps.docextract.ingest.port.BlobRef;
 import ch.adeon.apps.docextract.ingest.port.DocumentBlobPort;
-import ch.adeon.apps.docextract.ingest.domain.BlobRef;
-import ch.adeon.apps.docextract.ingest.domain.MediaType;
-import ch.adeon.apps.docextract.ingest.domain.PageRange;
+import ch.adeon.apps.docextract.ingest.port.PageRange;
+import ch.adeon.apps.docextract.process.application.ProcessEvent;
 import ch.adeon.apps.docextract.process.application.ProcessEventPort;
-import ch.adeon.apps.docextract.process.domain.ProcessEvent;
-import ch.adeon.apps.docextract.process.domain.ProcessStep;
-import ch.adeon.apps.docextract.process.domain.StepStatus;
+import ch.adeon.apps.docextract.process.application.ProcessStep;
+import ch.adeon.apps.docextract.process.application.StepStatus;
+import ch.adeon.apps.docextract.shared.media.MediaType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;

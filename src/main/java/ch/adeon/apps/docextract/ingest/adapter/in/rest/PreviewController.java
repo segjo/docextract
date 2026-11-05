@@ -2,7 +2,7 @@ package ch.adeon.apps.docextract.ingest.adapter.in.rest;
 
 import ch.adeon.apps.docextract.ingest.application.PreviewChunk;
 import ch.adeon.apps.docextract.ingest.application.StreamPreview;
-import ch.adeon.apps.docextract.ingest.domain.PageRange;
+import ch.adeon.apps.docextract.ingest.port.PageRange;
 import java.util.UUID;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;

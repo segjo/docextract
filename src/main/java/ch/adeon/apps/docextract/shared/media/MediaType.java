@@ -1,4 +1,4 @@
-package ch.adeon.apps.docextract.ingest.domain;
+package ch.adeon.apps.docextract.shared.media;
 
 import java.util.Locale;
 

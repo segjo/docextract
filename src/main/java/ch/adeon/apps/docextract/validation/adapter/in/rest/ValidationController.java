@@ -1,9 +1,9 @@
 package ch.adeon.apps.docextract.validation.adapter.in.rest;
 
 import ch.adeon.apps.docextract.validation.application.ConfirmAndWriteBack;
+import ch.adeon.apps.docextract.validation.application.ConfirmationCommand;
+import ch.adeon.apps.docextract.validation.application.ConfirmationResult;
 import ch.adeon.apps.docextract.validation.application.RejectSuggestion;
-import ch.adeon.apps.docextract.validation.domain.ConfirmationCommand;
-import ch.adeon.apps.docextract.validation.domain.ConfirmationResult;
 import ch.adeon.apps.docextract.validation.domain.RejectionCommand;
 import java.util.Map;
 import org.springframework.http.ResponseEntity;

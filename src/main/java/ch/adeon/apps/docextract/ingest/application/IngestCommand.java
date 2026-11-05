@@ -1,4 +1,7 @@
-package ch.adeon.apps.docextract.ingest.domain;
+package ch.adeon.apps.docextract.ingest.application;
+
+import ch.adeon.apps.docextract.ingest.domain.DmsRepository;
+import ch.adeon.apps.docextract.shared.media.MediaType;
 
 /**
  * {@code repositoryId} is the d.velop repository the user picked in the import mask ({@code GET

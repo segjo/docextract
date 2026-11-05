@@ -1,7 +1,7 @@
 package ch.adeon.apps.docextract.security.adapter.in.web;
 
+import ch.adeon.apps.docextract.security.application.DvelopCredential;
 import ch.adeon.apps.docextract.security.application.IdentityProviderPort;
-import ch.adeon.apps.docextract.security.domain.DvelopCredential;
 import ch.adeon.apps.docextract.security.domain.DvelopUser;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;

@@ -1,7 +1,7 @@
 package ch.adeon.apps.docextract.retrieval.adapter.out.postgres;
 
 import ch.adeon.apps.docextract.retrieval.application.RetrievalResultPort;
-import ch.adeon.apps.docextract.retrieval.domain.RetrievalResult;
+import ch.adeon.apps.docextract.retrieval.port.RetrievalResult;
 import ch.adeon.apps.docextract.shared.cleanup.TtlPurger;
 import java.sql.Timestamp;
 import java.time.Duration;

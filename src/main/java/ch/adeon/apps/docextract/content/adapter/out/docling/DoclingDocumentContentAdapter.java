@@ -1,11 +1,11 @@
 package ch.adeon.apps.docextract.content.adapter.out.docling;
 
 import ch.adeon.apps.docextract.content.domain.ContentException;
-import ch.adeon.apps.docextract.content.domain.DocumentContent;
 import ch.adeon.apps.docextract.content.domain.Representation;
+import ch.adeon.apps.docextract.content.port.DocumentContent;
 import ch.adeon.apps.docextract.content.port.DocumentContentPort;
-import ch.adeon.apps.docextract.ingest.domain.MediaType;
 import ch.adeon.apps.docextract.shared.http.Http1RestClientFactory;
+import ch.adeon.apps.docextract.shared.media.MediaType;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Locale;
