@@ -5,7 +5,7 @@ Erstelle ein Frontend für das Docextract Backend.
 Anforderungen an das Frontend:
 
 - Benutzerfreundliche Oberfläche gemäss der Layout Vorgabe und der Farbpallette [`doc/frontend/docextract-color-palette.html`](/doc/frontend/docextract-color-palette.html)
-- Interaktion mit dem Docextract Backend [`doc/api/docextract-api-docs.json`](/doc/api/docextract-api-docs.json)
+- Interaktion mit dem Docextract Backend [`doc/api/openapi.yaml`](/doc/api/openapi.yaml)
 - Client Side Rendering (CSR) für eine reaktive Benutzeroberfläche — kein SSR (Entscheid siehe
   ADR-013 in [`ARCHITECTURE.md`](/doc/ARCHITECTURE.md))
 - Angular 22 with best practices instructions [`doc/frontend/angular-best-practices.md`](/doc/frontend/angular-best-practices.md)

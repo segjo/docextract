@@ -132,12 +132,12 @@ Runnable HTTP-Requests gegen die laufende App (d.velop-Mock + echtes Gotenberg s
    Über den Button **Authorize** kann ein Bearer-Token hinterlegt werden, das Swagger UI danach
    automatisch als `Authorization: Bearer <token>`-Header an alle Backend-Requests anhängt.
 
-5. Eigenen API-Vertrag ([doc/api/docextract-api-docs.json](doc/api/docextract-api-docs.json)) aus dem
-   laufenden `/v3/api-docs`-Endpunkt neu generieren (startet die App temporär selbst, Profil `ci`,
-   benötigt daher eine erreichbare Postgres-Instanz, siehe `docker-compose.yml`):
+5. Eigenen API-Vertrag ([doc/api/openapi.yaml](doc/api/openapi.yaml)) nach einer Änderung an Controllern
+   oder DTOs neu generieren (ohne laufende App/Postgres; `OpenApiContractTest` schlägt sonst wegen
+   Drift fehl):
 
    ```bash
-   mvn -Popenapi-spec verify
+   mvn test -Dtest=OpenApiContractTest -Dopenapi.write=true
    ```
 
 ## Qualitätssicherung

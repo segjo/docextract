@@ -1136,3 +1136,165 @@ dieses Tagebuch sind noch nicht committet, weil P2 noch nicht committet war.
 - `mvn -o clean verify` grün. Commit nur mit `ExtractedAttribute.java`, getrennt von P2; das
   Tagebuch wird mit den P2-Dokumenten committet, weil die Einträge in einem zusammenhängenden,
   noch nicht committeten Block stehen.
+
+---
+
+## 2026-11-05 — OpenAPI-Vertrag mit Fehlerfällen (Block 3, P3 / Artefakt 2)
+
+**Tool/Modell:** GitHub Copilot Chat (Agent-Modus), Branch `feat/coding-agent`.
+
+**Auftrag (Prompt-Zusammenfassung):** Versionierte `doc/api/openapi.yaml` (OpenAPI 3.1) für alle
+öffentlichen Endpunkte; springdoc vorhanden → generieren + Drift-Check-Test. Fehler als
+`application/problem+json` mit gemeinsamem Schema `Problem`, nur tatsächlich gelieferte Codes.
+`confirm` vollständig mit `x-idempotency`, `x-data-classification`, `x-slo` (Platzhalter OFFEN).
+Idempotenz-Test (zweimal confirm → `DmsWritePort` genau 1×). Verweis in ARCHITECTURE.md § 8.1.
+
+**Geänderte Dateien:**
+
+- `doc/api/openapi.yaml` (neu, generiert)
+- `src/main/java/.../shared/config/OpenApiConfig.java` (Server `/adeon-docextract`, Customizer:
+  Schema `Problem`, Responses `BadRequest`/`Unauthorized`, Tags sortiert)
+- Controller-Annotationen (`@Operation`, `@ApiResponse`, `@Tag`): `UploadController`,
+  `PreviewController`, `ImportInfoController`, `ProcessEventsController`, `RetrievalController`,
+  `ExtractionController`, `ValidationController`, `HealthController`
+- `src/main/resources/application.yml` (`springdoc.paths-to-match` + `/health`,
+  `default-produces-media-type`, `override-with-generic-response: false`,
+  `writer-with-order-by-keys: true`)
+- `pom.xml` (Versionsausrichtung `swagger-annotations-jakarta` 2.2.41, Exclusion
+  `swagger-annotations` aus `spring-ai-starter-model-openai`; keine neue Dependency)
+- `src/test/java/.../shared/config/OpenApiContractTest.java` (neu)
+- `src/test/java/.../validation/adapter/in/rest/ValidationControllerIdempotencyTest.java` (neu)
+- `doc/ARCHITECTURE.md` (§ 8.1, nur ergänzt)
+
+**Übernommen (generiert):**
+
+- Vertrag aus Annotationen in den Adaptern (`adapter.in.rest`, `shared`), nicht von Hand: Die Datei
+  ist exakt die springdoc-Ausgabe. `OpenApiContractTest` startet nur Web MVC + springdoc mit allen
+  per Classpath-Scan gefundenen `@RestController`s (Abhängigkeiten gemockt, `application.yml`
+  geladen) und vergleicht mit der committeten Datei. Neue Controller fallen damit automatisch in
+  den Drift-Check. Zusätzlich Parser-Test (swagger-core `Yaml31`): `openapi: 3.1.x`, alle `$ref`
+  auflösbar, jede 4xx/5xx-Antwort mit `application/problem+json`, jede `/api/`-Operation mit `401`,
+  `confirm` mit den drei x-Extensions und den Codes 200/400/401/404/409/410/422/502.
+- Gegenprobe: App im Profil `ci` gestartet, `/v3/api-docs.yaml` live abgerufen — identisch mit
+  `doc/api/openapi.yaml`.
+- Fehlercodes je Endpunkt aus `GlobalExceptionHandler`, `SecurityConfig` und den geworfenen
+  Exceptions der Services abgeleitet. Idempotenzregel aus `ConfirmAndWriteBackService`: Wiederholung
+  nach dem DMS-Write (`FINALIZED_INDEX_PENDING`/`COMPLETED`/`INDEX_FAILED`) → `200` mit gespeicherten
+  IDs, kein zweiter DMS-Write; bei `FINALIZED_INDEX_PENDING` nur Promotion; bei `DMS_WRITE_STARTED`
+  erneuter Write, DMS-Ablehnung → `409`.
+- `ValidationControllerIdempotencyTest`: MockMvc + echter `ConfirmAndWriteBackService` mit
+  zustandsbehaftetem In-Memory-`FinalizationStatePort`; (1) zweimal confirm → gleiche Antwort,
+  `DmsWritePort` 1×, Promotion 1×; (2) Promotion-Fehler beim ersten Aufruf → zweiter Aufruf
+  `COMPLETED`, `DmsWritePort` 1×, Promotion 2×.
+- `mvn -o clean verify` grün (inkl. ArchUnit).
+
+**Korrigiert:**
+
+- Erster Generierungslauf scheiterte mit `NoSuchMethodError Schema.$dynamicRef()`: Spring AI zieht
+  `swagger-annotations-jakarta` 2.2.38 (gewinnt gegen springdocs 2.2.41) und `openai-java-core` die
+  nicht-jakarta `swagger-annotations` 2.2.31 (gleiche Pakete, liegt im Classpath vorne). Latenter
+  Fehler: `/v3/api-docs` wäre auch live gebrochen, sobald ein Controller `@Schema` trägt. Behoben per
+  Versionsausrichtung + Exclusion (keine neue Dependency).
+
+**Befunde (nicht geändert):**
+
+- Pfad `confirm`/`reject` im Code: `POST /api/v1/validation/confirm|reject` mit `processId` im Body;
+  § 6.2 zeigt `POST /documents/{id}/confirm`.
+- `403`: `SecurityConfig` hat einen `accessDeniedHandler`, aber alle Regeln sind nur
+  `authenticated()` → nicht erreichbar, daher nicht dokumentiert.
+- `503`/`504`: werden nicht geliefert; Upstream-Fehler mit Mapping liefern `502`.
+- Framework-Fehler (fehlender Parameter, ungültige UUID, unlesbares JSON → `400`; Multipart-Limit →
+  `413`) liefern heute nur den Status ohne Body (`SpaFallbackErrorController`). Im Vertrag als
+  `Problem` mit Hinweis „ProblemDetail ab P7".
+- Ohne Mapping → `500` ohne Body: `DmsRepositoryException` (import-info), `DmsObjectDefinitionException`
+  (object-definitions), `ValueListWebhookException` (value-lists), `ExtractionException` (retry),
+  ungültiger `Range`-Header (`NumberFormatException`/`IllegalArgumentException` in
+  `PreviewController.parseRange`). Nicht dokumentiert.
+- Kein Ownership-Check (NfA-4) bei `GET /processes/{id}/events`, `/similar-documents`,
+  `/document-type-candidates`, `/extraction-result` und `POST .../extraction-result/retry`:
+  liefern für fremde/unbekannte `processId` `200` (leer bzw. Daten, sofern vorhanden).
+- Limit-Verstoss in `Limits` liefert `400`, § 6.5 nennt `413`/`422`.
+
+**Zu prüfen durch Mensch:**
+
+- OFFEN: `x-slo` für `confirm` — Zielwert p95 und Verfügbarkeit festlegen.
+- OFFEN: § 6.2 an den Code angleichen (`/api/v1/validation/confirm`, `processId` im Body) oder API
+  auf `/documents/{id}/confirm` umstellen?
+- OFFEN: `doc/api/docextract-api-docs.json` + Maven-Profil `openapi-spec` (CONTEXT.md, README,
+  FRONTEND-SPEC, frontend/README verweisen darauf) durch `openapi.yaml` ablösen oder parallel
+  behalten? Heute zwei Vertragsdateien, nur `openapi.yaml` ist drift-geprüft.
+- OFFEN: Ownership-Check für die Lese-Endpunkte und SSE (siehe Befunde) — Teil von P5?
+- OFFEN: Unmapped Exceptions (`500` ohne Body) und Framework-`400`/`413` in P7 auf ProblemDetail
+  abbilden; Limit-Verstoss `400` vs. `413`/`422` (§ 6.5) entscheiden; danach `openapi.yaml`
+  regenerieren.
+- OFFEN: Diagnose-Endpunkt `GET /api/v1/ingest/documents/test` entfernen? (öffentlich erreichbar,
+  daher im Vertrag.)
+- Prüfen: Exclusion `swagger-annotations` aus `spring-ai-starter-model-openai` (App startet, Tests
+  grün; LLM-Pfad gegen echten Anbieter nicht getestet).
+- Wiederholter `confirm` wertet geänderte `attributes` nicht aus (stillschweigend ignoriert) — so
+  gewollt oder `409` bei abweichendem Body?
+
+**Reflexion:** Den Vertrag aus Annotationen zu generieren statt die YAML zu pflegen, macht den
+Drift-Check trivial und hat nebenbei einen latenten Classpath-Konflikt aufgedeckt, der live erst
+bei der ersten `@Schema`-Annotation aufgefallen wäre.
+
+---
+
+## 2026-11-05 — P3-Nachtrag: SLO, Pfade, Vertrag konsolidiert (Block 3, P3)
+
+**Tool/Modell:** GitHub Copilot Chat (Agent-Modus), Branch `feat/coding-agent`.
+
+**Auftrag (Prompt-Zusammenfassung):** Entscheide des Menschen zu den P3-OFFEN-Punkten umsetzen:
+`x-slo` mit Werten füllen; Pfade in ARCHITECTURE.md (§ 3.1, § 6.1, § 6.2, ADR-015) an
+`openapi.yaml` angleichen (Doku folgt Code); `docextract-api-docs.json` + Profil `openapi-spec`
+entfernen und Verweise umstellen; `GET /api/v1/ingest/documents/test` entfernen;
+Body-Regel bei Wiederholung in `x-idempotency`; Folgeaufgaben für P5/P7 in `Block-3-Prompts.md`.
+
+**Geänderte Dateien:**
+
+- `ValidationController.java` (`x-slo`: `latency` p95/2s/30d, `availability` 99.5 %/30d,
+  `measurement`; `x-idempotency.request-body-on-repeat`)
+- `UploadController.java` (Endpunkt `/test` und ungenutzter `AuthContextPort` entfernt),
+  `e2e/ingest.http` (Request „Test Authentication" entfernt)
+- `OpenApiContractTest.java` (prüft SLO-Felder statt „OFFEN", Body-Regel vorhanden)
+- `doc/api/openapi.yaml` (neu generiert), `doc/api/docextract-api-docs.json` (gelöscht)
+- `pom.xml` (Profil `openapi-spec` samt `springdoc-openapi-maven-plugin` entfernt)
+- `doc/CONTEXT.md`, `README.md`, `doc/frontend/FRONTEND-SPEC.md`, `frontend/README.md`
+  (Verweise → `doc/api/openapi.yaml`, Regenerierung per `OpenApiContractTest`)
+- `doc/ARCHITECTURE.md` (§ 3.1, § 6.1, § 6.2, ADR-015)
+- `doc/Block-3-Prompts.md` (P5: Ownership-Check Lese-Endpunkte/SSE; P7: Fehlerabbildungen, 413/422,
+  Range/416)
+
+**Übernommen (generiert):**
+
+- `x-slo`-Werte unverändert aus der Vorgabe des Menschen übernommen (verschachtelt per
+  `@ExtensionProperty(parseValue = true)`).
+- Frontend: keine Client-Generierung aus der JSON-Datei (kein `package.json`-Skript), CI
+  (`.github/workflows/ci.yml`) referenziert sie nicht — nur Doku-Verweise umgestellt, kein
+  Frontend-Build nötig. Frontend-Code ruft `/test` nicht auf.
+- `mvn -o clean verify` grün.
+
+**Abweichungen Doku ↔ `openapi.yaml` (angeglichen):**
+
+| Stelle        | vorher                                                                | jetzt (Code)                                                                                                                     |
+| ------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| § 3.1 SSE     | `GET /processes/{id}/events`                                          | `GET /api/v1/processes/{processId}/events`                                                                                       |
+| § 3.1 Events  | `preview_ready`, `text_extracted`, `retrieved`, `extracted`, `failed` | Event-Name = Schritt `blob_stored`, `dms_uploaded`, `preview`, `text_extracted`, `retrieved`, `extracted`; `FAILED` als `status` |
+| § 6.1 Upload  | `POST /documents`                                                     | `POST /api/v1/ingest/documents` (multipart `file`, `repositoryId`)                                                               |
+| § 6.1 SSE     | „SSE abonnieren", `preview_ready`                                     | `GET /api/v1/processes/{processId}/events`, `preview`                                                                            |
+| § 6.2 Confirm | `POST /documents/{id}/confirm`                                        | `POST /api/v1/validation/confirm` (`processId` im Body)                                                                          |
+| § 6.2 Reject  | ohne Pfad                                                             | `POST /api/v1/validation/reject` (`processId` im Body)                                                                           |
+| ADR-015       | „Confirm-Request" ohne Pfad                                           | `POST /api/v1/validation/confirm`                                                                                                |
+
+Die Event-Namen sind keine Pfade, standen aber in derselben Tabellenzelle und wichen vom Code
+(`ProcessStep`, `ProcessEventsController`) ab; deshalb mit angeglichen.
+
+**Zu prüfen durch Mensch:**
+
+- `x-slo`: „Metriken ab Block 5.3" — bis dahin ist das SLO nur über Logs messbar (keine
+  Micrometer/Actuator-Dependency im Repo).
+- § 3.1/§ 6.1: Angleichung der SSE-Event-Namen bestätigen (über „Pfadangaben" hinaus).
+- Weiterhin offen aus P3, jetzt als Aufgaben in `Block-3-Prompts.md` eingetragen: Ownership-Check
+  Lese-Endpunkte/SSE (P5); Fehlerabbildungen, 413/422, Range/416 (P7).
+- Verweise in älteren Tagebucheinträgen auf `docextract-api-docs.json`/`openapi-spec` bewusst nicht
+  geändert (historisch).

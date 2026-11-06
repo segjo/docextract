@@ -1,9 +1,15 @@
 package ch.adeon.apps.docextract.extraction.adapter.in.rest;
 
+import static ch.adeon.apps.docextract.shared.config.OpenApiConfig.BAD_REQUEST_REF;
+import static ch.adeon.apps.docextract.shared.config.OpenApiConfig.UNAUTHORIZED_REF;
+
 import ch.adeon.apps.docextract.extraction.application.GetExtractionResult;
 import ch.adeon.apps.docextract.extraction.application.RetryExtraction;
 import ch.adeon.apps.docextract.extraction.domain.ExtractionResult;
 import ch.adeon.apps.docextract.security.application.OutboundCredentialPort;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -20,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1")
+@Tag(name = "extraction", description = "Attributvorschläge (FR-4)")
 public class ExtractionController {
 
   private final GetExtractionResult getExtractionResult;
@@ -36,11 +43,23 @@ public class ExtractionController {
   }
 
   @GetMapping("/processes/{processId}/extraction-result")
+  @Operation(
+      operationId = "extractionResult",
+      summary = "Vorgeschlagene Dokumentart und Attributwerte des Prozesses",
+      description = "Leeres Ergebnis, solange keines vorliegt oder der Prozess unbekannt ist.")
+  @ApiResponse(responseCode = "200", description = "OK")
+  @ApiResponse(responseCode = "401", ref = UNAUTHORIZED_REF)
   public ExtractionResult extractionResult(@PathVariable String processId) {
     return getExtractionResult.get(processId);
   }
 
   @PostMapping("/processes/{processId}/extraction-result/retry")
+  @Operation(
+      operationId = "retryExtraction",
+      summary = "Extraktion mit vom Menschen gewählter Dokumentart wiederholen")
+  @ApiResponse(responseCode = "200", description = "OK")
+  @ApiResponse(responseCode = "400", ref = BAD_REQUEST_REF)
+  @ApiResponse(responseCode = "401", ref = UNAUTHORIZED_REF)
   public ExtractionResult retry(@PathVariable String processId, @RequestBody RetryRequest request) {
     return retryExtraction.retry(
         processId, request.documentTypeId(), outboundCredentialPort.current());

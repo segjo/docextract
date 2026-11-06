@@ -6,9 +6,10 @@
 > [`doc/api/identityprovider-api.yaml`](doc/api/identityprovider-api.yaml) (IdP-Session-Validierung) und
 > [`doc/api/dashboard-app-api.yaml`](doc/api/dashboard-app-api.yaml) (d.velop Dashboard-App-Integration) —
 > vor jeder Adapter-Implementierung gegen diese OpenAPI-Specs prüfen, nicht aus dem Gedächtnis raten.
-> Eigener API-Vertrag: [`doc/api/docextract-api-docs.json`](doc/api/docextract-api-docs.json) — aus den
-> `@RestController`n generierter OpenAPI-3-Snapshot (`/v3/api-docs`, siehe `OpenApiConfig`), Quelle der
-> Wahrheit für die DocExtract-eigene REST-API, z. B. zur Generierung des Angular-Frontend-Clients.
+> Eigener API-Vertrag: [`doc/api/openapi.yaml`](api/openapi.yaml) — aus den
+> `@RestController`n generierter OpenAPI-3.1-Vertrag (`/v3/api-docs.yaml`, siehe `OpenApiConfig`; Drift-Check
+> `OpenApiContractTest`), Quelle der Wahrheit für die DocExtract-eigene REST-API, z. B. zur Generierung des
+> Angular-Frontend-Clients.
 > Frontend-Aufgaben: [`doc/frontend/FRONTEND-SPEC.md`](frontend/FRONTEND-SPEC.md) — Anforderungen, Layout
 > und Farbpalette für das Angular-Frontend; vor jeder Frontend-Implementierung konsultieren.
 > Bei Konflikt gilt: **SPEC/ARCHITECTURE > diese Datei > Framework-Defaults > generische Best Practices.**

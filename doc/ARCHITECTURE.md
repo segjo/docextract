@@ -94,15 +94,15 @@ C4Context
 
 ### 3.1 Externe Schnittstellen
 
-| Nachbarsystem           | Richtung | Protokoll                            | Zweck                                                                                                                                                                                     | Hinweis                                 |
-| ----------------------- | -------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| d.velop Frontend/Proxy  | in       | HTTP (iframe, REST)                  | UI + API                                                                                                                                                                                  | Session-Cookie durchgereicht            |
-| d.velop Frontend/Proxy  | out      | SSE `GET /processes/{id}/events`     | Fortschritt: `preview_ready`, `text_extracted`, `retrieved`, `extracted`, `failed`                                                                                                        | Nur Metadaten, keine PII                |
-| d.velop IdP             | out      | HTTP                                 | Session → `tenant_id`                                                                                                                                                                     | Basis für NfA-4                         |
-| d.velop DMS-API         | in/out   | HTTP                                 | Lesen: `/r/{repositoryId}/objdef`, `/dms/r/{repositoryId}/o2/{document_id}/` (live, kein Cache). Schreiben: Chunk-Upload → `Location`, Finalisierung mit Attributen **nur nach Freigabe** | Chunk-Upload ist write-only (→ ADR-008) |
-| LLM-/Embedding-Anbieter | out      | HTTP(S), z. B. OpenAI-kompatible API | Embedding, Attributvorschlag                                                                                                                                                              | lokal oder extern per Konfiguration     |
-| Third-Party-App         | out      | Webhook (JIT)                        | Wertelisten                                                                                                                                                                               | Client-only, kein Import                |
-| Agent                   | in       | MCP                                  | Extraktion/Retrieval                                                                                                                                                                      | Minimale Scopes, Consent (T-6)          |
+| Nachbarsystem           | Richtung | Protokoll                                      | Zweck                                                                                                                                                                                     | Hinweis                                 |
+| ----------------------- | -------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| d.velop Frontend/Proxy  | in       | HTTP (iframe, REST)                            | UI + API                                                                                                                                                                                  | Session-Cookie durchgereicht            |
+| d.velop Frontend/Proxy  | out      | SSE `GET /api/v1/processes/{processId}/events` | Fortschritt: Event-Name = Schritt (`blob_stored`, `dms_uploaded`, `preview`, `text_extracted`, `retrieved`, `extracted`), `status` `STARTED`/`COMPLETED`/`FAILED`                         | Nur Metadaten, keine PII                |
+| d.velop IdP             | out      | HTTP                                           | Session → `tenant_id`                                                                                                                                                                     | Basis für NfA-4                         |
+| d.velop DMS-API         | in/out   | HTTP                                           | Lesen: `/r/{repositoryId}/objdef`, `/dms/r/{repositoryId}/o2/{document_id}/` (live, kein Cache). Schreiben: Chunk-Upload → `Location`, Finalisierung mit Attributen **nur nach Freigabe** | Chunk-Upload ist write-only (→ ADR-008) |
+| LLM-/Embedding-Anbieter | out      | HTTP(S), z. B. OpenAI-kompatible API           | Embedding, Attributvorschlag                                                                                                                                                              | lokal oder extern per Konfiguration     |
+| Third-Party-App         | out      | Webhook (JIT)                                  | Wertelisten                                                                                                                                                                               | Client-only, kein Import                |
+| Agent                   | in       | MCP                                            | Extraktion/Retrieval                                                                                                                                                                      | Minimale Scopes, Consent (T-6)          |
 
 ---
 
@@ -391,18 +391,18 @@ sequenceDiagram
     participant AUD as audit
 
     SB->>FE: Dokument hochladen
-    FE->>API: POST /documents
+    FE->>API: POST /api/v1/ingest/documents (multipart file, repositoryId)
     API->>API: Session → tenant_id, Limits prüfen
     API->>BLB: ORIGINAL-Blob schreiben
     API->>DMS: Original als Chunk (write-only)
     DMS-->>API: Location
     API-->>FE: 202 + processId
-    FE->>API: SSE abonnieren
+    FE->>API: SSE GET /api/v1/processes/{processId}/events
     alt PDF
-        API-->>FE: preview_ready (Stream aus ORIGINAL)
+        API-->>FE: preview (Stream aus ORIGINAL)
     else Nicht-PDF
         API->>API: PreviewRenderPort → PREVIEW-Blob
-        API-->>FE: preview_ready
+        API-->>FE: preview
     end
     API->>CNT: ExtractText(erste N Wörter)
     CNT-->>API: Text (transient) oder "leer/zu kurz"
@@ -450,7 +450,7 @@ sequenceDiagram
     participant AUD as audit
 
     SB->>FE: bestätigt / korrigiert (+ optional Vorlagen-Consent)
-    FE->>VAL: POST /documents/{id}/confirm
+    FE->>VAL: POST /api/v1/validation/confirm (processId im Body)
     VAL->>VDB: PENDING prüfen (vorhanden, gültig, gleicher Tenant)
     VAL->>DMS: Attribute an Location schreiben (Finalisierung)
     DMS-->>VAL: document_id
@@ -460,7 +460,7 @@ sequenceDiagram
 ```
 
 **Konsistenz (Saga):** Zuerst DMS-Finalisierung, dann Promotion. Schlägt die Promotion fehl, bleibt der Prozess in `FINALIZED_INDEX_PENDING`; ein idempotenter Retry promotet erneut. Der TTL-Cleanup überspringt diesen Zustand. Entscheid, Preis und Störfälle: ADR-015.
-**Ablehnung/Abbruch/TTL-Ablauf:** `PENDING`-Embedding und Blobs werden gelöscht. Nach dem DMS-Write ist keine Ablehnung mehr möglich (`409`).
+**Ablehnung/Abbruch/TTL-Ablauf:** `PENDING`-Embedding und Blobs werden gelöscht (`POST /api/v1/validation/reject`, `processId` im Body). Nach dem DMS-Write ist keine Ablehnung mehr möglich (`409`).
 **Vorlage:** Nur mit separatem, explizitem Consent (FR-5), herkunftsmarkiert.
 
 ### 6.3 Agent-Pfad (MCP)
@@ -517,7 +517,7 @@ flowchart TB
 ### 8.1 Framework-Konzepte (Spring Boot 4)
 
 - **DI:** Ports als Interfaces, Adapter als bedingte Beans (`@ConditionalOnProperty`). Security und Audit werden per Aspekt eingezogen.
-- **REST:** OpenAPI-spezifiziert, Fehler als ProblemDetail (RFC 9457).
+- **REST:** OpenAPI-spezifiziert, Fehler als ProblemDetail (RFC 9457). Vertrag: [`doc/api/openapi.yaml`](api/openapi.yaml) (OpenAPI 3.1, von springdoc aus den Controller-Annotationen generiert; gemeinsames Fehlerschema `Problem`; `confirm` mit `x-idempotency`, `x-data-classification`, `x-slo`). `OpenApiContractTest` prüft die Datei gegen die generierte Spec (Drift-Check) und validiert sie; neu erzeugen mit `mvn test -Dtest=OpenApiContractTest -Dopenapi.write=true`.
 - **Konfiguration:** `application.yml` + Profile (`local`, `local-ai`, `ci`, `cluster`), typisierte `@ConfigurationProperties` mit Validierung beim Start.
 - **Fehlerbehandlung:** zentraler `@ControllerAdvice`; Timeout und definierter Abbruch je Stufe und Adapter.
 
@@ -754,7 +754,7 @@ ADR-001 bis ADR-003 wurden **bewusst nicht an die KI delegiert** (Krit. 18). Arc
 
 - **Status:** akzeptiert
 - **Kontext:** Nach der Freigabe (§ 6.2) muss `validation` zwei Dinge tun: die Attribute über den `DmsWritePort` ins DMS schreiben (externes System, HTTP) und das `PENDING`-Embedding über den `CorpusPromotionPort` auf `APPROVED` setzen (Tabelle `embedding`, fachlich im Besitz von `retrieval`). Beide Schritte liegen nicht in einer gemeinsamen ACID-Transaktion (CONTEXT § 6). Nur der Validierungspfad darf `APPROVED` setzen (C-3), und erst nach menschlicher Freigabe (C-2). Der DMS-Write ist **nicht idempotent**: ein zweiter Write auf dieselbe Location wird vom DMS mit `400` abgewiesen.
-- **Entscheidung:** Synchron, in-process, über Ports, orchestriert vom `ConfirmAndWriteBackService` im Confirm-Request: 0. Vorprüfung: Prozess existiert und gehört dem `tenant_id` der Session (`ProcessDocumentPort`), das `PENDING`-Embedding (falls vorhanden) gehört demselben Tenant und ist nicht abgelaufen (`PendingEmbeddingCheckPort`). Sonst `404` bzw. `410`, ohne DMS-Write. Fehlt das Embedding, weil das Retrieval übersprungen wurde (§ 6.5), bleibt die Freigabe möglich.
+- **Entscheidung:** Synchron, in-process, über Ports, orchestriert vom `ConfirmAndWriteBackService` im Confirm-Request (`POST /api/v1/validation/confirm`, `processId` im Body): 0. Vorprüfung: Prozess existiert und gehört dem `tenant_id` der Session (`ProcessDocumentPort`), das `PENDING`-Embedding (falls vorhanden) gehört demselben Tenant und ist nicht abgelaufen (`PendingEmbeddingCheckPort`). Sonst `404` bzw. `410`, ohne DMS-Write. Fehlt das Embedding, weil das Retrieval übersprungen wurde (§ 6.5), bleibt die Freigabe möglich.
   1. Marker `DMS_WRITE_STARTED` speichern, dann `DmsWritePort.writeAttributes` (Finalisierung). Bei sauberer Ablehnung (`4xx`) wird der Marker verworfen (`422`); bei Server-/Netzfehler bleibt er stehen (`502`, Ausgang unbekannt),
   2. `FinalizationStatePort.save(FINALIZED_INDEX_PENDING, tenant_id, repository_id, dms_document_id)` (Tabelle `process_finalization`, V14),
   3. `CorpusPromotionPort.promote` (idempotentes `UPDATE … WHERE status = 'PENDING'`),

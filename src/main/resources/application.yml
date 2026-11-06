@@ -37,7 +37,12 @@ server:
     context-path: /adeon-docextract
 
 springdoc:
-  paths-to-match: /api/v1/**
+  paths-to-match: /api/v1/**, /health
+  default-produces-media-type: application/json
+  # Error responses are declared per operation; don't copy every @ExceptionHandler onto all of them.
+  override-with-generic-response: false
+  # Stable key order, so doc/api/openapi.yaml can be diffed against the generated spec.
+  writer-with-order-by-keys: true
   # Disabled by default (prod/cluster must not expose the API schema or an unauthenticated UI,
   # see SecurityConfig's securityMatcher("/api/**") gotcha); re-enabled explicitly for local/ci.
   api-docs:

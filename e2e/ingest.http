@@ -8,11 +8,6 @@
 # dvelop-mock's identityprovider-validate.json accepts any bearer token.
 @authHeader = Bearer {{$processEnv DMS_TEST_TOKEN}}
 
-### Test Authentication
-GET {{baseUrl}}/api/v1/ingest/documents/test
-Authorization: {{authHeader}}
-
-
 ### Upload a native PDF — direct chunk upload, no Gotenberg render.
 # @name uploadPdf
 POST {{baseUrl}}/api/v1/ingest/documents
