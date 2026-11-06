@@ -1,8 +1,8 @@
 package ch.adeon.apps.docextract.extraction.adapter.out.postgres;
 
 import ch.adeon.apps.docextract.extraction.application.ExtractionResultPort;
-import ch.adeon.apps.docextract.extraction.domain.ExtractedAttribute;
-import ch.adeon.apps.docextract.extraction.domain.ExtractionResult;
+import ch.adeon.apps.docextract.extraction.application.ExtractedAttribute;
+import ch.adeon.apps.docextract.extraction.application.ExtractionResult;
 import ch.adeon.apps.docextract.shared.cleanup.TtlPurger;
 import java.sql.ResultSet;
 import java.sql.SQLException;

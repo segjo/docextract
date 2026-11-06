@@ -135,6 +135,18 @@ class HexagonalArchitectureTest {
   }
 
   @Test
+  void spring_ai_and_mcp_types_stay_in_adapters() {
+    // ADR-009: Spring-AI-/MCP-SDK-Typen verlassen die Adapter nie.
+    noClasses()
+        .that()
+        .resideOutsideOfPackage("..adapter..")
+        .should()
+        .dependOnClassesThat()
+        .resideInAnyPackage("org.springframework.ai..", "io.modelcontextprotocol..")
+        .check(productionClasses);
+  }
+
+  @Test
   void adapters_are_not_reachable_from_other_modules() {
     // Cross-Modul-Aufrufe laufen ausschliesslich über Ports, nie Adapter zu Adapter.
     FEATURE_MODULES.forEach(module ->

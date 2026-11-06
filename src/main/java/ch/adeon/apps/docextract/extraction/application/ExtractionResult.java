@@ -1,4 +1,4 @@
-package ch.adeon.apps.docextract.extraction.domain;
+package ch.adeon.apps.docextract.extraction.application;
 
 import java.util.List;
 

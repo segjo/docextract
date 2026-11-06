@@ -1,6 +1,5 @@
 package ch.adeon.apps.docextract.extraction.application;
 
-import ch.adeon.apps.docextract.extraction.domain.ExtractionResult;
 import java.util.Optional;
 
 /**

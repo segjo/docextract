@@ -253,7 +253,7 @@ docextract:
 | **retrieval**    | Ein Embedding je Dokument, Staging als `PENDING`, Top-5-Suche mit Pre-Filter (FR-3)                                                                                | `FindSimilar`                                                          | `EmbeddingPort`, `PendingEmbeddingPort`, `VectorSearchPort`, `DmsObjectDefinitionPort`, `DmsObjectMetadataPort`, `ValueListPort`, `AuthContextPort`                                                                          |
 | **extraction**   | KI-Attributvorschläge mit objdef, Top-5-Metadaten, Wertelisten; Schema-Validierung, Retry (FR-4)                                                                   | `ExtractAttributes`                                                    | `LlmPort`, `ValueListPort`, `DocumentTypeCandidatesPort` (objdef/Top-5-Metadaten), `RetrievalResultPort` (alle aus retrieval), `ContentStagingPort` (aus content), `ProcessEventPort`, `ProcessRepositoryPort` (aus process) |
 | **validation**   | Freigabe, DMS-Rückschreiben, Promotion `PENDING → APPROVED`, separater Vorlagen-Consent (FR-5)                                                                     | `Confirm`, `Reject`, `RetryCorpusPromotion`, `TtlPurger` (TTL-Cleanup) | `DmsWritePort`, `CorpusPromotionPort`, `PendingEmbeddingDeletePort`, `PendingEmbeddingCheckPort`, `FinalizationStatePort`, `DocumentBlobPort` (aus ingest)                                                                   |
-| **agentgateway** | MCP-Tool, nutzt dieselben Application-Services (FR-6)                                                                                                              | `McpTool`                                                              | wie UI-Pfad                                                                                                                                                                                                                  |
+| **agentgateway** | MCP-Tool, nutzt dieselben Application-Services (FR-6); nur lesend, Ownership-Check und Audit je Tool-Call (§ 6.3)                                                  | `McpTool`                                                              | `GetExtractionResult` (aus extraction), `GetSimilarDocuments` (aus retrieval), `ProcessDocumentPort` (aus process), `AuthContextPort` (aus security), `AuditPort` (aus audit)                                                |
 | **process**      | Fortschritt/SSE (`PROCESS_STEP`, LISTEN/NOTIFY), Lease/Heartbeat, Recovery; keine Orchestrierung der Pipeline (liegt in ingest)                                    | `SubscribeProgress`                                                    | `ProcessEventPort`, `ProcessDocumentPort`, `ProcessRepositoryPort`                                                                                                                                                           |
 | **audit**        | Append-only Protokoll, Token/Kosten (C-4, NfA-7)                                                                                                                   | —                                                                      | `AuditPort`                                                                                                                                                                                                                  |
 | **security**     | Session → `tenant_id`, Consent-Gate                                                                                                                                | `AuthContextPort`                                                      | —                                                                                                                                                                                                                            |
@@ -282,8 +282,8 @@ ch.adeon.apps.docextract
 │  ├─ port          # EmbeddingPort, VectorSearchPort, PendingEmbeddingPort, DmsObjectDefinitionPort, DmsObjectMetadataPort, ValueListPort; DmsDocumentMetadata, DmsDocumentType, DmsProperty, DmsPropertyDefinition, DmsPropertyDataType, DmsValueList, RetrievalResult
 │  └─ adapter.out   # openai-compatible | springai.* | pgvector | dms (DmsObjectDefinitionAdapter, DmsObjectMetadataAdapter, DmsValueListWebhookAdapter)
 ├─ extraction
-│  ├─ domain        # AttributeSchema, ExtractionResult, Confidence, ModelInfo, ExtractedAttribute(sourceExcerpt)
-│  ├─ application   # ExtractAttributesService (Schema-Validierung, Retry)
+│  ├─ domain        # AttributeSchema, Confidence, ModelInfo
+│  ├─ application   # ExtractAttributesService (Schema-Validierung, Retry), GetExtractionResultService; ExtractionResult, ExtractedAttribute(sourceExcerpt)
 │  ├─ port          # LlmPort (ValueListPort wird aus retrieval.port mitgenutzt)
 │  └─ adapter.out   # openai-compatible | springai.*
 ├─ validation
@@ -291,7 +291,9 @@ ch.adeon.apps.docextract
 │  ├─ application   # ConfirmAndWriteBackService (Consent-Gate, Saga, Promotion-Retry), RejectSuggestionService, TtlCleanupService (Embeddings + Blobs), FinalizationStatePort; ConfirmationCommand, ConfirmationResult
 │  ├─ port          # DmsWritePort, CorpusPromotionPort, PendingEmbeddingDeletePort, PendingEmbeddingCheckPort
 │  └─ adapter       # in.rest, in.scheduler (FinalizationRecoveryScheduler), out.dms, out.postgres
-├─ agentgateway     # adapter.in.mcp
+├─ agentgateway
+│  ├─ application   # McpTool (Inbound-Port), AgentGatewayService (Validierung, Ownership, Audit); ProcessSuggestions, SimilarDocument, AgentToolException
+│  └─ adapter.in.mcp # McpToolAdapter (Tool-Spezifikationen, Spring AI MCP Server), McpServerConfig
 ├─ process          # Fortschritt (ProcessEvent, ProcessStep, StepStatus), SSE, PgNotify, StaleJobRecovery; ProcessEventPort, ProcessDocumentPort, ProcessRepositoryPort (Import-Repository je Prozess)
 ├─ audit            # AuditPort, AuditEvent; append-only, ohne Roh-PII
 ├─ security         # AuthContext, DvelopCredential (application), TenantResolver, ConsentGuard
@@ -316,8 +318,11 @@ flowchart LR
     audit
     security
 
-    agentgateway -- "IngestDocument" --> ingest
-    agentgateway -- "ConfirmAndWriteBack" --> validation
+    agentgateway -- "GetExtractionResult" --> extraction
+    agentgateway -- "GetSimilarDocuments" --> retrieval
+    agentgateway -- "ProcessDocumentPort" --> process
+    agentgateway -- "AuditPort" --> audit
+    agentgateway -- "AuthContextPort" --> security
 
     ingest -- "ExtractText, ProvideContent" --> content
     ingest -- "FindSimilar" --> retrieval
@@ -359,6 +364,7 @@ flowchart LR
 **ArchUnit (`HexagonalArchitectureTest`):**
 
 - `adapters_are_not_reachable_from_other_modules` — kein Zugriff auf `adapter` eines anderen Moduls (keine Verletzung).
+- `spring_ai_and_mcp_types_stay_in_adapters` — Typen aus `org.springframework.ai..` und `io.modelcontextprotocol..` nur in `adapter` (ADR-009). Grün.
 - `other_modules_access_only_application_port_or_published_domain_types` — Zugriff auf `domain` eines anderen Moduls nur für explizit gelistete Typen (`PUBLISHED_DOMAIN_TYPES`). Grün. Die 23 früher modulübergreifend genutzten Domain-Typen liegen seit 2026-11-05 im `port`- bzw. `application`-Paket des Besitzermoduls, in dessen Signatur sie stehen; `MediaType` liegt in `shared.media`. Liste alt → neu: ENTWICKLUNGSTAGEBUCH.md, Eintrag 2026-11-05 „Domain-Typen verschoben".
 
 | Zielmodul    | verbleibende Ausnahme | genutzt von | bis                            |
@@ -466,6 +472,20 @@ sequenceDiagram
 ### 6.3 Agent-Pfad (MCP)
 
 Das MCP-Tool ruft dieselben Services (`FindSimilar`, `ExtractAttributes`) mit minimalen Scopes auf. Ein DMS-Write ist auch hier nur nach expliziter menschlicher Freigabe möglich (C-2, T-6). Alle Tool-Calls werden auditiert.
+
+**Umsetzung (Block 3):** Die Tools lesen die Ergebnisse, die die Pipeline (`FindSimilar`, `ExtractAttributes`) je Prozess gestagt hat, über dieselben Lese-Services wie REST (`GetExtractionResult`, `GetSimilarDocuments`). Es gibt **kein** Tool für Upload, Confirm, Reject oder DMS-Write; die Tool-Beschreibung weist darauf hin, durchgesetzt wird es dadurch, dass `McpTool` keine solche Operation anbietet.
+
+| Tool                      | Eingabe (JSON Schema)                                                                                    | Ausgabe (Text-Content, JSON)                                                                  | REST-Pendant                                          |
+| ------------------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `get_process_suggestions` | `{ processId }`, `string`, `format: uuid`, Pattern kleingeschriebene UUID, `additionalProperties: false` | `processId`, `documentTypeId`, `attributes[]` (`propertyId`, `value`, `values`, `confidence`) | `GET /api/v1/processes/{processId}/extraction-result` |
+| `find_similar_documents`  | wie oben                                                                                                 | `documents[]` (`documentId`, `repositoryId`, `score`), nur `APPROVED`, Top-5                  | `GET /api/v1/processes/{processId}/similar-documents` |
+
+- **Transport:** Spring AI MCP Server (`spring-ai-starter-mcp-server-webmvc`), Streamable HTTP unter `POST/GET /adeon-docextract/api/v1/mcp`, synchron. Ein- und ausgeschaltet über `docextract.adapters.mcp.enabled` (Default `false`); die Property schaltet auch den MCP-Server selbst (`spring.ai.mcp.server.enabled`). Tool-Aufrufe laufen auf dem Request-Thread (`immediateExecution`). Der asynchrone Redispatch der SSE-Antwort ist in `SecurityConfig` nur für `DispatcherType.ASYNC` freigegeben; der initiale Request braucht weiterhin ein gültiges Token.
+- **AuthN/Agent-Identität:** Der Agent erhält einen **technischen d.velop-User** und sendet dessen API-Key als `Authorization: Bearer <API-Key>`. Der Endpunkt liegt unter `/api/**` und durchläuft wie REST den `DvelopAuthenticationFilter` (Validierung beim d.velop IdP); es gibt keinen eigenen DocExtract-Token. `tenant_id` liefert `AuthContextPort` (vorerst `default-tenant`, Ableitung nach d.velop-Standard aus den Headern der Authentisierung). Agent-spezifische Scopes folgen in P5.
+- **Weggelassene Daten:** An den Agenten gehen weder `sourceExcerpt` noch die Eigenschaftswerte der ähnlichen Dokumente (`RetrievalResult.properties`). Von ähnlichen Dokumenten erhält er nur `documentId`, `repositoryId` und `score`. Die Attributvorschläge (`value`/`values`, `confidence`) des eigenen Dokuments gehen an ihn und können Personendaten enthalten. _Begründung:_ Die Eigenschaftswerte wurden mit der Session des Benutzers geladen; gäbe DocExtract sie weiter, sähe der Agent Werte, für die er im DMS keine Rechte hat. Über die `documentId` kann er sie selbst im DMS abfragen, dann gelten seine eigenen Rechte. _Restrisiko:_ Das LLM sieht die Werte der Top-5 als Kontext; ein Vorschlag kann deshalb einen Wert aus einem ähnlichen Dokument übernehmen. Modell-ID und lokal/extern gibt das Tool nicht aus (nicht je Ergebnis gespeichert; Nachweis über das Audit, C-4/NfA-7).
+- **Guardrails im Service** (`AgentGatewayService`, nicht im Adapter): Format der `processId`; Ownership (`processId` gehört zum Mandanten des Aufrufers, sonst wie bei unbekannter ID `not_found`, keine Daten); ein Audit-Eintrag je Aufruf (`mcp.tool.<name>.<ok|invalid_argument|not_found|error>`, nur SHA-256 der Argumente, C-4). Die Schema-Validierung des MCP-SDK ist abgeschaltet, damit auch ungültige Aufrufe den Service erreichen und auditiert werden; die Prüfung ist dort gleich streng. Umgesetzt mit einem `@Primary`-Customizer in `McpServerConfig`, der den Servlet-Customizer von Spring AI ersetzt (`immediateExecution(true)`, `validateToolInputs(false)`); **bei Spring-AI-Upgrades prüfen**, ob der ersetzte Customizer weitere Einstellungen setzt.
+- **Fehler:** `isError: true` mit `{ "code": "invalid_argument" | "not_found" | "internal_error", "message" }`, ohne PII. Einheitliche Fehlerform mit REST folgt in P7.
+- **Tests:** `AgentGatewayServiceTest`, `McpToolAdapterTest`, `McpServerWiringTest`, `McpEndpointSecurityTest` (echter HTTP-Stack: ohne Token `401` auf `/api/v1/mcp` und `/api/v1/processes/{id}/events`; schema-ungültiger Tool-Call erreicht den Service und wird auditiert).
 
 ### 6.4 Fortschritt im Cluster (ADR-004)
 

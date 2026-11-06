@@ -5,7 +5,7 @@ import static ch.adeon.apps.docextract.shared.config.OpenApiConfig.UNAUTHORIZED_
 
 import ch.adeon.apps.docextract.extraction.application.GetExtractionResult;
 import ch.adeon.apps.docextract.extraction.application.RetryExtraction;
-import ch.adeon.apps.docextract.extraction.domain.ExtractionResult;
+import ch.adeon.apps.docextract.extraction.application.ExtractionResult;
 import ch.adeon.apps.docextract.security.application.OutboundCredentialPort;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;

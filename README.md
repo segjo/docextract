@@ -140,6 +140,54 @@ Runnable HTTP-Requests gegen die laufende App (d.velop-Mock + echtes Gotenberg s
    mvn test -Dtest=OpenApiContractTest -Dopenapi.write=true
    ```
 
+### MCP-Tool lokal testen
+
+Lesende Tools `get_process_suggestions` und `find_similar_documents` für Agenten (FR-6,
+[ARCHITECTURE.md § 6.3](doc/ARCHITECTURE.md)). Der MCP-Endpunkt ist standardmässig aus.
+
+Der Agent meldet sich als **technischer d.velop-User** an: dessen API-Key geht als
+`Authorization: Bearer <API-Key>` mit und wird wie bei REST vom `DvelopAuthenticationFilter` beim
+d.velop IdP geprüft. Einen eigenen DocExtract-Token gibt es nicht.
+
+An den Agenten gehen weder `sourceExcerpt` noch die Eigenschaftswerte der ähnlichen Dokumente
+(`RetrievalResult.properties`). Von ähnlichen Dokumenten erhält er nur `documentId`, `repositoryId`
+und `score`. Die Attributvorschläge (`value`/`values`, `confidence`) des eigenen Dokuments gehen an
+ihn und können Personendaten enthalten. Die Eigenschaftswerte wurden mit der Session des Benutzers
+geladen; über die `documentId` kann der Agent sie mit seinen eigenen DMS-Rechten abfragen.
+
+1. d.velop-Mock und Postgres starten, Anwendung mit MCP starten:
+
+   ```bash
+   docker compose --profile mock up -d postgres dvelop-mock
+   DOCEXTRACT_ADAPTERS_MCP_ENABLED=true DOCEXTRACT_DVELOP_SYSTEM_BASE_URI=http://localhost:8081 \
+     mvn spring-boot:run -Dspring-boot.run.profiles=dev
+   ```
+
+2. Session eröffnen (Streamable HTTP). Lokal akzeptiert der d.velop-Mock jedes Token; im echten
+   System steht hier der API-Key des technischen Agent-Users:
+
+   ```bash
+   MCP=http://localhost:8080/adeon-docextract/api/v1/mcp
+   HDR=(-H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+        -H 'Authorization: Bearer <API-Key des Agent-Users>')
+   SID=$(curl -s -D - -o /dev/null "${HDR[@]}" -X POST $MCP -d '{"jsonrpc":"2.0","id":1,"method":"initialize",
+     "params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"1"}}}' \
+     | grep -i '^mcp-session-id' | cut -d' ' -f2 | tr -d '\r')
+   curl -s "${HDR[@]}" -H "Mcp-Session-Id: $SID" -X POST $MCP -d '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+   ```
+
+3. Tool aufrufen (`processId` aus der Antwort des Uploads `POST /api/v1/ingest/documents`):
+
+   ```bash
+   curl -s "${HDR[@]}" -H "Mcp-Session-Id: $SID" -X POST $MCP -d '{"jsonrpc":"2.0","id":2,"method":"tools/call",
+     "params":{"name":"get_process_suggestions","arguments":{"processId":"<processId>"}}}'
+   ```
+
+   Antwort (SSE-Event `message`): `{"result":{"content":[{"type":"text","text":"{\"processId\":…,\"documentTypeId\":…,\"attributes\":[…]}"}],"isError":false}}`.
+   Fremde oder unbekannte `processId` → `isError: true`, `code: not_found`. Alternativ mit dem
+   MCP Inspector (`npx @modelcontextprotocol/inspector`, Transport „Streamable HTTP", URL `$MCP`,
+   Header `Authorization`).
+
 ## Qualitätssicherung
 
 Die Teststrategie umfasst:

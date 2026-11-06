@@ -31,6 +31,23 @@ spring:
         transcription: none
       image: none
       moderation: none
+    # Agent path (FR-6): MCP server only runs with docextract.adapters.mcp.enabled=true. The
+    # endpoint lies under /api/** so the d.velop authentication of SecurityConfig applies.
+    mcp:
+      server:
+        enabled: ${docextract.adapters.mcp.enabled}
+        name: docextract
+        type: sync
+        protocol: streamable
+        annotation-scanner:
+          enabled: false
+        capabilities:
+          tool: true
+          resource: false
+          prompt: false
+          completion: false
+        streamable-http:
+          mcp-endpoint: /api/v1/mcp
 
 server:
   servlet:
@@ -81,6 +98,9 @@ docextract:
   adapters:
     # Chosen per port via @ConditionalOnProperty (ADR-011); a change needs config only, no code.
     preview: gotenberg
+    # Read-only MCP tools for agents (FR-6, ARCHITECTURE § 6.3); off by default.
+    mcp:
+      enabled: false
     text-extraction: pdfbox # pdfbox (default) | docling not offered for FR-3 (ADR-012)
     document-content: fulltext # fulltext (PDFBox, default) | markdown (docling)
     llm:
@@ -152,6 +172,11 @@ spring:
   config:
     activate:
       on-profile: dev
+
+docextract:
+  adapters:
+    mcp:
+      enabled: true
 
 springdoc:
   api-docs:

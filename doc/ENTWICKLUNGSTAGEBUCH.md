@@ -1298,3 +1298,164 @@ Die Event-Namen sind keine Pfade, standen aber in derselben Tabellenzelle und wi
   Lese-Endpunkte/SSE (P5); Fehlerabbildungen, 413/422, Range/416 (P7).
 - Verweise in älteren Tagebucheinträgen auf `docextract-api-docs.json`/`openapi-spec` bewusst nicht
   geändert (historisch).
+
+---
+
+## 2026-11-06 — MCP-Tool für Agenten (Block 3, P4 / Artefakt 3)
+
+**Tool/Modell:** GitHub Copilot Chat (Agent-Modus).
+
+**Auftrag (Prompt-Zusammenfassung):** Modul `agentgateway` (`adapter.in.mcp`) mit lauffähigem
+MCP-Tool: Spring AI MCP Server nur im Adapter (ADR-009); nur lesende Tools auf denselben
+Application-Services wie REST (`get_process_suggestions`, `find_similar_documents`); kein Tool für
+confirm/DMS-Write (C-2); JSON-Schema mit strikter Validierung; Agent-Identität über bestehende
+Lösung oder mandantengebundenen Service-Token (OFFEN); per `docextract.adapters.mcp.enabled`
+abschaltbar (Default `false`). Tests: fremder Mandant, ungültige Eingabe, Audit je Call, ArchUnit.
+Doku: ARCHITECTURE.md § 6.3, README „MCP-Tool lokal testen".
+
+**Geänderte Dateien:**
+
+- `pom.xml` (`spring-ai-starter-mcp-server-webmvc`, Version über `spring-ai-bom` 2.0.0)
+- `src/main/resources/application.yml` (`docextract.adapters.mcp.enabled: false`,
+  `spring.ai.mcp.server.*`: an die Property gekoppelt, Streamable HTTP, Endpunkt `/api/v1/mcp`,
+  nur Tool-Capability)
+- `agentgateway/application/`: `McpTool` (neu geschnitten), `AgentGatewayService`,
+  `ProcessSuggestions`, `SimilarDocument`, `AgentToolException` (neu)
+- `agentgateway/adapter/in/mcp/`: `McpToolAdapter`, `McpServerConfig` (neu);
+  `DocExtractMcpTool` + `DocExtractMcpToolTest` (gelöscht)
+- `extraction/domain/ExtractionResult`, `ExtractedAttribute` → `extraction/application/` (Imports in
+  `extraction` angepasst)
+- `security/adapter/in/web/SecurityConfig.java` (`DispatcherType.ASYNC` → `permitAll`)
+- Tests: `AgentGatewayServiceTest`, `McpToolAdapterTest`, `McpServerWiringTest` (neu);
+  `HexagonalArchitectureTest` (Regel `spring_ai_and_mcp_types_stay_in_adapters`)
+- `doc/ARCHITECTURE.md` (§ 5.4 agentgateway-Zeile, § 5.5 extraction/agentgateway, § 5.6
+  Diagramm-Kanten + ArchUnit-Regel, § 6.3 Toolliste/Transport/AuthN), `README.md`
+
+**Übernommen (generiert):**
+
+- Bestand: `DocExtractMcpTool` war ein nicht verdrahteter Stub mit `ingest` und `confirm` (ohne
+  Attribute). `confirm` über MCP widerspricht C-2/ADR-003, `ingest` ist schreibend (DMS-Chunk-Upload)
+  → beide entfernt, `McpTool` bietet nur noch die zwei Lese-Operationen.
+- `AgentGatewayService` (application) ruft `GetExtractionResult`/`GetSimilarDocuments` — dieselben
+  Services wie `ExtractionController`/`RetrievalController`. Davor: Format-Check `processId`
+  (kleingeschriebene UUID, gleiches Pattern wie im Tool-Schema), Ownership über
+  `ProcessDocumentPort.find(...).tenantId()` gegen `AuthContextPort` (fremd und unbekannt → beide
+  `not_found`), danach im `finally` ein `AuditEvent` je Aufruf (`mcp.tool.<name>.<outcome>`,
+  SHA-256 der `processId`, wie `ValueListLookupTool`).
+- `find_similar_documents` gibt nur `documentId`, `repositoryId`, `score` aus (nicht die
+  DMS-Metadaten aus `RetrievalResult.properties`), `get_process_suggestions` ohne `sourceExcerpt`
+  (Datenminimierung, C-3).
+- `ExtractionResult`/`ExtractedAttribute` lagen in `extraction.domain`; der Zugriff aus
+  `agentgateway` hätte `other_modules_access_only_application_port_or_published_domain_types`
+  verletzt. Gemäss bestehender Konvention (Vertragstyp im `application`-Paket des Besitzers, siehe
+  Eintrag „Domain-Typen verschoben") verschoben statt in die Ausnahmeliste aufgenommen.
+- Agent-Identität: **bestehende Lösung gefunden** — `SecurityConfig` sichert `/api/**` mit
+  `DvelopAuthenticationFilter` (Bearer-Token oder `AuthSessionId`, Prüfung beim d.velop IdP). Der
+  MCP-Endpunkt liegt deshalb unter `/api/v1/mcp`; kein eigener Service-Token eingeführt.
+- Spring AI 2.0 registriert für Servlet-Apps einen Customizer mit `immediateExecution(true)`
+  (Tool-Call auf dem Request-Thread → `SecurityContext` sichtbar). Das MCP-SDK validiert
+  Tool-Argumente zusätzlich selbst gegen das Schema und lehnt ungültige Aufrufe ab, **bevor**
+  DocExtract sie sieht → kein Audit-Eintrag. Daher eigener `@Primary`-Customizer:
+  `immediateExecution(true)` + `validateToolInputs(false)`; die Prüfung im Service ist gleich streng.
+- Live-Smoke-Test (`dev`-Profil, dvelop-mock, Postgres, MCP an): ohne Token `401`; `initialize`,
+  `tools/list` (2 Tools mit Schema/Annotations), `tools/call` mit eigenem Prozess → Ergebnis, mit
+  unbekannter UUID → `not_found`, mit `"x"` → `invalid_argument`.
+- Dabei gefunden: Nach jeder SSE-Antwort (MCP, vermutlich auch `/processes/{id}/events`) loggte
+  Spring Security beim `ASYNC`-Redispatch `AuthorizationDeniedException` als ERROR (Antwort war
+  schon geschrieben; stateless → kein Kontext im Redispatch). Fix: `ASYNC`-Dispatch `permitAll`
+  (Standardempfehlung von Spring Security); der ursprüngliche Request bleibt authentisiert.
+  Nachher 0 ERROR im Log.
+- `mvn -o clean verify` grün (125 Tests), ArchUnit grün.
+
+**Zu prüfen durch Mensch:**
+
+- OFFEN: Mandant des Agenten. `SessionAuthContextAdapter` liefert für jeden Aufrufer fest
+  `default-tenant` (gilt auch für REST); der Fremd-Mandanten-Test belegt die Prüfung nur mit
+  gemocktem `AuthContextPort`. Wie wird `tenant_id` aus der d.velop-Identität abgeleitet, und
+  erhält der Agent einen eigenen technischen d.velop-Benutzer/API-Key (statt eines neuen
+  DocExtract-Service-Tokens)? Begründung für „kein eigener Token": eine zweite
+  Authentisierungsart wäre ein neuer, ungeprüfter Sicherheitspfad; die bestehende IdP-Prüfung gilt
+  für REST und MCP gleich.
+- OFFEN: Scopes (C-3/T-6). Der Agent hat heute dieselben Rechte wie ein Benutzer auf `/api/**`
+  (z. B. auch REST-`confirm`, wenn er den REST-Pfad direkt ruft). Scope-Liste und Sperre des
+  Kanals MCP im `ConsentGuard` → P5.
+- OFFEN: Modell-ID und lokal/extern je Vorschlag. `ExtractionResult` persistiert `ModelInfo` nicht
+  (`extraction_result` hat nur `document_type_id`, `attributes`); das Tool gibt sie deshalb nicht
+  aus statt die aktuelle Konfiguration als Herkunft auszugeben. Persistieren (neue Migration) oder
+  weglassen?
+- Bestätigen: `sourceExcerpt` und DMS-Metadaten bewusst nicht an den Agenten.
+- Audit: `AuditPort` ist weiterhin `NoopAuditAdapter`, `AuditEvent` hat keine Felder für Mandant,
+  Kanal, Akteur, Tool → Einträge werden erzeugt (Tests), aber nicht gespeichert. Datenmodell → P5.
+- Ownership-Check liegt vorerst in `AgentGatewayService`, nicht zentral; REST-Lese-Endpunkte haben
+  ihn noch nicht. Er stützt sich auf die ORIGINAL-Zeile in `document_blob` (mit `dms_location`):
+  nach Freigabe/Ablehnung/TTL ist der Prozess für den Agenten `not_found`. Zentraler
+  `ProcessAccessGuard` für REST + MCP → P5.
+- Guardrail-Code geändert: `SecurityConfig` (`ASYNC` → `permitAll`) — bitte gegenlesen.
+- `@Primary`-Customizer ersetzt den Servlet-Customizer von Spring AI; bei Spring-AI-Upgrades prüfen,
+  ob dieser weitere Einstellungen setzt.
+- Tool-Fehlerformat (`code`, `message`) ist noch nicht mit REST-ProblemDetail vereinheitlicht → P7.
+- „Top-5" hängt an `docextract.retrieval.top-k: 5` (und `min-score`), nicht am Tool.
+
+---
+
+## 2026-11-06 — P4-Nachtrag: Entscheide zu den OFFEN-Punkten (Block 3, P4)
+
+**Tool/Modell:** GitHub Copilot Chat (Agent-Modus).
+
+**Auftrag (Prompt-Zusammenfassung):** Entscheide des Menschen zu den P4-OFFEN-Punkten
+dokumentieren (Mandant, Agent-Identität, Modell-ID, Datenminimierung); Upgrade-Hinweis am
+`@Primary`-Customizer; Tests für „ungültiger MCP-Aufruf wird auditiert" und „ohne Token `401` auf
+`/api/v1/mcp` und `/processes/{id}/events`"; Freigabe nur für `DispatcherType.ASYNC`.
+
+**Geänderte Dateien:**
+
+- `McpServerConfig.java` (Javadoc: bei Spring-AI-Upgrades prüfen)
+- `McpEndpointSecurityTest.java` (neu)
+- `doc/ARCHITECTURE.md` § 6.3, `README.md` („MCP-Tool lokal testen")
+
+**Entscheide (Mensch) und Umsetzung:**
+
+1. **Mandant — geschlossen.** `default-tenant` bleibt vorerst; der Mandant kommt nach d.velop-Standard
+   bei der Authentisierung aus den HTTP-Headern. Kein Code geändert. **Annahme:** Der
+   Mandanten-Header gilt nur, wenn ihn der d.velop-Proxy bzw. IdP gesetzt hat. Ein Client, der
+   DocExtract direkt anspricht, darf ihn nicht selbst setzen können. Voraussetzung dafür: DocExtract
+   ist nur über den Proxy erreichbar, oder der Mandant wird aus der IdP-Validierung abgeleitet.
+2. **Agent-Identität — technischer d.velop-User.** Der Agent erhält einen technischen d.velop-User
+   mit API-Key als Bearer-Token und läuft über den bestehenden `DvelopAuthenticationFilter`; kein
+   eigener Token-Mechanismus. In § 6.3 und README dokumentiert. **OFFEN (P5), Vorschlag, nicht
+   umgesetzt:**
+   - konfigurierte Liste der Agent-User, z. B. `docextract.agent.principals`;
+   - für diese User hat jeder Aufruf den Kanal MCP;
+   - der `ConsentGuard` lehnt für sie `confirm`, `reject` und `template` auch über REST ab.
+3. **Modell-ID und lokal/extern — weggelassen.** Keine Migration, das Tool gibt beides nicht aus.
+   Begründung: Die Konfiguration zeigt nur das aktuelle Modell; welches Modell ein gespeichertes
+   Ergebnis erzeugt hat, wird nicht gespeichert — wegen der kurzen TTL (`result-ttl` PT2H)
+   vertretbar. Für C-4/NfA-7 zählt das Audit (Modell-ID je Lauf), nicht die Ausgabe des Tools.
+   **OFFEN:** Für FR-5 (Modellinfo im Validierungs-UI) besteht dieselbe Unschärfe.
+4. **Datenminimierung — bestätigt.** An den Agenten gehen weder `sourceExcerpt` noch die
+   Eigenschaftswerte der ähnlichen Dokumente (`RetrievalResult.properties`). Von ähnlichen
+   Dokumenten erhält er nur `documentId`, `repositoryId` und `score`. Die Attributvorschläge
+   (`value`/`values`, `confidence`) des eigenen Dokuments gehen an ihn und können Personendaten
+   enthalten. Begründung: Die Eigenschaftswerte wurden mit der Session des Benutzers geladen; gibt
+   DocExtract sie weiter, kann der Agent Werte sehen, für die er im DMS keine Rechte hat. Über die
+   `documentId` kann er sie selbst im DMS abfragen, dann gelten seine eigenen Rechte.
+   **Restrisiko:** Das LLM sieht die Werte der Top-5 als Kontext; ein Vorschlag kann deshalb einen
+   Wert aus einem ähnlichen Dokument übernehmen.
+
+**Abweichungen:**
+
+- SDK-Validierung abgeschaltet: akzeptiert. Upgrade-Hinweis am `@Primary`-Customizer in Code und
+  § 6.3.
+- Neuer `McpEndpointSecurityTest` (echtes Tomcat + `SecurityConfig` + Spring AI MCP Server, ohne DB):
+  ohne Token `401` auf `POST /api/v1/mcp` und `GET /api/v1/processes/{id}/events`; ein
+  schema-ungültiger `tools/call` (`processId: "x"`) erreicht `AgentGatewayService` und erzeugt den
+  Audit-Aufruf `mcp.tool.get_process_suggestions.invalid_argument`. Gegenprobe: mit
+  `validateToolInputs(true)` schlägt der Test fehl (vorher nur Unit-Tests direkt am Handler, die die
+  SDK-Validierung nicht abdecken).
+- `SecurityConfig`: Freigabe ist auf `dispatcherTypeMatchers(DispatcherType.ASYNC)` beschränkt, keine
+  Pfad-Freigabe; Gegenlesen durch Mensch steht aus.
+- Testdetail: Properties per `SpringApplicationBuilder.properties(...)` sind Default-Properties und
+  verlieren gegen `application.yml` — im Test daher als Command-Line-Argumente gesetzt.
+
+**Unverändert offen:** Audit-Persistenz und Felder in `AuditEvent` (P5), zentraler Ownership-Check
+(P5), Scopes/Agent-Principals (P5), Fehlerformat ProblemDetail (P7), Modellinfo im UI (FR-5).

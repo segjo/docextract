@@ -126,6 +126,14 @@
             </exclusions>
         </dependency>
 
+        <!-- MCP server for the agent path (FR-6, ADR-009); only used in
+        agentgateway.adapter.in.mcp,
+        switched on via docextract.adapters.mcp.enabled (default false). -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-mcp-server-webmvc</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
