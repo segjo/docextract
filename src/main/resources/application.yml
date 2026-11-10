@@ -31,13 +31,35 @@ spring:
         transcription: none
       image: none
       moderation: none
+    # Agent path (FR-6): MCP server only runs with docextract.adapters.mcp.enabled=true. The
+    # endpoint lies under /api/** so the d.velop authentication of SecurityConfig applies.
+    mcp:
+      server:
+        enabled: ${docextract.adapters.mcp.enabled}
+        name: docextract
+        type: sync
+        protocol: streamable
+        annotation-scanner:
+          enabled: false
+        capabilities:
+          tool: true
+          resource: false
+          prompt: false
+          completion: false
+        streamable-http:
+          mcp-endpoint: /api/v1/mcp
 
 server:
   servlet:
     context-path: /adeon-docextract
 
 springdoc:
-  paths-to-match: /api/v1/**
+  paths-to-match: /api/v1/**, /health
+  default-produces-media-type: application/json
+  # Error responses are declared per operation; don't copy every @ExceptionHandler onto all of them.
+  override-with-generic-response: false
+  # Stable key order, so doc/api/openapi.yaml can be diffed against the generated spec.
+  writer-with-order-by-keys: true
   # Disabled by default (prod/cluster must not expose the API schema or an unauthenticated UI,
   # see SecurityConfig's securityMatcher("/api/**") gotcha); re-enabled explicitly for local/ci.
   api-docs:
@@ -51,11 +73,28 @@ logging:
     org.apache.pdfbox: error
 
 docextract:
+  tenant:
+    # Single-tenant operation (app-secret empty): every request belongs to this tenant, x-dv-*
+    # headers are ignored, the d.velop system base URI comes from docextract.dvelop.system-base-uri.
+    default-id: default-tenant
+    # d.velop cloud (multi-tenant): base64 app secret from the Cloudcenter. When set, the headers
+    # x-dv-tenant-id, x-dv-baseuri and x-dv-sig-1 are mandatory on every /api request and the
+    # signature (HMAC-SHA256 over baseuri + tenant id) is verified, otherwise 403. Env only.
+    app-secret: ${DOCEXTRACT_TENANT_APP_SECRET:}
+  agent:
+    # d.velop user group id of the agents (MCP clients): members may only use the MCP endpoint, the
+    # rest of /api is 403 for them. Required when MCP is enabled; 'none' = deliberately no group.
+    group-id: ${DOCEXTRACT_AGENT_GROUP_ID:}
+  audit:
+    # Key of the audit actor pseudonym (HMAC-SHA256 over tenant + user id), at least 32 characters and
+    # different from docextract.tenant.app-secret. Mandatory; only profile dev has a default key.
+    actor-key: ${DOCEXTRACT_AUDIT_ACTOR_KEY:}
   dvelop:
-    jstore-uri: http://localhost:6380/store/httpgateway/appconfig
+    # Mock d.velop system by default (docker/dvelop-mock); override in a local, git-ignored .env
+    # (see README) to point at a real d.velop system without touching this file.
+    jstore-uri: ${DOCEXTRACT_DVELOP_JSTORE_URI:http://localhost:6380/store/httpgateway/appconfig}
     # fallback used only when the jstore endpoint above is unreachable, e.g. https://dms.local
-    # system-base-uri: http://localhost:8081
-    system-base-uri: https://dms.local
+    system-base-uri: ${DOCEXTRACT_DVELOP_SYSTEM_BASE_URI:http://localhost:8081}
   ingest:
     # T-4 DoS mitigation: hard cap on upload size (bytes), default 50 MiB
     max-file-size-bytes: 52428800
@@ -72,31 +111,43 @@ docextract:
   docling:
     base-uri: http://localhost:5001
   ollama:
-    base-uri: http://localhost:11435
+    # Local LLM mock endpoint by default (docker/llm-mock); override in a local, git-ignored .env
+    # (see README) to point at a real Ollama instance, e.g. http://localhost:11435.
+    base-uri: ${DOCEXTRACT_OLLAMA_BASE_URI:http://localhost:8082}
   adapters:
     # Chosen per port via @ConditionalOnProperty (ADR-011); a change needs config only, no code.
     preview: gotenberg
+    # Read-only MCP tools for agents (FR-6, ARCHITECTURE § 6.3); off by default.
+    mcp:
+      enabled: false
     text-extraction: pdfbox # pdfbox (default) | docling not offered for FR-3 (ADR-012)
     document-content: fulltext # fulltext (PDFBox, default) | markdown (docling)
     llm:
       # Generic OpenAI-compatible adapter (ADR-011): local runtime (Ollama's /v1, llama.cpp, vLLM)
-      # or hosted provider — only configuration differs. Defaults below point at the previously
-      # opt-in Azure/Microsoft-Foundry deployment (ADR-010, now folded into ADR-011); switch
-      # base-url/model-id to point at a local runtime instead.
-      base-url: https://adeon-drack-analyzer.openai.azure.com
+      # or hosted provider — only configuration differs. Local LLM mock endpoint by default
+      # (docker/llm-mock); override base-url/api-key/model-id in a local, git-ignored .env (see
+      # README) to point at a real provider, e.g. the Azure/Microsoft-Foundry deployment
+      # (ADR-010, now folded into ADR-011) at https://adeon-drack-analyzer.openai.azure.com.
+      base-url: ${DOCEXTRACT_ADAPTERS_LLM_BASE_URL:http://localhost:8082}
       api-key: ${DTRACK_ANALYZER_OPENAPI_TOKEN:}
-      model-id: gpt-5.6-sol
+      model-id: ${DOCEXTRACT_ADAPTERS_LLM_MODEL_ID:gpt-5.6-sol}
       # Optional Microsoft Foundry/Azure OpenAI api-version query parameter; blank for a plain
       # OpenAI-compatible endpoint.
       api-version: 2025-04-01-preview
       # Optional sampling params; blank means the provider's own default is used.
       temperature:
       top-p:
+      # Additional attempts to re-request a response that fails the mandatory server-side
+      # JSON-schema validation (T-1), on top of the first attempt; exhausted -> controlled failure
+      # (ExtractAttributesService#generateValidated, NfA-3). 1 = one retry, two attempts total.
+      max-retries: 1
     embedding:
-      # Local Ollama's OpenAI-compatible embeddings endpoint by default (ADR-011).
-      base-url: ${docextract.ollama.base-uri}/v1
-      api-key:
-      model-id: qwen3-embedding:0.6b
+      # Local Ollama's OpenAI-compatible embeddings endpoint by default (ADR-011); override in a
+      # local, git-ignored .env (see README) to point at a real provider. Defaults to
+      # docextract.ollama.base-uri so it tracks that override automatically unless set explicitly.
+      base-url: ${DOCEXTRACT_ADAPTERS_EMBEDDING_BASE_URL:${docextract.ollama.base-uri}/v1}
+      api-key: ${DOCEXTRACT_ADAPTERS_EMBEDDING_API_KEY:}
+      model-id: ${DOCEXTRACT_ADAPTERS_EMBEDDING_MODEL_ID:qwen3-embedding:0.6b}
   content:
     # First-N-words plain text for FR-3 (ADR-012): no chunking, no structure/table
     # reconstruction. Must stay <= the embedding model's context window.
@@ -130,11 +181,34 @@ docextract:
     # TTL for the extraction result handed to the validation UI, persisted in Postgres (not
     # per-instance memory) so any cluster node can serve it (ADR-004).
     result-ttl: PT2H
+    # Read-only LLM tool calls (lookup_value_list) per extraction (ADR-014).
+    max-tool-calls: 10
+  validation:
+    # Interval of the promotion retry for FINALIZED_INDEX_PENDING (ADR-015).
+    recovery-interval: PT5M
+    # Promotion retries stop after this age of the first failure -> INDEX_FAILED (C-7 final failure).
+    promotion-retry-limit: PT24H
+    # Retry runs log an ERROR (alarm) for promotions still pending after this age.
+    promotion-alert-after: PT1H
+  cleanup:
+    # Interval of the TTL cleanup job over all expires_at tables (shared.cleanup.TtlCleanupJob).
+    interval: PT5M
+  process:
+    # Age of the newest step after which a process's process_step rows are deleted (existence source
+    # of the process endpoints). Must be >= every result/blob/pending TTL and the promotion-retry-limit.
+    step-retention: PT48H
 ---
 spring:
   config:
     activate:
       on-profile: dev
+
+docextract:
+  adapters:
+    mcp:
+      enabled: true
+  agent:
+    group-id: none
 
 springdoc:
   api-docs:

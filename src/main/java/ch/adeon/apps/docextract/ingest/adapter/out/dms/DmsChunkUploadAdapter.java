@@ -2,10 +2,9 @@ package ch.adeon.apps.docextract.ingest.adapter.out.dms;
 
 import ch.adeon.apps.docextract.ingest.application.DmsChunkUploadException;
 import ch.adeon.apps.docextract.ingest.domain.DmsLocation;
-import ch.adeon.apps.docextract.ingest.domain.MediaType;
 import ch.adeon.apps.docextract.ingest.port.DmsChunkUploadPort;
-import ch.adeon.apps.docextract.security.application.AppConfigPort;
-import ch.adeon.apps.docextract.security.domain.DvelopCredential;
+import ch.adeon.apps.docextract.security.application.DvelopCredential;
+import ch.adeon.apps.docextract.shared.media.MediaType;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -23,14 +22,11 @@ import org.springframework.web.client.RestClientException;
 public class DmsChunkUploadAdapter implements DmsChunkUploadPort {
 
   private final RestClient restClient;
-  private final AppConfigPort appConfigPort;
   private final String defaultRepositoryId;
 
   public DmsChunkUploadAdapter(
-      AppConfigPort appConfigPort,
       @Value("${docextract.ingest.dms.repository-id}") String defaultRepositoryId) {
     this.restClient = RestClient.create();
-    this.appConfigPort = appConfigPort;
     this.defaultRepositoryId = defaultRepositoryId;
   }
 
@@ -43,11 +39,9 @@ public class DmsChunkUploadAdapter implements DmsChunkUploadPort {
       ResponseEntity<Void> response =
           restClient
               .post()
-              .uri(
-                  appConfigPort.systemBaseUri() + "/dms/r/{repositoryId}/blob/chunk",
-                  effectiveRepositoryId)
+              .uri(credential.baseUri() + "/dms/r/{repositoryId}/blob/chunk", effectiveRepositoryId)
               // Origin is mandatory for write access (POST/PUT/DELETE/PATCH) to prevent CSRF.
-              .header(HttpHeaders.ORIGIN, appConfigPort.systemBaseUri())
+              .header(HttpHeaders.ORIGIN, credential.baseUri())
               .header(credential.headerName(), credential.headerValue())
               .headers(headers -> addAcceptLanguage(headers, credential))
               .contentType(org.springframework.http.MediaType.APPLICATION_OCTET_STREAM)

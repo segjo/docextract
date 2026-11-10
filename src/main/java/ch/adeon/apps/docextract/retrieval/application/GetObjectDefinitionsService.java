@@ -1,6 +1,6 @@
 package ch.adeon.apps.docextract.retrieval.application;
 
-import ch.adeon.apps.docextract.retrieval.domain.DmsDocumentMetadata;
+import ch.adeon.apps.docextract.retrieval.port.DmsDocumentMetadata;
 import ch.adeon.apps.docextract.retrieval.port.DmsObjectDefinitionPort;
 import ch.adeon.apps.docextract.security.application.OutboundCredentialPort;
 import java.util.List;

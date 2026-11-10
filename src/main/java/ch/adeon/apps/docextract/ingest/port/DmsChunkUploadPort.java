@@ -1,8 +1,8 @@
 package ch.adeon.apps.docextract.ingest.port;
 
 import ch.adeon.apps.docextract.ingest.domain.DmsLocation;
-import ch.adeon.apps.docextract.ingest.domain.MediaType;
-import ch.adeon.apps.docextract.security.domain.DvelopCredential;
+import ch.adeon.apps.docextract.security.application.DvelopCredential;
+import ch.adeon.apps.docextract.shared.media.MediaType;
 
 /**
  * Outbound port for the write-only d.velop DMS-Chunk-Store (ADR-008). Used solely to obtain the

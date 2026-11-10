@@ -56,7 +56,7 @@ Content-Language: de
 GET {{baseUrl}}/r/{{repositoryId}}/objdef
 Authorization: {{authHeader}}
 
-### Get Value List for a Property
+### Get Value List for a Property (inofficial)
 # this is an inoffical endpoint for fetching value lists for a specific property.
 @dmsPropertyId = 15
 
@@ -75,3 +75,31 @@ Content-Type: application/json
   }
 }
  
+### Validate Dms Properties of a blob (inofficial)
+# this is an inofficial endpoint for validating extended properties before storing a document.
+POST {{baseUrl}}/r/{{repositoryId}}/storevalidate
+Authorization: {{authHeader}}
+Content-Type: text/plain
+
+{
+  "type": 1,
+  "objectDefinitionId": "DKOR",
+  "systemProperties": {
+    "property_filename": "jstore-sidecar.pdf",
+    "property_filetype": "pdf"
+  },
+  "remarks": {},
+  "multivalueExtendedProperties": {
+    "28": {
+      "1": "test a",
+      "2": "test b",
+    }
+  },
+  "extendedProperties": {
+    "22": "test",
+    "23": "test",
+    "25": "2026-11-10",
+    "27": "Finanzen"
+  }
+}
+

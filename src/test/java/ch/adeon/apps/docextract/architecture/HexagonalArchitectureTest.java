@@ -1,16 +1,18 @@
 package ch.adeon.apps.docextract.architecture;
 
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
+import com.tngtech.archunit.lang.EvaluationResult;
 import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-
 class HexagonalArchitectureTest {
 
   private static final String BASE = "ch.adeon.apps.docextract";
@@ -122,17 +124,47 @@ class HexagonalArchitectureTest {
   }
 
   @Test
+  void spring_ai_and_mcp_types_stay_in_adapters() {
+    // ADR-009: Spring-AI-/MCP-SDK-Typen verlassen die Adapter nie.
+    noClasses()
+        .that()
+        .resideOutsideOfPackage("..adapter..")
+        .should()
+        .dependOnClassesThat()
+        .resideInAnyPackage("org.springframework.ai..", "io.modelcontextprotocol..")
+        .check(productionClasses);
+  }
+
+  @Test
   void adapters_are_not_reachable_from_other_modules() {
     // Cross-Modul-Aufrufe laufen ausschliesslich über Ports, nie Adapter zu Adapter.
-    FEATURE_MODULES.forEach(
-        module ->
-            noClasses()
-                .that()
-                .resideOutsideOfPackage(BASE + "." + module + "..")
-                .should()
-                .dependOnClassesThat()
-                .resideInAPackage(BASE + "." + module + ".adapter..")
-                .as("no class outside of module '%s' may depend on its adapters".formatted(module))
-                .check(productionClasses));
+    FEATURE_MODULES.forEach(module ->
+        noClasses()
+            .that()
+            .resideOutsideOfPackage(BASE + "." + module + "..")
+            .should()
+            .dependOnClassesThat()
+            .resideInAPackage(BASE + "." + module + ".adapter..")
+            .as("no class outside of module '%s' may depend on its adapters".formatted(module))
+            .check(productionClasses));
+  }
+
+  @Test
+  void other_modules_access_only_application_or_port() {
+    List<String> violations =
+        FEATURE_MODULES.stream()
+            .map(module ->
+                noClasses()
+                    .that()
+                    .resideOutsideOfPackage(BASE + "." + module + "..")
+                    .should()
+                    .dependOnClassesThat(resideInAPackage(BASE + "." + module + ".domain.."))
+                    .as("no class outside of module '%s' may depend on its domain".formatted(module))
+                    .evaluate(productionClasses))
+            .filter(EvaluationResult::hasViolation)
+            .map(result -> result.getFailureReport().toString())
+            .toList();
+
+    assertThat(violations).isEmpty();
   }
 }

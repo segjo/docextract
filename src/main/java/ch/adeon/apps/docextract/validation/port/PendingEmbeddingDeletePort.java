@@ -1,10 +1,21 @@
 package ch.adeon.apps.docextract.validation.port;
 
+import java.util.List;
+
 /**
  * Outbound port deleting a process's staged {@code PENDING} embedding on rejection, final failure,
  * or TTL expiry (ADR-006/-012, C-7, T-2) — ungeprüfte Dokumente dürfen den Korpus nie beeinflussen.
  */
 public interface PendingEmbeddingDeletePort {
 
-  void delete(String processId);
+  void delete(String tenantId, String processId);
+
+  /** Process ids whose {@code PENDING} embedding has passed {@code expires_at}. */
+  List<String> findExpiredProcessIds();
+
+  /**
+   * TTL deletion; must still leave rows of a {@code FINALIZED_INDEX_PENDING} process untouched
+   * (C-7), even if that state was written after {@link #findExpiredProcessIds()}.
+   */
+  void deleteExpired(String processId);
 }

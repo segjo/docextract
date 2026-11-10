@@ -1,8 +1,7 @@
 package ch.adeon.apps.docextract.content.port;
 
-import ch.adeon.apps.docextract.content.domain.DocumentContent;
 import ch.adeon.apps.docextract.content.domain.Representation;
-import ch.adeon.apps.docextract.ingest.domain.MediaType;
+import ch.adeon.apps.docextract.shared.media.MediaType;
 
 /**
  * Outbound port for FR-4's document representation, chosen to match the configured LLM adapter's

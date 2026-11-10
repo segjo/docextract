@@ -2,6 +2,8 @@ package ch.adeon.apps.docextract.extraction.port;
 
 import ch.adeon.apps.docextract.extraction.domain.LlmCapabilities;
 import ch.adeon.apps.docextract.extraction.domain.LlmResponse;
+import ch.adeon.apps.docextract.extraction.domain.LlmTool;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -14,7 +16,14 @@ import java.util.Map;
  */
 public interface LlmPort {
 
-  LlmResponse generate(String systemPrompt, String userPrompt, Map<String, Object> jsonSchema);
+  default LlmResponse generate(
+      String systemPrompt, String userPrompt, Map<String, Object> jsonSchema) {
+    return generate(systemPrompt, userPrompt, jsonSchema, List.of());
+  }
+
+  /** {@code tools} are read-only lookups executed by DocExtract, never by the model (ADR-014). */
+  LlmResponse generate(
+      String systemPrompt, String userPrompt, Map<String, Object> jsonSchema, List<LlmTool> tools);
 
   LlmCapabilities capabilities();
 }

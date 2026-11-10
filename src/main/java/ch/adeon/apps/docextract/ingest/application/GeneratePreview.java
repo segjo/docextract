@@ -1,6 +1,6 @@
 package ch.adeon.apps.docextract.ingest.application;
 
-import ch.adeon.apps.docextract.ingest.domain.MediaType;
+import ch.adeon.apps.docextract.shared.media.MediaType;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;

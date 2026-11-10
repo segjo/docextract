@@ -1,11 +1,11 @@
 package ch.adeon.apps.docextract.content.adapter.out.docling;
 
-import ch.adeon.apps.docextract.content.domain.ContentException;
-import ch.adeon.apps.docextract.content.domain.DocumentContent;
 import ch.adeon.apps.docextract.content.domain.Representation;
+import ch.adeon.apps.docextract.content.port.DocumentContent;
 import ch.adeon.apps.docextract.content.port.DocumentContentPort;
-import ch.adeon.apps.docextract.ingest.domain.MediaType;
+import ch.adeon.apps.docextract.shared.error.ContentException;
 import ch.adeon.apps.docextract.shared.http.Http1RestClientFactory;
+import ch.adeon.apps.docextract.shared.media.MediaType;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Locale;
@@ -18,7 +18,6 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
-
 /**
  * Optional {@link DocumentContentPort} alternative (ADR-011/-012, local): converts the document via
  * docling-serve's {@code POST /v1/convert/file} into Markdown, giving the extraction LLM heading

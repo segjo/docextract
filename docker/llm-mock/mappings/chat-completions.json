@@ -1,0 +1,15 @@
+{
+  "name": "chat-completions",
+  "request": {
+    "method": "POST",
+    "urlPath": "/chat/completions"
+  },
+  "response": {
+    "status": 200,
+    "bodyFileName": "chat-completions.json",
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  },
+  "persistent": true
+}

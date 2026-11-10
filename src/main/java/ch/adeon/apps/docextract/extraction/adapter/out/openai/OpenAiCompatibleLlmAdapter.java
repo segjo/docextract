@@ -5,6 +5,7 @@ import ch.adeon.apps.docextract.extraction.domain.LlmCapabilities;
 import ch.adeon.apps.docextract.extraction.domain.LlmCapabilities.InputKind;
 import ch.adeon.apps.docextract.extraction.domain.LlmCapabilities.StructuredOutputSupport;
 import ch.adeon.apps.docextract.extraction.domain.LlmResponse;
+import ch.adeon.apps.docextract.extraction.domain.LlmTool;
 import ch.adeon.apps.docextract.extraction.domain.ModelInfo;
 import ch.adeon.apps.docextract.extraction.port.LlmPort;
 import com.openai.azure.AzureOpenAIServiceVersion;
@@ -14,8 +15,12 @@ import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.model.tool.ToolCallingManager;
+import org.springframework.ai.model.tool.ToolExecutionResult;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -35,7 +40,11 @@ import tools.jackson.databind.ObjectMapper;
 @Component
 public class OpenAiCompatibleLlmAdapter implements LlmPort {
 
+  /** Safety net against a model that keeps calling tools (T-4); tools enforce their own limit. */
+  private static final int MAX_TOOL_ROUNDS = 20;
+
   private final OpenAiChatModel chatModel;
+  private final ToolCallingManager toolCallingManager = ToolCallingManager.builder().build();
   private final String modelId;
   private final ObjectMapper objectMapper;
 
@@ -67,9 +76,10 @@ public class OpenAiCompatibleLlmAdapter implements LlmPort {
 
   @Override
   public LlmResponse generate(
-      String systemPrompt, String userPrompt, Map<String, Object> jsonSchema) {
+      String systemPrompt, String userPrompt, Map<String, Object> jsonSchema, List<LlmTool> tools) {
     try {
       String schema = objectMapper.writeValueAsString(jsonSchema);
+      List<ToolCallback> toolCallbacks = tools.stream().map(this::toToolCallback).toList();
       OpenAiChatOptions options =
           OpenAiChatOptions.builder()
               // Explicit .model(...): an unset model field on a per-call options object falls
@@ -81,11 +91,24 @@ public class OpenAiCompatibleLlmAdapter implements LlmPort {
                       .type(OpenAiChatModel.ResponseFormat.Type.JSON_SCHEMA)
                       .jsonSchema(schema)
                       .build())
+              .toolCallbacks(toolCallbacks)
               .build();
       Prompt prompt =
           new Prompt(
               List.of(new SystemMessage(systemPrompt), new UserMessage(userPrompt)), options);
       ChatResponse response = chatModel.call(prompt);
+      int promptTokenCount = promptTokens(response);
+      // Spring AI 2.0's ChatModel only returns tool calls; executing them is the caller's job.
+      int rounds = 0;
+      while (response.hasToolCalls()) {
+        if (++rounds > MAX_TOOL_ROUNDS) {
+          throw new LlmException("too many tool call rounds for model " + modelId);
+        }
+        ToolExecutionResult executed = toolCallingManager.executeToolCalls(prompt, response);
+        prompt = new Prompt(executed.conversationHistory(), options);
+        response = chatModel.call(prompt);
+        promptTokenCount += promptTokens(response);
+      }
       var result = response.getResult();
       if (result == null) {
         throw new LlmException("no result returned for model " + modelId);
@@ -94,7 +117,6 @@ public class OpenAiCompatibleLlmAdapter implements LlmPort {
       if (content == null || content.isBlank()) {
         throw new LlmException("no content returned for model " + modelId);
       }
-      int promptTokenCount = response.getMetadata().getUsage().getPromptTokens();
       return new LlmResponse(
           content, new ModelInfo("openai-compatible", modelId), promptTokenCount);
     } catch (LlmException ex) {
@@ -107,5 +129,29 @@ public class OpenAiCompatibleLlmAdapter implements LlmPort {
   @Override
   public LlmCapabilities capabilities() {
     return new LlmCapabilities(StructuredOutputSupport.NATIVE, InputKind.TEXT);
+  }
+
+  private static int promptTokens(ChatResponse response) {
+    return response.getMetadata().getUsage().getPromptTokens();
+  }
+
+  private ToolCallback toToolCallback(LlmTool tool) {
+    ToolDefinition definition =
+        ToolDefinition.builder()
+            .name(tool.name())
+            .description(tool.description())
+            .inputSchema(objectMapper.writeValueAsString(tool.inputSchema()))
+            .build();
+    return new ToolCallback() {
+      @Override
+      public ToolDefinition getToolDefinition() {
+        return definition;
+      }
+
+      @Override
+      public String call(String toolInput) {
+        return tool.handler().apply(toolInput);
+      }
+    };
   }
 }

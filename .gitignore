@@ -7,5 +7,8 @@ target/
 .DS_Store
 *.log
 
+# Local secrets (e.g. DOCEXTRACT_AUDIT_ACTOR_KEY)
+.env
+
 # Compiled frontend source files
 src/main/resources/static/

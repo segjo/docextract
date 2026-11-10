@@ -1,18 +1,15 @@
 package ch.adeon.apps.docextract.content.application;
 
-import ch.adeon.apps.docextract.content.domain.ContentCommand;
-import ch.adeon.apps.docextract.content.domain.ContentException;
-import ch.adeon.apps.docextract.content.domain.DocumentContent;
+import ch.adeon.apps.docextract.content.port.DocumentContent;
 import ch.adeon.apps.docextract.content.port.DocumentContentPort;
-import ch.adeon.apps.docextract.ingest.domain.BlobRef;
-import ch.adeon.apps.docextract.ingest.domain.MediaType;
-import ch.adeon.apps.docextract.ingest.domain.PageRange;
+import ch.adeon.apps.docextract.ingest.port.BlobRef;
 import ch.adeon.apps.docextract.ingest.port.DocumentBlobPort;
-
+import ch.adeon.apps.docextract.ingest.port.PageRange;
+import ch.adeon.apps.docextract.shared.error.ContentException;
+import ch.adeon.apps.docextract.shared.media.MediaType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-
 /**
  * Reads the ORIGINAL blob (ADR-008) and builds the document representation used for FR-4, via the
  * configured {@link DocumentContentPort}. Staged in-memory (ADR-006) for extraction to consume,
@@ -39,8 +36,10 @@ public class ContentService implements ProvideContent {
   @Override
   public DocumentContent provide(ContentCommand command) {
     try {
-      BlobRef blob = documentBlobPort.describe(command.blobId());
-      byte[] bytes = documentBlobPort.readRange(command.blobId(), PageRange.full(blob.sizeBytes()));
+      BlobRef blob = documentBlobPort.describe(command.tenantId(), command.blobId());
+      byte[] bytes =
+          documentBlobPort.readRange(
+              command.tenantId(), command.blobId(), PageRange.full(blob.sizeBytes()));
       DocumentContent content = documentContentPort.provide(bytes, command.mediaType());
       contentStagingPort.stage(command.processId(), content);
       return content;

@@ -1,8 +1,8 @@
 package ch.adeon.apps.docextract.ingest.adapter.out.preview;
 
-import ch.adeon.apps.docextract.ingest.port.PreviewRenderPort;
 import ch.adeon.apps.docextract.ingest.application.PreviewRenderingException;
-import ch.adeon.apps.docextract.ingest.domain.MediaType;
+import ch.adeon.apps.docextract.ingest.port.PreviewRenderPort;
+import ch.adeon.apps.docextract.shared.media.MediaType;
 import java.util.Locale;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;

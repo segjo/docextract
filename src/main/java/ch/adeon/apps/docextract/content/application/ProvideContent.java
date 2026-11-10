@@ -1,8 +1,7 @@
 package ch.adeon.apps.docextract.content.application;
 
-import ch.adeon.apps.docextract.content.domain.ContentCommand;
-import ch.adeon.apps.docextract.content.domain.DocumentContent;
-import ch.adeon.apps.docextract.ingest.domain.MediaType;
+import ch.adeon.apps.docextract.content.port.DocumentContent;
+import ch.adeon.apps.docextract.shared.media.MediaType;
 
 /** Inbound port: provides the document representation used for FR-4 attribute suggestions. */
 public interface ProvideContent {

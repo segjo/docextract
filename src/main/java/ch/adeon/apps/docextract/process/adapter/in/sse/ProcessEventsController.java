@@ -1,7 +1,19 @@
 package ch.adeon.apps.docextract.process.adapter.in.sse;
 
+import static ch.adeon.apps.docextract.shared.config.OpenApiConfig.PROBLEM_JSON;
+import static ch.adeon.apps.docextract.shared.config.OpenApiConfig.PROBLEM_SCHEMA_REF;
+import static ch.adeon.apps.docextract.shared.config.OpenApiConfig.UNAUTHORIZED_REF;
+
+import ch.adeon.apps.docextract.process.application.ProcessEvent;
 import ch.adeon.apps.docextract.process.application.ProcessEventListener;
 import ch.adeon.apps.docextract.process.application.ProcessEventPort;
+import ch.adeon.apps.docextract.process.application.ProcessNotFoundException;
+import ch.adeon.apps.docextract.security.application.AuthContextPort;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.io.IOException;
 import java.util.Locale;
 import org.springframework.http.MediaType;
@@ -16,16 +28,44 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  */
 @RestController
 @RequestMapping("/api/v1/processes")
+@Tag(name = "process", description = "Fortschritt je Prozess (ADR-004)")
 public class ProcessEventsController {
 
   private final ProcessEventPort processEventPort;
+  private final AuthContextPort authContextPort;
 
-  public ProcessEventsController(ProcessEventPort processEventPort) {
+  public ProcessEventsController(
+      ProcessEventPort processEventPort, AuthContextPort authContextPort) {
     this.processEventPort = processEventPort;
+    this.authContextPort = authContextPort;
   }
 
   @GetMapping(path = "/{processId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+  @Operation(
+      operationId = "processEvents",
+      summary = "Fortschritt als Server-Sent Events",
+      description =
+          "Event-Name = Schritt in Kleinbuchstaben (z. B. `extracted`), Daten = ProcessEvent."
+              + " Beim (Re-)Connect wird die Historie aus PROCESS_STEP nachgeliefert. Payload"
+              + " PII-frei (nur processId/step/status).")
+  @ApiResponse(
+      responseCode = "200",
+      description = "Event-Stream (offen bis Client trennt).",
+      content =
+          @Content(
+              mediaType = MediaType.TEXT_EVENT_STREAM_VALUE,
+              schema = @Schema(implementation = ProcessEvent.class)))
+  @ApiResponse(responseCode = "401", ref = UNAUTHORIZED_REF)
+  @ApiResponse(
+      responseCode = "404",
+      description = "Prozess unbekannt oder gehört einem anderen Tenant (NfA-4).",
+      content = @Content(mediaType = PROBLEM_JSON, schema = @Schema(ref = PROBLEM_SCHEMA_REF)))
   public SseEmitter subscribe(@PathVariable String processId) {
+    String tenantId = authContextPort.current().tenantId();
+    // Before the stream opens: an unknown or foreign process gets a 404, not an empty stream.
+    if (!processEventPort.exists(tenantId, processId)) {
+      throw new ProcessNotFoundException(processId);
+    }
     SseEmitter emitter = new SseEmitter(0L);
     ProcessEventListener listener =
         event -> {
@@ -36,7 +76,7 @@ public class ProcessEventsController {
             emitter.completeWithError(ex);
           }
         };
-    processEventPort.subscribe(processId, listener);
+    processEventPort.subscribe(tenantId, processId, listener);
     Runnable unsubscribe = () -> processEventPort.unsubscribe(processId, listener);
     emitter.onCompletion(unsubscribe);
     emitter.onTimeout(unsubscribe);

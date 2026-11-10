@@ -263,5 +263,10 @@ export function mockRetryExtractionResult(documentTypeId: string): ExtractionRes
 }
 
 export function mockConfirmationResult(): ConfirmationResult {
-  return { repositoryId: 'mock-repo', documentId: 'mock-document-1', writtenBack: true };
+  return {
+    repositoryId: 'mock-repo',
+    documentId: 'mock-document-1',
+    writtenBack: true,
+    indexStatus: 'COMPLETED',
+  };
 }

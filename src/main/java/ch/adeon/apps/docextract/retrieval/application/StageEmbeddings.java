@@ -11,5 +11,5 @@ import java.util.Optional;
  */
 public interface StageEmbeddings {
 
-  Optional<EmbeddingVector> stage(String processId);
+  Optional<EmbeddingVector> stage(String tenantId, String processId);
 }

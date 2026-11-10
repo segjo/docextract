@@ -1,7 +1,8 @@
 package ch.adeon.apps.docextract.retrieval.adapter.out.postgres;
 
 import ch.adeon.apps.docextract.retrieval.application.RetrievalResultPort;
-import ch.adeon.apps.docextract.retrieval.domain.RetrievalResult;
+import ch.adeon.apps.docextract.retrieval.port.RetrievalResult;
+import ch.adeon.apps.docextract.shared.cleanup.TtlPurger;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
@@ -19,7 +20,7 @@ import org.springframework.stereotype.Component;
  * TTL cleanup rather than deleted eagerly on read.
  */
 @Component
-public class PgRetrievalResultAdapter implements RetrievalResultPort {
+public class PgRetrievalResultAdapter implements RetrievalResultPort, TtlPurger {
 
   private final JdbcTemplate jdbcTemplate;
   private final Duration ttl;
@@ -31,8 +32,9 @@ public class PgRetrievalResultAdapter implements RetrievalResultPort {
   }
 
   @Override
-  public void store(String processId, List<RetrievalResult> results) {
-    jdbcTemplate.update("DELETE FROM retrieval_result WHERE process_id = ?", processId);
+  public void store(String tenantId, String processId, List<RetrievalResult> results) {
+    jdbcTemplate.update(
+        "DELETE FROM retrieval_result WHERE process_id = ? AND tenant_id = ?", processId, tenantId);
     if (results.isEmpty()) {
       return;
     }
@@ -41,9 +43,11 @@ public class PgRetrievalResultAdapter implements RetrievalResultPort {
       jdbcTemplate.update(
           """
           INSERT INTO retrieval_result
-              (process_id, repository_id, dms_document_id, score, properties, expires_at)
-          VALUES (?, ?, ?, ?, ?::jsonb, ?)
+              (tenant_id, process_id, repository_id, dms_document_id, score, properties,
+               expires_at)
+          VALUES (?, ?, ?, ?, ?, ?::jsonb, ?)
           """,
+          tenantId,
           processId,
           result.repositoryId(),
           result.documentId(),
@@ -54,13 +58,13 @@ public class PgRetrievalResultAdapter implements RetrievalResultPort {
   }
 
   @Override
-  public Optional<List<RetrievalResult>> find(String processId) {
+  public Optional<List<RetrievalResult>> find(String tenantId, String processId) {
     List<RetrievalResult> results =
         jdbcTemplate.query(
             """
             SELECT repository_id, dms_document_id, score, properties
             FROM retrieval_result
-            WHERE process_id = ? AND expires_at > now()
+            WHERE process_id = ? AND tenant_id = ? AND expires_at > now()
             ORDER BY id
             """,
             (rs, rowNum) ->
@@ -69,7 +73,13 @@ public class PgRetrievalResultAdapter implements RetrievalResultPort {
                     rs.getString("dms_document_id"),
                     rs.getDouble("score"),
                     rs.getString("properties")),
-            processId);
+            processId,
+            tenantId);
     return results.isEmpty() ? Optional.empty() : Optional.of(results);
+  }
+
+  @Override
+  public int purgeExpired() {
+    return jdbcTemplate.update("DELETE FROM retrieval_result WHERE expires_at < now()");
   }
 }

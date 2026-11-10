@@ -1,9 +1,8 @@
 package ch.adeon.apps.docextract.retrieval.adapter.out.dms;
 
-import ch.adeon.apps.docextract.retrieval.domain.DmsValueList;
+import ch.adeon.apps.docextract.retrieval.port.DmsValueList;
 import ch.adeon.apps.docextract.retrieval.port.ValueListPort;
-import ch.adeon.apps.docextract.security.application.AppConfigPort;
-import ch.adeon.apps.docextract.security.domain.DvelopCredential;
+import ch.adeon.apps.docextract.security.application.DvelopCredential;
 import ch.adeon.apps.docextract.shared.http.Http1RestClientFactory;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.HashMap;
@@ -26,12 +25,10 @@ import tools.jackson.databind.ObjectMapper;
 public class DmsValueListWebhookAdapter implements ValueListPort {
 
   private final RestClient restClient;
-  private final AppConfigPort appConfigPort;
   private final ObjectMapper objectMapper;
 
-  public DmsValueListWebhookAdapter(AppConfigPort appConfigPort, ObjectMapper objectMapper) {
+  public DmsValueListWebhookAdapter(ObjectMapper objectMapper) {
     this.restClient = Http1RestClientFactory.create();
-    this.appConfigPort = appConfigPort;
     this.objectMapper = objectMapper;
   }
 
@@ -57,12 +54,11 @@ public class DmsValueListWebhookAdapter implements ValueListPort {
           restClient
               .post()
               .uri(
-                  appConfigPort.systemBaseUri()
-                      + "/dms/r/{repositoryId}/validvalues/p/{propertyId}",
+                  credential.baseUri() + "/dms/r/{repositoryId}/validvalues/p/{propertyId}",
                   repositoryId,
                   propertyId)
               // Origin is mandatory for write access (POST/PUT/DELETE/PATCH) to prevent CSRF.
-              .header(HttpHeaders.ORIGIN, appConfigPort.systemBaseUri())
+              .header(HttpHeaders.ORIGIN, credential.baseUri())
               .header(credential.headerName(), credential.headerValue())
               .headers(headers -> addAcceptLanguage(headers, credential))
               .body(
@@ -70,7 +66,7 @@ public class DmsValueListWebhookAdapter implements ValueListPort {
                       1,
                       objectDefinitionId,
                       Map.of(),
-                      multivalueExtendedProperties,
+                      toRawMultivalueExtendedProperties(multivalueExtendedProperties),
                       withSearchTerm(mergedExtendedProperties, propertyId, searchTerm)))
               .retrieve()
               .body(String.class);
@@ -83,6 +79,25 @@ public class DmsValueListWebhookAdapter implements ValueListPort {
       throw new ValueListWebhookException(
           "Parsing DMS valuelist failed for propertyId " + propertyId, ex);
     }
+  }
+
+  // Confirmed live: the webhook binds multivalueExtendedProperties.{propertyId} server-side as
+  // System.Collections.Generic.Dictionary<Int32,String> (one entry per selected row), not a JSON
+  // array — the same shape as a GET object's multivalueProperties[].values (also an index->value
+  // map) — so our flat List<String> per property must be re-keyed by (1-based) row index before
+  // sending, or the webhook 400s on the whole request.
+  private static Map<String, Map<String, String>> toRawMultivalueExtendedProperties(
+      Map<String, List<String>> multivalueExtendedProperties) {
+    Map<String, Map<String, String>> result = new HashMap<>();
+    for (Map.Entry<String, List<String>> entry : multivalueExtendedProperties.entrySet()) {
+      Map<String, String> indexed = new HashMap<>();
+      List<String> values = entry.getValue();
+      for (int i = 0; i < values.size(); i++) {
+        indexed.put(String.valueOf(i + 1), values.get(i));
+      }
+      result.put(entry.getKey(), indexed);
+    }
+    return result;
   }
 
   private static void addAcceptLanguage(HttpHeaders headers, DvelopCredential credential) {
@@ -119,7 +134,7 @@ public class DmsValueListWebhookAdapter implements ValueListPort {
       int type,
       String objectDefinitionId,
       Map<String, String> remarks,
-      Map<String, List<String>> multivalueExtendedProperties,
+      Map<String, Map<String, String>> multivalueExtendedProperties,
       Map<String, String> extendedProperties) {}
 
   @JsonIgnoreProperties(ignoreUnknown = true)

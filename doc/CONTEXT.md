@@ -6,9 +6,10 @@
 > [`doc/api/identityprovider-api.yaml`](doc/api/identityprovider-api.yaml) (IdP-Session-Validierung) und
 > [`doc/api/dashboard-app-api.yaml`](doc/api/dashboard-app-api.yaml) (d.velop Dashboard-App-Integration) —
 > vor jeder Adapter-Implementierung gegen diese OpenAPI-Specs prüfen, nicht aus dem Gedächtnis raten.
-> Eigener API-Vertrag: [`doc/api/docextract-api-docs.json`](doc/api/docextract-api-docs.json) — aus den
-> `@RestController`n generierter OpenAPI-3-Snapshot (`/v3/api-docs`, siehe `OpenApiConfig`), Quelle der
-> Wahrheit für die DocExtract-eigene REST-API, z. B. zur Generierung des Angular-Frontend-Clients.
+> Eigener API-Vertrag: [`doc/api/openapi.yaml`](api/openapi.yaml) — aus den
+> `@RestController`n generierter OpenAPI-3.1-Vertrag (`/v3/api-docs.yaml`, siehe `OpenApiConfig`; Drift-Check
+> `OpenApiContractTest`), Quelle der Wahrheit für die DocExtract-eigene REST-API, z. B. zur Generierung des
+> Angular-Frontend-Clients.
 > Frontend-Aufgaben: [`doc/frontend/FRONTEND-SPEC.md`](frontend/FRONTEND-SPEC.md) — Anforderungen, Layout
 > und Farbpalette für das Angular-Frontend; vor jeder Frontend-Implementierung konsultieren.
 > Bei Konflikt gilt: **SPEC/ARCHITECTURE > diese Datei > Framework-Defaults > generische Best Practices.**
@@ -57,7 +58,8 @@ Diese Regeln haben **immer** Vorrang. Code, der dagegen verstößt, ist nicht ak
   lokale Betriebsgrenze **nie**. Egress ist per Netzwerk-Policy unterbunden und in CI per **Egress-Test** verifiziert.
   Nach außen fließen **ausschließlich** Metadaten-Lese/-Schreibzugriffe auf die DMS-API, IdP-Session-Validierung
   und JIT-Wertelisten-Abrufe. Original-/Preview-Bytes dürfen **nur** an die autorisierte DMS-API gehen.
-- **C-2 Kein automatischer Schreibzugriff:** Keine LLM-Ausgabe löst selbsttätig einen Schreib-/Tool-Call aus.
+- **C-2 Kein automatischer Schreibzugriff:** Keine LLM-Ausgabe löst selbsttätig einen schreibenden Tool-Call aus.
+  Lesende Tool-Calls (z. B. Wertelisten) nur per serverseitiger Allowlist (ADR-014).
   DMS-Write **nur nach expliziter menschlicher Freigabe** (Consent-Gate) — UI **und** MCP identisch.
 - **C-3 Least Privilege:** Der LLM-/Inferenz-Service hat **keinen** direkten Zugriff auf PostgreSQL/pgvector oder
   die DMS-API. Der Retrieval-Adapter darf Embeddings **nur als `PENDING` mit TTL** schreiben. Nur der
@@ -74,7 +76,8 @@ Diese Regeln haben **immer** Vorrang. Code, der dagegen verstößt, ist nicht ak
 ### 3.2 Bedrohungen → Pflicht-Mitigationen
 
 - **T-1 Prompt Injection:** Dokument strikt als _untrusted data_, **nie** als Instruktion/System-Prompt;
-  **schema-constrained Decoding** + Output-Validierung gegen JSON-Schema; keine aus Inhalt ableitbaren Tool-Calls.
+  **schema-constrained Decoding** + Output-Validierung gegen JSON-Schema; keine aus Inhalt ableitbaren schreibenden
+  Tool-Calls; lesende nur per Allowlist (ADR-014).
 - **T-2 Datenvergiftung (Self-Learning):** Embeddings vor Freigabe nur als **nicht-retrievalfähige `PENDING`**
   mit TTL; Aktivierung erst nach Consent; Herkunfts-/Quarantäne-Markierung; Rollback unterstützen.
 - **T-3 Cross-Tenant-/Cross-ACL-Leak:** **Pre-Filter** (Tenant- und ACL-Prädikate) _in_ die Vektor-Query,
@@ -129,7 +132,7 @@ ch.adeon.apps.docextract
 ├─ extraction     # schema-constrained LLM-Attributvorschläge + Quell-Exzerpte (FR-4, T-1)
 ├─ validation     # Human-in-the-Loop, DMS-Write, atomare PENDING→APPROVED-Promotion (FR-5, C-2, C-7)
 ├─ agentgateway   # MCP-Tool, teilt Application-Services (FR-6, T-6)
-├─ process        # Async-Orchestrierung, SSE, PII-freier Step-State, Lease/Heartbeat/Recovery (ADR-004)
+├─ process        # Fortschritt/SSE, PII-freier Step-State, Lease/Heartbeat/Recovery (ADR-004); Pipeline steuert ingest
 ├─ audit          # append-only, ohne roh-PII, Token-/Kosten-Erfassung (C-4, NfA-7)
 ├─ security       # Session→Tenant/ACL-Auflösung, Consent-Gate
 └─ shared         # Fehlerbehandlung, Config, Observability, In-Memory-Job-Context
@@ -205,6 +208,10 @@ Zu jedem nicht-trivialen Beitrag gehören passende Tests:
 
 **CI-Gate:** Smoke- + Egress-Allowlist-Test (LLM als Mock) + Security-Scan (SAST/Dependency/Secret/Image/IaC).
 Publish erst nach bestandenem Gate.
+
+**Meldung „grün":** Ein Build oder Test gilt nur dann als grün, wenn `mvn -o clean verify` erfolgreich
+durchlief. Teilläufe (`-Dtest=…`, `test-compile` ohne `clean`) werden als solche gemeldet, nicht als grün;
+inkrementelles `test-compile` erkennt geänderte Signaturen in Tests nicht zuverlässig.
 
 ---
 

@@ -1,6 +1,6 @@
 package ch.adeon.apps.docextract.validation.port;
 
-import ch.adeon.apps.docextract.security.domain.DvelopCredential;
+import ch.adeon.apps.docextract.security.application.DvelopCredential;
 import java.util.Map;
 
 public interface DmsWritePort {

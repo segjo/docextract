@@ -5,10 +5,12 @@ export interface ConfirmRequest {
   attributes: Record<string, string | string[]>;
 }
 
+/** `indexStatus`: FINALIZED_INDEX_PENDING = im DMS gespeichert, Korpus-Aufnahme folgt per Retry (ADR-015). */
 export interface ConfirmationResult {
   documentId: string;
   repositoryId: string;
   writtenBack: boolean;
+  indexStatus: 'COMPLETED' | 'FINALIZED_INDEX_PENDING' | 'INDEX_FAILED';
 }
 
 export interface RejectRequest {

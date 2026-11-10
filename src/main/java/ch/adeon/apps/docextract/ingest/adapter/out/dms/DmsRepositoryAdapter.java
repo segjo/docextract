@@ -3,8 +3,7 @@ package ch.adeon.apps.docextract.ingest.adapter.out.dms;
 import ch.adeon.apps.docextract.ingest.application.DmsRepositoryException;
 import ch.adeon.apps.docextract.ingest.domain.DmsRepository;
 import ch.adeon.apps.docextract.ingest.port.DmsRepositoryPort;
-import ch.adeon.apps.docextract.security.application.AppConfigPort;
-import ch.adeon.apps.docextract.security.domain.DvelopCredential;
+import ch.adeon.apps.docextract.security.application.DvelopCredential;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 import org.springframework.http.HttpHeaders;
@@ -24,12 +23,10 @@ import tools.jackson.databind.ObjectMapper;
 public class DmsRepositoryAdapter implements DmsRepositoryPort {
 
   private final RestClient restClient;
-  private final AppConfigPort appConfigPort;
   private final ObjectMapper objectMapper;
 
-  public DmsRepositoryAdapter(AppConfigPort appConfigPort, ObjectMapper objectMapper) {
+  public DmsRepositoryAdapter(ObjectMapper objectMapper) {
     this.restClient = RestClient.create();
-    this.appConfigPort = appConfigPort;
     this.objectMapper = objectMapper;
   }
 
@@ -39,7 +36,7 @@ public class DmsRepositoryAdapter implements DmsRepositoryPort {
       String body =
           restClient
               .get()
-              .uri(appConfigPort.systemBaseUri() + "/repo/repositories")
+              .uri(credential.baseUri() + "/repo/repositories")
               .header(credential.headerName(), credential.headerValue())
               .headers(headers -> addAcceptLanguage(headers, credential))
               .accept(MediaType.valueOf("application/hal+json"))

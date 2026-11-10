@@ -1,7 +1,7 @@
 package ch.adeon.apps.docextract.retrieval.application;
 
-import ch.adeon.apps.docextract.retrieval.domain.RetrievalResult;
-import ch.adeon.apps.docextract.security.domain.DvelopCredential;
+import ch.adeon.apps.docextract.retrieval.port.RetrievalResult;
+import ch.adeon.apps.docextract.security.application.DvelopCredential;
 import java.util.List;
 
 /**
@@ -12,5 +12,6 @@ import java.util.List;
  */
 public interface FindSimilar {
 
-  List<RetrievalResult> find(String processId, int topK, DvelopCredential credential);
+  List<RetrievalResult> find(
+      String tenantId, String processId, int topK, DvelopCredential credential);
 }

@@ -16,27 +16,30 @@ public class PgProcessDocumentAdapter implements ProcessDocumentPort {
   }
 
   @Override
-  public void save(String processId, String dmsLocation, String filename) {
+  public void save(String tenantId, String processId, String dmsLocation, String filename) {
     jdbcTemplate.update(
         """
         UPDATE document_blob SET dms_location = ?, filename = ?
-        WHERE process_id = ? AND kind = 'ORIGINAL'
+        WHERE process_id = ? AND tenant_id = ? AND kind = 'ORIGINAL'
         """,
         dmsLocation,
         filename,
-        processId);
+        processId,
+        tenantId);
   }
 
   @Override
-  public Optional<StoredDocument> find(String processId) {
+  public Optional<StoredDocument> find(String tenantId, String processId) {
     return jdbcTemplate
         .query(
             """
             SELECT dms_location, filename FROM document_blob
-            WHERE process_id = ? AND kind = 'ORIGINAL' AND dms_location IS NOT NULL
+            WHERE process_id = ? AND tenant_id = ? AND kind = 'ORIGINAL'
+              AND dms_location IS NOT NULL
             """,
             (rs, i) -> new StoredDocument(rs.getString("dms_location"), rs.getString("filename")),
-            processId)
+            processId,
+            tenantId)
         .stream()
         .findFirst();
   }

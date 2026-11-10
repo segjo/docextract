@@ -2,8 +2,8 @@ package ch.adeon.apps.docextract.ingest.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.adeon.apps.docextract.shared.media.MediaType;
 import org.junit.jupiter.api.Test;
-
 class LimitsTest {
 
   private final Limits limits = new Limits(10);
@@ -22,6 +22,7 @@ class LimitsTest {
         limits.validate(new DocumentUpload("a.pdf", MediaType.PDF, new byte[11]));
 
     assertThat(result.valid()).isFalse();
+    assertThat(result.sizeExceeded()).isTrue();
   }
 
   @Test

@@ -1,16 +1,15 @@
 package ch.adeon.apps.docextract.content.adapter.out.pdfbox;
 
-import ch.adeon.apps.docextract.content.domain.ContentException;
-import ch.adeon.apps.docextract.content.domain.ExtractedText;
+import ch.adeon.apps.docextract.content.port.ExtractedText;
 import ch.adeon.apps.docextract.content.port.TextExtractionPort;
-import ch.adeon.apps.docextract.ingest.domain.MediaType;
+import ch.adeon.apps.docextract.shared.error.ContentException;
+import ch.adeon.apps.docextract.shared.media.MediaType;
 import java.io.IOException;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
-
 /**
  * Reference {@link TextExtractionPort} adapter (ADR-011/-012, local): plain PDFBox text extraction,
  * truncated to the first {@code maxWords} words — no structure/table reconstruction. An empty or

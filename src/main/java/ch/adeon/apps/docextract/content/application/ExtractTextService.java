@@ -1,22 +1,20 @@
 package ch.adeon.apps.docextract.content.application;
 
-import ch.adeon.apps.docextract.content.domain.ContentCommand;
-import ch.adeon.apps.docextract.content.domain.ContentException;
-import ch.adeon.apps.docextract.content.domain.ExtractedText;
+import ch.adeon.apps.docextract.content.port.ExtractedText;
 import ch.adeon.apps.docextract.content.port.TextExtractionPort;
+import ch.adeon.apps.docextract.ingest.port.BlobRef;
 import ch.adeon.apps.docextract.ingest.port.DocumentBlobPort;
-import ch.adeon.apps.docextract.ingest.domain.BlobRef;
-import ch.adeon.apps.docextract.ingest.domain.MediaType;
-import ch.adeon.apps.docextract.ingest.domain.PageRange;
+import ch.adeon.apps.docextract.ingest.port.PageRange;
+import ch.adeon.apps.docextract.process.application.ProcessEvent;
 import ch.adeon.apps.docextract.process.application.ProcessEventPort;
-import ch.adeon.apps.docextract.process.domain.ProcessEvent;
-import ch.adeon.apps.docextract.process.domain.ProcessStep;
-import ch.adeon.apps.docextract.process.domain.StepStatus;
+import ch.adeon.apps.docextract.process.application.ProcessStep;
+import ch.adeon.apps.docextract.process.application.StepStatus;
+import ch.adeon.apps.docextract.shared.error.ContentException;
+import ch.adeon.apps.docextract.shared.media.MediaType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-
 /**
  * Reads the ORIGINAL blob (ADR-008) and extracts the first-N-words plain text via the configured
  * {@link TextExtractionPort} (ADR-012: no chunking, no structure/table reconstruction) for FR-3.
@@ -52,10 +50,11 @@ public class ExtractTextService implements ExtractText {
     log.info(
         "text extraction started processId={} blobId={}", command.processId(), command.blobId());
     processEventPort.publish(
+        command.tenantId(),
         new ProcessEvent(
             command.processId(), ProcessStep.TEXT_EXTRACTED, StepStatus.STARTED, null));
     try {
-      byte[] content = readOriginal(command.blobId());
+      byte[] content = readOriginal(command.tenantId(), command.blobId());
       ExtractedText extractedText =
           textExtractionPort.extract(content, command.mediaType(), maxWords);
       textStagingPort.stage(command.processId(), extractedText);
@@ -64,21 +63,23 @@ public class ExtractTextService implements ExtractText {
           command.processId(),
           extractedText.wordCount());
       processEventPort.publish(
+          command.tenantId(),
           new ProcessEvent(
               command.processId(), ProcessStep.TEXT_EXTRACTED, StepStatus.COMPLETED, null));
       return extractedText;
     } catch (RuntimeException ex) {
       log.warn("text extraction failed processId={}", command.processId(), ex);
       processEventPort.publish(
+          command.tenantId(),
           new ProcessEvent(
               command.processId(), ProcessStep.TEXT_EXTRACTED, StepStatus.FAILED, null));
       throw new ContentException("Text extraction failed for process " + command.processId(), ex);
     }
   }
 
-  private byte[] readOriginal(java.util.UUID blobId) {
-    BlobRef blob = documentBlobPort.describe(blobId);
-    return documentBlobPort.readRange(blobId, PageRange.full(blob.sizeBytes()));
+  private byte[] readOriginal(String tenantId, java.util.UUID blobId) {
+    BlobRef blob = documentBlobPort.describe(tenantId, blobId);
+    return documentBlobPort.readRange(tenantId, blobId, PageRange.full(blob.sizeBytes()));
   }
 
   @Override

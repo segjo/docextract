@@ -1,6 +1,6 @@
 package ch.adeon.apps.docextract.ingest.application;
 
-import ch.adeon.apps.docextract.ingest.domain.PageRange;
+import ch.adeon.apps.docextract.ingest.port.PageRange;
 import java.util.UUID;
 
 /**

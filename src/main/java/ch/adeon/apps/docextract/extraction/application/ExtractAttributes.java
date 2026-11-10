@@ -1,7 +1,6 @@
 package ch.adeon.apps.docextract.extraction.application;
 
-import ch.adeon.apps.docextract.extraction.domain.ExtractionResult;
-import ch.adeon.apps.docextract.security.domain.DvelopCredential;
+import ch.adeon.apps.docextract.security.application.DvelopCredential;
 
 /**
  * Inbound port for the extraction step (FR-4): classifies the process's staged document type
@@ -10,5 +9,5 @@ import ch.adeon.apps.docextract.security.domain.DvelopCredential;
  */
 public interface ExtractAttributes {
 
-  ExtractionResult extract(String processId, DvelopCredential credential);
+  ExtractionResult extract(String tenantId, String processId, DvelopCredential credential);
 }

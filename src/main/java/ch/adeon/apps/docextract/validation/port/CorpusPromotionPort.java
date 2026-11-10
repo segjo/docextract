@@ -7,5 +7,5 @@ package ch.adeon.apps.docextract.validation.port;
  */
 public interface CorpusPromotionPort {
 
-  void promote(String processId, String repositoryId, String dmsDocumentId);
+  void promote(String tenantId, String processId, String repositoryId, String dmsDocumentId);
 }

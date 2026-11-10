@@ -1,7 +1,6 @@
 package ch.adeon.apps.docextract.extraction.application;
 
-import ch.adeon.apps.docextract.extraction.domain.ExtractionResult;
-import ch.adeon.apps.docextract.security.domain.DvelopCredential;
+import ch.adeon.apps.docextract.security.application.DvelopCredential;
 
 /**
  * Inbound port: re-runs the extraction step (FR-4) for a process, forcing the document type to the
@@ -12,5 +11,6 @@ import ch.adeon.apps.docextract.security.domain.DvelopCredential;
  */
 public interface RetryExtraction {
 
-  ExtractionResult retry(String processId, String documentTypeId, DvelopCredential credential);
+  ExtractionResult retry(
+      String tenantId, String processId, String documentTypeId, DvelopCredential credential);
 }

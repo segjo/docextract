@@ -1,12 +1,24 @@
 package ch.adeon.apps.docextract.retrieval.adapter.in.rest;
 
+import static ch.adeon.apps.docextract.shared.config.OpenApiConfig.BAD_GATEWAY_REF;
+import static ch.adeon.apps.docextract.shared.config.OpenApiConfig.BAD_REQUEST_REF;
+import static ch.adeon.apps.docextract.shared.config.OpenApiConfig.PROBLEM_JSON;
+import static ch.adeon.apps.docextract.shared.config.OpenApiConfig.PROBLEM_SCHEMA_REF;
+import static ch.adeon.apps.docextract.shared.config.OpenApiConfig.UNAUTHORIZED_REF;
+
 import ch.adeon.apps.docextract.retrieval.application.GetDocumentTypeCandidates;
 import ch.adeon.apps.docextract.retrieval.application.GetObjectDefinitions;
 import ch.adeon.apps.docextract.retrieval.application.GetSimilarDocuments;
 import ch.adeon.apps.docextract.retrieval.application.GetValueList;
-import ch.adeon.apps.docextract.retrieval.domain.DmsDocumentMetadata;
-import ch.adeon.apps.docextract.retrieval.domain.DmsValueList;
-import ch.adeon.apps.docextract.retrieval.domain.RetrievalResult;
+import ch.adeon.apps.docextract.retrieval.port.DmsDocumentMetadata;
+import ch.adeon.apps.docextract.retrieval.port.DmsValueList;
+import ch.adeon.apps.docextract.retrieval.port.RetrievalResult;
+import ch.adeon.apps.docextract.security.application.AuthContextPort;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,7 +27,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
 /**
  * {@code GET /processes/{processId}/similar-documents} — the already-{@code APPROVED} documents
  * found similar to this process, for display next to the validation UI (FR-3, NfA-6). {@code GET
@@ -29,40 +40,80 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1")
+@Tag(name = "retrieval", description = "Ähnliche Dokumente, Dokumentarten, Wertelisten (FR-3)")
 public class RetrievalController {
+
+  private static final String PROCESS_NOT_FOUND =
+      "Prozess unbekannt oder gehört einem anderen Tenant (NfA-4).";
 
   private final GetSimilarDocuments getSimilarDocuments;
   private final GetDocumentTypeCandidates getDocumentTypeCandidates;
   private final GetObjectDefinitions getObjectDefinitions;
   private final GetValueList getValueList;
+  private final AuthContextPort authContextPort;
 
   public RetrievalController(
       GetSimilarDocuments getSimilarDocuments,
       GetDocumentTypeCandidates getDocumentTypeCandidates,
       GetObjectDefinitions getObjectDefinitions,
-      GetValueList getValueList) {
+      GetValueList getValueList,
+      AuthContextPort authContextPort) {
     this.getSimilarDocuments = getSimilarDocuments;
     this.getDocumentTypeCandidates = getDocumentTypeCandidates;
     this.getObjectDefinitions = getObjectDefinitions;
     this.getValueList = getValueList;
+    this.authContextPort = authContextPort;
   }
 
   @GetMapping("/processes/{processId}/similar-documents")
+  @Operation(
+      operationId = "similarDocuments",
+      summary = "Ähnliche, freigegebene Dokumente des Prozesses",
+      description = "Leere Liste, solange kein Ergebnis vorliegt.")
+  @ApiResponse(responseCode = "200", description = "OK")
+  @ApiResponse(responseCode = "401", ref = UNAUTHORIZED_REF)
+  @ApiResponse(
+      responseCode = "404",
+      description = PROCESS_NOT_FOUND,
+      content = @Content(mediaType = PROBLEM_JSON, schema = @Schema(ref = PROBLEM_SCHEMA_REF)))
   public List<RetrievalResult> similarDocuments(@PathVariable String processId) {
-    return getSimilarDocuments.get(processId);
+    return getSimilarDocuments.get(authContextPort.current().tenantId(), processId);
   }
 
   @GetMapping("/processes/{processId}/document-type-candidates")
+  @Operation(
+      operationId = "documentTypeCandidates",
+      summary = "Dokumentart-Kandidaten des Prozesses",
+      description = "Leere Liste, solange kein Ergebnis vorliegt.")
+  @ApiResponse(responseCode = "200", description = "OK")
+  @ApiResponse(responseCode = "401", ref = UNAUTHORIZED_REF)
+  @ApiResponse(
+      responseCode = "404",
+      description = PROCESS_NOT_FOUND,
+      content = @Content(mediaType = PROBLEM_JSON, schema = @Schema(ref = PROBLEM_SCHEMA_REF)))
   public List<DmsDocumentMetadata> documentTypeCandidates(@PathVariable String processId) {
-    return getDocumentTypeCandidates.get(processId);
+    return getDocumentTypeCandidates.get(authContextPort.current().tenantId(), processId);
   }
 
   @GetMapping("/object-definitions")
+  @Operation(
+      operationId = "objectDefinitions",
+      summary = "Alle Dokumentarten und Eigenschaften des Repositories (live aus dem DMS)")
+  @ApiResponse(responseCode = "200", description = "OK")
+  @ApiResponse(responseCode = "401", ref = UNAUTHORIZED_REF)
+  @ApiResponse(responseCode = "502", ref = BAD_GATEWAY_REF)
   public List<DmsDocumentMetadata> objectDefinitions() {
     return getObjectDefinitions.get();
   }
 
   @PostMapping("/value-lists/{propertyId}")
+  @Operation(
+      operationId = "valueList",
+      summary = "Gültige Werte einer Eigenschaft (live aus dem DMS, filterbar per searchTerm)")
+  @ApiResponse(responseCode = "200", description = "OK")
+  @ApiResponse(responseCode = "400", ref = BAD_REQUEST_REF)
+  @ApiResponse(responseCode = "401", ref = UNAUTHORIZED_REF)
+  @ApiResponse(responseCode = "502", ref = BAD_GATEWAY_REF)
   public DmsValueList valueList(
       @PathVariable String propertyId, @RequestBody ValueListRequest request) {
     return getValueList.get(

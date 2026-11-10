@@ -1,6 +1,6 @@
 package ch.adeon.apps.docextract.retrieval.application;
 
-import ch.adeon.apps.docextract.retrieval.domain.RetrievalResult;
+import ch.adeon.apps.docextract.retrieval.port.RetrievalResult;
 import java.util.List;
 import java.util.Optional;
 
@@ -13,7 +13,7 @@ import java.util.Optional;
  */
 public interface RetrievalResultPort {
 
-  void store(String processId, List<RetrievalResult> results);
+  void store(String tenantId, String processId, List<RetrievalResult> results);
 
-  Optional<List<RetrievalResult>> find(String processId);
+  Optional<List<RetrievalResult>> find(String tenantId, String processId);
 }

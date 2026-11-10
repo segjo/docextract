@@ -1,12 +1,11 @@
 package ch.adeon.apps.docextract.retrieval.adapter.out.dms;
 
+import ch.adeon.apps.docextract.retrieval.port.DmsDocumentMetadata;
+import ch.adeon.apps.docextract.retrieval.port.DmsDocumentType;
 import ch.adeon.apps.docextract.retrieval.port.DmsObjectDefinitionPort;
-import ch.adeon.apps.docextract.retrieval.domain.DmsDocumentMetadata;
-import ch.adeon.apps.docextract.retrieval.domain.DmsDocumentType;
-import ch.adeon.apps.docextract.retrieval.domain.DmsPropertyDataType;
-import ch.adeon.apps.docextract.retrieval.domain.DmsPropertyDefinition;
-import ch.adeon.apps.docextract.security.application.AppConfigPort;
-import ch.adeon.apps.docextract.security.domain.DvelopCredential;
+import ch.adeon.apps.docextract.retrieval.port.DmsPropertyDataType;
+import ch.adeon.apps.docextract.retrieval.port.DmsPropertyDefinition;
+import ch.adeon.apps.docextract.security.application.DvelopCredential;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 import org.springframework.http.HttpHeaders;
@@ -32,12 +31,10 @@ import tools.jackson.databind.ObjectMapper;
 public class DmsObjectDefinitionAdapter implements DmsObjectDefinitionPort {
 
   private final RestClient restClient;
-  private final AppConfigPort appConfigPort;
   private final ObjectMapper objectMapper;
 
-  public DmsObjectDefinitionAdapter(AppConfigPort appConfigPort, ObjectMapper objectMapper) {
+  public DmsObjectDefinitionAdapter(ObjectMapper objectMapper) {
     this.restClient = RestClient.create();
-    this.appConfigPort = appConfigPort;
     this.objectMapper = objectMapper;
   }
 
@@ -47,7 +44,7 @@ public class DmsObjectDefinitionAdapter implements DmsObjectDefinitionPort {
       ResponseEntity<String> response =
           restClient
               .get()
-              .uri(appConfigPort.systemBaseUri() + "/dms/r/{repositoryId}/objdef", repositoryId)
+              .uri(credential.baseUri() + "/dms/r/{repositoryId}/objdef", repositoryId)
               .header(credential.headerName(), credential.headerValue())
               .headers(headers -> addAcceptLanguage(headers, credential))
               .retrieve()

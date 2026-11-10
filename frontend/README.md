@@ -8,7 +8,7 @@ CSR only — ADR-013). Requirements/layout: [`doc/frontend/FRONTEND-SPEC.md`](..
 ## Status
 
 Skeleton scaffolded: routing, theme, typed API clients for the backend's OpenAPI contract
-(`doc/api/docextract-api-docs.json`), and the three screens from the layout spec. Business-logic
+(`doc/api/openapi.yaml`), and the three screens from the layout spec. Business-logic
 gaps are marked `TODO` in code (e.g. `process-page.ts` — `documentId`/`repositoryId` for the DMS
 write aren't resolvable from any GET endpoint yet).
 
@@ -52,5 +52,6 @@ NfA-F3 (initial bundle ≤ 300 kB) is enforced via the `production` budget in `a
 - Angular 22 best practices: [`doc/frontend/angular-best-practices.md`](../doc/frontend/angular-best-practices.md)
   (signals, `input()`/`output()`/`model()`, `@Service()`, no `NgModule`).
 - Prettier formats `.ts`/`.html`/`.scss` (`.prettierrc`, checked in per `doc/CONTEXT.md` §7).
-- API base path/models mirror `doc/api/docextract-api-docs.json` — regenerate that spec
-  (`mvn -Popenapi-spec verify`) before touching `core/models`/`core/api` for a backend contract change.
+- API base path/models mirror `doc/api/openapi.yaml` — regenerate that spec
+  (`mvn test -Dtest=OpenApiContractTest -Dopenapi.write=true`) before touching `core/models`/`core/api`
+  for a backend contract change.

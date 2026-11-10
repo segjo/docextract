@@ -1,42 +1,44 @@
 package ch.adeon.apps.docextract.retrieval.application;
 
+import ch.adeon.apps.docextract.process.application.ProcessEvent;
 import ch.adeon.apps.docextract.process.application.ProcessEventPort;
 import ch.adeon.apps.docextract.process.application.ProcessRepositoryPort;
-import ch.adeon.apps.docextract.process.domain.ProcessEvent;
-import ch.adeon.apps.docextract.process.domain.ProcessStep;
-import ch.adeon.apps.docextract.process.domain.StepStatus;
-import ch.adeon.apps.docextract.retrieval.domain.DmsDocumentMetadata;
-import ch.adeon.apps.docextract.retrieval.domain.DmsDocumentType;
-import ch.adeon.apps.docextract.retrieval.domain.DmsPropertyDefinition;
-import ch.adeon.apps.docextract.retrieval.domain.DmsValueList;
+import ch.adeon.apps.docextract.process.application.ProcessStep;
+import ch.adeon.apps.docextract.process.application.StepStatus;
 import ch.adeon.apps.docextract.retrieval.domain.EmbeddingVector;
-import ch.adeon.apps.docextract.retrieval.domain.RetrievalException;
-import ch.adeon.apps.docextract.retrieval.domain.RetrievalResult;
+import ch.adeon.apps.docextract.retrieval.port.DmsDocumentMetadata;
+import ch.adeon.apps.docextract.retrieval.port.DmsDocumentType;
 import ch.adeon.apps.docextract.retrieval.port.DmsObjectDefinitionPort;
 import ch.adeon.apps.docextract.retrieval.port.DmsObjectMetadataPort;
+import ch.adeon.apps.docextract.retrieval.port.DmsPropertyDefinition;
+import ch.adeon.apps.docextract.retrieval.port.DmsValueList;
+import ch.adeon.apps.docextract.retrieval.port.RetrievalResult;
 import ch.adeon.apps.docextract.retrieval.port.ValueListPort;
 import ch.adeon.apps.docextract.retrieval.port.VectorSearchPort;
-import ch.adeon.apps.docextract.security.application.AuthContextPort;
-import ch.adeon.apps.docextract.security.domain.AuthContext;
-import ch.adeon.apps.docextract.security.domain.DvelopCredential;
+import ch.adeon.apps.docextract.security.application.DvelopCredential;
+import ch.adeon.apps.docextract.shared.error.RetrievalException;
+import jakarta.annotation.PreDestroy;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
-
 /**
  * Embeds+stages a process's chunks (in the same run, avoiding a second embedding call — §6.1/8.5)
- * and searches the {@code APPROVED} corpus with a mandatory tenant_id pre-filter (ADR-002, FR-3,
- * NfA-4/-6). Hits below the configurable minimum score are dropped before the result is reported.
- * Each remaining hit's DMS object properties are then looked up live and attached (FR-3, SPEC §3),
- * and the hits are narrowed down to the best-matched document type (see {@link
+ * and searches the {@code APPROVED} corpus with a mandatory {@code tenant_id}/{@code
+ * embedding_model}/{@code extraction_source} pre-filter (ADR-002, FR-3, NfA-4/-6). Hits below the
+ * configurable minimum score are dropped before the result is reported. Each remaining hit's DMS
+ * object properties are then looked up live and attached (FR-3, SPEC §3), and the hits are narrowed
+ * down to the best-matched document type (see {@link
  * #filterToBestDocumentType(List)}). All repository document types + properties (SPEC §3, see
  * {@link DmsObjectDefinitionPort}) are staged as candidates for the next step via {@link
  * DocumentTypeCandidatesPort}, each carrying a score derived from the similar hits. Reports {@code
@@ -49,7 +51,6 @@ public class FindSimilarService implements FindSimilar {
   private static final Logger log = LoggerFactory.getLogger(FindSimilarService.class);
 
   private final StageEmbeddings stageEmbeddings;
-  private final AuthContextPort authContextPort;
   private final VectorSearchPort vectorSearchPort;
   private final ProcessEventPort processEventPort;
   private final RetrievalResultPort retrievalResultPort;
@@ -63,10 +64,12 @@ public class FindSimilarService implements FindSimilar {
   private final double minScore;
   private final List<String> documentTypeFilter;
   private final String defaultRepositoryId;
+  private final String embeddingModel;
+  private final String extractionSource;
+  private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
   public FindSimilarService(
       StageEmbeddings stageEmbeddings,
-      AuthContextPort authContextPort,
       VectorSearchPort vectorSearchPort,
       ProcessEventPort processEventPort,
       RetrievalResultPort retrievalResultPort,
@@ -79,9 +82,10 @@ public class FindSimilarService implements FindSimilar {
       @Value("${docextract.valuelist.max-values:50}") int maxValueListValues,
       @Value("${docextract.retrieval.min-score:0.0}") double minScore,
       @Value("${docextract.retrieval.document-type-filter:}") List<String> documentTypeFilter,
-      @Value("${docextract.ingest.dms.repository-id}") String defaultRepositoryId) {
+      @Value("${docextract.ingest.dms.repository-id}") String defaultRepositoryId,
+      @Value("${docextract.retrieval.embedding-model}") String embeddingModel,
+      @Value("${docextract.adapters.text-extraction}") String extractionSource) {
     this.stageEmbeddings = stageEmbeddings;
-    this.authContextPort = authContextPort;
     this.vectorSearchPort = vectorSearchPort;
     this.processEventPort = processEventPort;
     this.retrievalResultPort = retrievalResultPort;
@@ -92,54 +96,83 @@ public class FindSimilarService implements FindSimilar {
     this.valueListPort = valueListPort;
     this.objectMapper = objectMapper;
     this.maxValueListValues = maxValueListValues;
+    this.embeddingModel = embeddingModel;
+    this.extractionSource = extractionSource;
     this.minScore = minScore;
     this.documentTypeFilter = documentTypeFilter.stream().filter(s -> !s.isBlank()).toList();
     this.defaultRepositoryId = defaultRepositoryId;
   }
 
+  @PreDestroy
+  void shutdown() {
+    executor.shutdown();
+  }
+
   @Override
-  public List<RetrievalResult> find(String processId, int topK, DvelopCredential credential) {
+  public List<RetrievalResult> find(
+      String tenantId, String processId, int topK, DvelopCredential credential) {
     log.info("retrieval started processId={}", processId);
     processEventPort.publish(
-        new ProcessEvent(processId, ProcessStep.RETRIEVED, StepStatus.STARTED, null));
+        tenantId, new ProcessEvent(processId, ProcessStep.RETRIEVED, StepStatus.STARTED, null));
     try {
-      Optional<EmbeddingVector> queryEmbeddingOpt = stageEmbeddings.stage(processId);
+      Optional<EmbeddingVector> queryEmbeddingOpt = stageEmbeddings.stage(tenantId, processId);
       if (queryEmbeddingOpt.isEmpty()) {
         log.info("no text embedded for processId={}, skipping similarity search", processId);
-        retrievalResultPort.store(processId, List.of());
-        stageDocumentTypeCandidates(processId, credential, List.of());
+        retrievalResultPort.store(tenantId, processId, List.of());
+        stageDocumentTypeCandidates(tenantId, processId, credential, List.of());
         processEventPort.publish(
+            tenantId,
             new ProcessEvent(processId, ProcessStep.RETRIEVED, StepStatus.COMPLETED, null));
         return List.of();
       }
 
       EmbeddingVector queryEmbedding = queryEmbeddingOpt.get();
-      AuthContext auth = authContextPort.current();
       List<RetrievalResult> results =
-          vectorSearchPort.search(auth.tenantId(), queryEmbedding, topK).stream()
-              .filter(result -> result.score() >= minScore)
-              .map(result -> withDmsProperties(result, credential))
-              .toList();
+          enrichWithDmsProperties(
+              vectorSearchPort
+                  .search(tenantId, queryEmbedding, topK, embeddingModel, extractionSource)
+                  .stream()
+                  .filter(result -> result.score() >= minScore)
+                  .toList(),
+              credential);
       List<RetrievalResult> bestTypeResults = filterToBestDocumentType(results);
       log.info(
           "retrieval completed processId={} resultCount={} bestTypeResultCount={}",
           processId,
           results.size(),
           bestTypeResults.size());
-      retrievalResultPort.store(processId, bestTypeResults);
-      stageDocumentTypeCandidates(processId, credential, results);
+      retrievalResultPort.store(tenantId, processId, bestTypeResults);
+      stageDocumentTypeCandidates(tenantId, processId, credential, results);
       processEventPort.publish(
-          new ProcessEvent(processId, ProcessStep.RETRIEVED, StepStatus.COMPLETED, null));
+          tenantId, new ProcessEvent(processId, ProcessStep.RETRIEVED, StepStatus.COMPLETED, null));
       return bestTypeResults;
     } catch (RuntimeException ex) {
       log.warn("retrieval failed processId={}", processId, ex);
       processEventPort.publish(
-          new ProcessEvent(processId, ProcessStep.RETRIEVED, StepStatus.FAILED, null));
+          tenantId, new ProcessEvent(processId, ProcessStep.RETRIEVED, StepStatus.FAILED, null));
       if (ex instanceof RetrievalException retrievalException) {
         throw retrievalException;
       }
       throw new RetrievalException("retrieval failed for process " + processId, ex);
     }
+  }
+
+  /**
+   * Fans the per-hit DMS property lookups out onto virtual threads and joins them back in the
+   * original order, instead of fetching each hit's properties sequentially — each lookup is an
+   * independent live HTTP round-trip (see {@link #withDmsProperties}), so doing them concurrently
+   * bounds this step's latency by the slowest single call rather than their sum.
+   */
+  private List<RetrievalResult> enrichWithDmsProperties(
+      List<RetrievalResult> results, DvelopCredential credential) {
+    List<CompletableFuture<RetrievalResult>> futures =
+        results.stream()
+            .map(
+                result ->
+                    CompletableFuture.supplyAsync(
+                        () -> withDmsProperties(result, credential), executor))
+            .toList();
+    return futures.stream().map(CompletableFuture::join).toList();
   }
 
   /**
@@ -220,13 +253,14 @@ public class FindSimilarService implements FindSimilar {
    * is empty too, nothing is staged. It must not fail the whole retrieval step.
    */
   private void stageDocumentTypeCandidates(
-      String processId, DvelopCredential credential, List<RetrievalResult> hits) {
+      String tenantId, String processId, DvelopCredential credential, List<RetrievalResult> hits) {
     List<DmsDocumentMetadata> typedCandidates = distinctDocumentTypes(hits);
     Map<String, Double> scores = documentTypeScores(hits);
     List<DmsDocumentMetadata> candidates = typedCandidates;
     String repositoryId = defaultRepositoryId;
     try {
-      repositoryId = processRepositoryPort.retrieve(processId).orElse(defaultRepositoryId);
+      repositoryId =
+          processRepositoryPort.retrieve(tenantId, processId).orElse(defaultRepositoryId);
       candidates = dmsObjectDefinitionPort.fetchAll(repositoryId, credential);
     } catch (RuntimeException ex) {
       log.warn("failed to fetch DMS document type candidates processId={}", processId, ex);
@@ -248,6 +282,7 @@ public class FindSimilarService implements FindSimilar {
         processId);
     String effectiveRepositoryId = repositoryId;
     documentTypeCandidatesPort.store(
+        tenantId,
         processId,
         candidates.stream()
             .map(c -> withValueLists(c, effectiveRepositoryId, credential))

@@ -117,7 +117,12 @@ describe('ProcessPage', () => {
 
   it('confirm() sends the edited attributes and shows a link to the DMS document on success', () => {
     (validationApi.confirm as ReturnType<typeof vi.fn>).mockReturnValue(
-      of({ repositoryId: 'repo-1', documentId: 'doc-1', writtenBack: true }),
+      of({
+        repositoryId: 'repo-1',
+        documentId: 'doc-1',
+        writtenBack: true,
+        indexStatus: 'COMPLETED',
+      }),
     );
     const fixture = createComponent();
     events$.next(completedEvent('EXTRACTED'));

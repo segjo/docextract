@@ -1,5 +1,8 @@
 package ch.adeon.apps.docextract.shared.health;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -18,6 +21,11 @@ public class HealthController {
   }
 
   @GetMapping("/health")
+  @Tag(name = "operations")
+  @SecurityRequirements
+  @Operation(
+      operationId = "health",
+      summary = "Betriebsstatus der Abhängigkeiten (ohne Authentisierung)")
   public SystemHealth health() {
     return systemHealthService.check();
   }

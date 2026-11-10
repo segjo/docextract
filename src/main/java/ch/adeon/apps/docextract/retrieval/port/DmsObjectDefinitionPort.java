@@ -1,7 +1,6 @@
 package ch.adeon.apps.docextract.retrieval.port;
 
-import ch.adeon.apps.docextract.retrieval.domain.DmsDocumentMetadata;
-import ch.adeon.apps.docextract.security.domain.DvelopCredential;
+import ch.adeon.apps.docextract.security.application.DvelopCredential;
 import java.util.List;
 
 /**
