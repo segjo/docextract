@@ -142,13 +142,65 @@ Runnable HTTP-Requests gegen die laufende App (d.velop-Mock + echtes Gotenberg s
 1. d.velop-Mock (DMS/IdP-Simulation) starten:
 
    ```bash
-   docker compose up dvelop-mock
+   docker compose up -d dvelop-mock llm-mock
    ```
 
 2. Anwendung bauen und starten (Profil `dev`, mit Dev-Audit-Schlüssel; ohne Profil `dev` ist
    `DOCEXTRACT_AUDIT_ACTOR_KEY` Pflicht, siehe [Audit-Schlüssel](#audit-schlüssel-docextract_audit_actor_key)):
 
    ```bash
+   mvn spring-boot:run -Dspring-boot.run.profiles=dev
+   ```
+
+   Ohne weitere Konfiguration verwendet die App den d.velop- und den LLM-Mock aus Schritt 1
+   (`docextract.dvelop.*`, `docextract.ollama.base-uri`, `docextract.adapters.llm.*`,
+   `docextract.adapters.embedding.*` in
+   [application.yml](src/main/resources/application.yml)). Alle Umgebungsvariablen, die diese
+   Defaults überschreiben können:
+
+   | Variable                                 | Property                                 | Default (Mock)                                                                                        |
+   | ---------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+   | `DOCEXTRACT_AUDIT_ACTOR_KEY`             | `docextract.audit.actor-key`             | — (Pflicht ausser Profil `dev`, siehe [Audit-Schlüssel](#audit-schlüssel-docextract_audit_actor_key)) |
+   | `DOCEXTRACT_TENANT_APP_SECRET`           | `docextract.tenant.app-secret`           | — (leer = Single-Tenant)                                                                              |
+   | `DOCEXTRACT_AGENT_GROUP_ID`              | `docextract.agent.group-id`              | — (leer; Pflicht wenn MCP aktiv)                                                                      |
+   | `DOCEXTRACT_DVELOP_JSTORE_URI`           | `docextract.dvelop.jstore-uri`           | `http://localhost:6380/store/httpgateway/appconfig`                                                   |
+   | `DOCEXTRACT_DVELOP_SYSTEM_BASE_URI`      | `docextract.dvelop.system-base-uri`      | `http://localhost:8081` (dvelop-mock)                                                                 |
+   | `DOCEXTRACT_OLLAMA_BASE_URI`             | `docextract.ollama.base-uri`             | `http://localhost:8082` (llm-mock)                                                                    |
+   | `DOCEXTRACT_ADAPTERS_LLM_BASE_URL`       | `docextract.adapters.llm.base-url`       | `http://localhost:8082` (llm-mock)                                                                    |
+   | `DTRACK_ANALYZER_OPENAPI_TOKEN`          | `docextract.adapters.llm.api-key`        | — (leer)                                                                                              |
+   | `DOCEXTRACT_ADAPTERS_LLM_MODEL_ID`       | `docextract.adapters.llm.model-id`       | `gpt-5.6-sol`                                                                                         |
+   | `DOCEXTRACT_ADAPTERS_EMBEDDING_BASE_URL` | `docextract.adapters.embedding.base-url` | `${DOCEXTRACT_OLLAMA_BASE_URI}/v1` (llm-mock)                                                         |
+   | `DOCEXTRACT_ADAPTERS_EMBEDDING_API_KEY`  | `docextract.adapters.embedding.api-key`  | — (leer)                                                                                              |
+   | `DOCEXTRACT_ADAPTERS_EMBEDDING_MODEL_ID` | `docextract.adapters.embedding.model-id` | `qwen3-embedding:0.6b`                                                                                |
+
+   Für einen echten d.velop-/LLM-/Embedding-Endpoint lokal die entsprechenden Variablen in die
+   (git-ignorierte) `.env` eintragen, z. B.:
+
+   ```bash
+   cat >> .env <<EOF
+   DOCEXTRACT_AUDIT_ACTOR_KEY=$(openssl rand -base64 48)
+   DOCEXTRACT_DVELOP_JSTORE_URI=http://localhost:6380/store/httpgateway/appconfig
+   DOCEXTRACT_DVELOP_SYSTEM_BASE_URI=https://dms.local
+   DOCEXTRACT_OLLAMA_BASE_URI=http://localhost:11435
+   DOCEXTRACT_ADAPTERS_LLM_BASE_URL=https://adeon-drack-analyzer.openai.azure.com
+   DTRACK_ANALYZER_OPENAPI_TOKEN=...
+   DOCEXTRACT_ADAPTERS_LLM_MODEL_ID=...
+   DOCEXTRACT_ADAPTERS_EMBEDDING_BASE_URL=...
+   DOCEXTRACT_ADAPTERS_EMBEDDING_API_KEY=...
+   DOCEXTRACT_ADAPTERS_EMBEDDING_MODEL_ID=...
+   EOF
+   ```
+
+   Das Heredoc ist bewusst unquoted (`<<EOF` statt `<<'EOF'`), damit `$(openssl rand -base64 48)`
+   direkt in `.env` geschrieben wird; bereits in `.env` vorhandene Zeilen (z. B. ein zuvor erzeugter
+   Audit-Schlüssel) vorher entfernen oder die Zeile aus dem Heredoc streichen, um Duplikate zu
+   vermeiden.
+
+   VS Code liest `.env` automatisch über `envFile` in [.vscode/launch.json](.vscode/launch.json);
+   bei `mvn spring-boot:run` muss sie zuvor in die Shell exportiert werden:
+
+   ```bash
+   set -a; source .env; set +a
    mvn spring-boot:run -Dspring-boot.run.profiles=dev
    ```
 
@@ -190,10 +242,10 @@ und `score`. Die Attributvorschläge (`value`/`values`, `confidence`) des eigene
 ihn und können Personendaten enthalten. Die Eigenschaftswerte wurden mit der Session des Benutzers
 geladen; über die `documentId` kann der Agent sie mit seinen eigenen DMS-Rechten abfragen.
 
-1. d.velop-Mock und Postgres starten, Anwendung mit MCP starten:
+1. d.velop-Mock, LLM-Mock und Postgres starten, Anwendung mit MCP starten:
 
    ```bash
-   docker compose --profile mock up -d postgres dvelop-mock
+   docker compose --profile mock up -d postgres dvelop-mock llm-mock
    DOCEXTRACT_ADAPTERS_MCP_ENABLED=true DOCEXTRACT_DVELOP_SYSTEM_BASE_URI=http://localhost:8081 \
      mvn spring-boot:run -Dspring-boot.run.profiles=dev
    ```

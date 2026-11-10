@@ -82,6 +82,19 @@ Punkt erreicht.
 | 3.7 | Modulübergreifende, kontextgetriebene KI-Änderung + Review-Diff       |   4 | KI/Arch (15)(18)      |
 
 **Exit-Kriterium:** Zwei Module mit Verträgen; MCP-Tool lauffähig; erste KI-Funktion integriert und abgesichert.
+**Status 3.6** (Befund-Tabelle: [`ENTWICKLUNGSTAGEBUCH.md`](ENTWICKLUNGSTAGEBUCH.md), Eintrag
+„FR-3/FR-4 Umsetzungsstand geprüft"): `LlmPort`/`EmbeddingPort` + je ein OpenAI-kompatibler Adapter,
+Audit mit Modell-ID/Token und der „unbekannt"-Pfad (E-5) waren bereits vollständig umgesetzt.
+Nachgezogen: serverseitige Schema-Validierung mit Retry gemäss `docextract.adapters.llm.max-retries`
+(vorher ohne Retry), Pre-Filter der Vektor-Query um `embedding_model`/`extraction_source` ergänzt
+(vorher nur `tenant_id` + `status`) und V18 (`chk_model` entfernt, zwei Modellwerte per Test belegt).
+`LlmPortContractTest` neu, parametrisiert, vom vorhandenen Adapter in zwei Konfigurationen erfüllt
+(lokal ohne api-key, extern mit api-key + api-version). Akzeptanz belegt durch
+`IngestToExtractionResultHttpTest` (`@SpringBootTest`, Profil `ci`): `POST /api/v1/ingest/documents` →
+202 → `GET .../extraction-result` liefert Vorschläge, mit Testcontainers-Postgres, `docker/dvelop-mock`
+und In-Prozess-Stub für LLM/Embedding. Offen: NfA-8s „≥ 2 Adapter" bleibt ein Adaptertyp mit zwei
+Konfigurationen (ADR-011); Vektorspalte fest `vector(1024)`, Multi-Modell mit anderer Dimension
+ungelöst; Stub-Embedding liefert konstanten Vektor (kein NfA-6-Nachweis). Details: Tagebuch (4)/(5).
 
 ---
 

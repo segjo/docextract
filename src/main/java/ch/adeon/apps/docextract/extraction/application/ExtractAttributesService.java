@@ -97,6 +97,7 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
   private final String defaultRepositoryId;
   private final int maxValueListValues;
   private final int maxToolCalls;
+  private final int maxRetries;
 
   public ExtractAttributesService(
       DocumentTypeCandidatesPort documentTypeCandidatesPort,
@@ -111,7 +112,8 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
       ProcessRepositoryPort processRepositoryPort,
       @Value("${docextract.ingest.dms.repository-id}") String defaultRepositoryId,
       @Value("${docextract.valuelist.max-values:50}") int maxValueListValues,
-      @Value("${docextract.extraction.max-tool-calls:10}") int maxToolCalls) {
+      @Value("${docextract.extraction.max-tool-calls:10}") int maxToolCalls,
+      @Value("${docextract.adapters.llm.max-retries:1}") int maxRetries) {
     this.documentTypeCandidatesPort = documentTypeCandidatesPort;
     this.contentStagingPort = contentStagingPort;
     this.valueListPort = valueListPort;
@@ -125,6 +127,7 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
     this.defaultRepositoryId = defaultRepositoryId;
     this.maxValueListValues = maxValueListValues;
     this.maxToolCalls = maxToolCalls;
+    this.maxRetries = maxRetries;
   }
 
   @Override
@@ -283,11 +286,16 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
     // node that omits this (T-1).
     schema.put("additionalProperties", false);
 
-    LlmResponse response = llmPort.generate(CLASSIFY_SYSTEM_PROMPT, userPrompt, schema);
-    audit(tenantId, "extraction.classify", userPrompt, response);
-
-    String chosenId =
-        objectMapper.readValue(response.json(), ClassifyResponse.class).documentTypeId();
+    ClassifyResponse parsed =
+        generateValidated(
+            tenantId,
+            "extraction.classify",
+            CLASSIFY_SYSTEM_PROMPT,
+            userPrompt,
+            schema,
+            List.of(),
+            ClassifyResponse.class);
+    String chosenId = parsed.documentTypeId();
     return candidates.stream()
         .filter(candidate -> Objects.equals(candidate.documentType().id(), chosenId))
         .findFirst()
@@ -423,10 +431,15 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
 
     List<LlmTool> tools =
         valueListTool.isApplicable() ? List.of(valueListTool.asLlmTool()) : List.of();
-    LlmResponse response = llmPort.generate(EXTRACT_SYSTEM_PROMPT, userPrompt, schema, tools);
-    audit(tenantId, "extraction.suggest-attributes", userPrompt, response);
-
-    SuggestResponse parsed = objectMapper.readValue(response.json(), SuggestResponse.class);
+    SuggestResponse parsed =
+        generateValidated(
+            tenantId,
+            "extraction.suggest-attributes",
+            EXTRACT_SYSTEM_PROMPT,
+            userPrompt,
+            schema,
+            tools,
+            SuggestResponse.class);
     if (parsed.attributes() == null) {
       return List.of();
     }
@@ -729,6 +742,40 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
       }
     });
     return extended;
+  }
+
+  /**
+   * Calls the LLM and validates its response against {@code type} (server-side JSON-schema
+   * validation, T-1, always performed regardless of {@link LlmPort#capabilities()}). An invalid
+   * response (malformed JSON, missing/mistyped fields) is re-requested from the same LLM up to
+   * {@code docextract.adapters.llm.max-retries} additional times; each attempt, valid or not, is
+   * audited individually (C-4/NfA-7). Exhausting the retry budget ends in a controlled failure
+   * ({@link LlmException}), not a silent guess (NfA-3).
+   */
+  private <T> T generateValidated(
+      String tenantId,
+      String eventType,
+      String systemPrompt,
+      String userPrompt,
+      Map<String, Object> jsonSchema,
+      List<LlmTool> tools,
+      Class<T> type) {
+    RuntimeException lastFailure = null;
+    for (int attempt = 1; attempt <= maxRetries + 1; attempt++) {
+      LlmResponse response = llmPort.generate(systemPrompt, userPrompt, jsonSchema, tools);
+      audit(tenantId, eventType, userPrompt, response);
+      try {
+        return objectMapper.readValue(response.json(), type);
+      } catch (RuntimeException ex) {
+        lastFailure = ex;
+        log.warn(
+            "invalid LLM JSON for {} (attempt {}/{})", eventType, attempt, maxRetries + 1, ex);
+      }
+    }
+    throw new LlmException(
+        "LLM response for %s failed schema validation after %d attempt(s)"
+            .formatted(eventType, maxRetries + 1),
+        lastFailure);
   }
 
   /** Audits the prompt's hash, never the raw prompt text itself (C-4: no roh-PII in the trail). */

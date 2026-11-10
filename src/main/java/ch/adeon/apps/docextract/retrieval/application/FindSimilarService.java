@@ -35,10 +35,11 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * Embeds+stages a process's chunks (in the same run, avoiding a second embedding call — §6.1/8.5)
- * and searches the {@code APPROVED} corpus with a mandatory tenant_id pre-filter (ADR-002, FR-3,
- * NfA-4/-6). Hits below the configurable minimum score are dropped before the result is reported.
- * Each remaining hit's DMS object properties are then looked up live and attached (FR-3, SPEC §3),
- * and the hits are narrowed down to the best-matched document type (see {@link
+ * and searches the {@code APPROVED} corpus with a mandatory {@code tenant_id}/{@code
+ * embedding_model}/{@code extraction_source} pre-filter (ADR-002, FR-3, NfA-4/-6). Hits below the
+ * configurable minimum score are dropped before the result is reported. Each remaining hit's DMS
+ * object properties are then looked up live and attached (FR-3, SPEC §3), and the hits are narrowed
+ * down to the best-matched document type (see {@link
  * #filterToBestDocumentType(List)}). All repository document types + properties (SPEC §3, see
  * {@link DmsObjectDefinitionPort}) are staged as candidates for the next step via {@link
  * DocumentTypeCandidatesPort}, each carrying a score derived from the similar hits. Reports {@code
@@ -64,6 +65,8 @@ public class FindSimilarService implements FindSimilar {
   private final double minScore;
   private final List<String> documentTypeFilter;
   private final String defaultRepositoryId;
+  private final String embeddingModel;
+  private final String extractionSource;
   private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
   public FindSimilarService(
@@ -80,7 +83,9 @@ public class FindSimilarService implements FindSimilar {
       @Value("${docextract.valuelist.max-values:50}") int maxValueListValues,
       @Value("${docextract.retrieval.min-score:0.0}") double minScore,
       @Value("${docextract.retrieval.document-type-filter:}") List<String> documentTypeFilter,
-      @Value("${docextract.ingest.dms.repository-id}") String defaultRepositoryId) {
+      @Value("${docextract.ingest.dms.repository-id}") String defaultRepositoryId,
+      @Value("${docextract.retrieval.embedding-model}") String embeddingModel,
+      @Value("${docextract.adapters.text-extraction}") String extractionSource) {
     this.stageEmbeddings = stageEmbeddings;
     this.vectorSearchPort = vectorSearchPort;
     this.processEventPort = processEventPort;
@@ -92,6 +97,8 @@ public class FindSimilarService implements FindSimilar {
     this.valueListPort = valueListPort;
     this.objectMapper = objectMapper;
     this.maxValueListValues = maxValueListValues;
+    this.embeddingModel = embeddingModel;
+    this.extractionSource = extractionSource;
     this.minScore = minScore;
     this.documentTypeFilter = documentTypeFilter.stream().filter(s -> !s.isBlank()).toList();
     this.defaultRepositoryId = defaultRepositoryId;
@@ -123,7 +130,9 @@ public class FindSimilarService implements FindSimilar {
       EmbeddingVector queryEmbedding = queryEmbeddingOpt.get();
       List<RetrievalResult> results =
           enrichWithDmsProperties(
-              vectorSearchPort.search(tenantId, queryEmbedding, topK).stream()
+              vectorSearchPort
+                  .search(tenantId, queryEmbedding, topK, embeddingModel, extractionSource)
+                  .stream()
                   .filter(result -> result.score() >= minScore)
                   .toList(),
               credential);

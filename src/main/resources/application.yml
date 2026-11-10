@@ -90,10 +90,11 @@ docextract:
     # different from docextract.tenant.app-secret. Mandatory; only profile dev has a default key.
     actor-key: ${DOCEXTRACT_AUDIT_ACTOR_KEY:}
   dvelop:
-    jstore-uri: http://localhost:6380/store/httpgateway/appconfig
+    # Mock d.velop system by default (docker/dvelop-mock); override in a local, git-ignored .env
+    # (see README) to point at a real d.velop system without touching this file.
+    jstore-uri: ${DOCEXTRACT_DVELOP_JSTORE_URI:http://localhost:6380/store/httpgateway/appconfig}
     # fallback used only when the jstore endpoint above is unreachable, e.g. https://dms.local
-    # system-base-uri: http://localhost:8081
-    system-base-uri: https://dms.local
+    system-base-uri: ${DOCEXTRACT_DVELOP_SYSTEM_BASE_URI:http://localhost:8081}
   ingest:
     # T-4 DoS mitigation: hard cap on upload size (bytes), default 50 MiB
     max-file-size-bytes: 52428800
@@ -110,7 +111,9 @@ docextract:
   docling:
     base-uri: http://localhost:5001
   ollama:
-    base-uri: http://localhost:11435
+    # Local LLM mock endpoint by default (docker/llm-mock); override in a local, git-ignored .env
+    # (see README) to point at a real Ollama instance, e.g. http://localhost:11435.
+    base-uri: ${DOCEXTRACT_OLLAMA_BASE_URI:http://localhost:8082}
   adapters:
     # Chosen per port via @ConditionalOnProperty (ADR-011); a change needs config only, no code.
     preview: gotenberg
@@ -121,23 +124,30 @@ docextract:
     document-content: fulltext # fulltext (PDFBox, default) | markdown (docling)
     llm:
       # Generic OpenAI-compatible adapter (ADR-011): local runtime (Ollama's /v1, llama.cpp, vLLM)
-      # or hosted provider — only configuration differs. Defaults below point at the previously
-      # opt-in Azure/Microsoft-Foundry deployment (ADR-010, now folded into ADR-011); switch
-      # base-url/model-id to point at a local runtime instead.
-      base-url: https://adeon-drack-analyzer.openai.azure.com
+      # or hosted provider — only configuration differs. Local LLM mock endpoint by default
+      # (docker/llm-mock); override base-url/api-key/model-id in a local, git-ignored .env (see
+      # README) to point at a real provider, e.g. the Azure/Microsoft-Foundry deployment
+      # (ADR-010, now folded into ADR-011) at https://adeon-drack-analyzer.openai.azure.com.
+      base-url: ${DOCEXTRACT_ADAPTERS_LLM_BASE_URL:http://localhost:8082}
       api-key: ${DTRACK_ANALYZER_OPENAPI_TOKEN:}
-      model-id: gpt-5.6-sol
+      model-id: ${DOCEXTRACT_ADAPTERS_LLM_MODEL_ID:gpt-5.6-sol}
       # Optional Microsoft Foundry/Azure OpenAI api-version query parameter; blank for a plain
       # OpenAI-compatible endpoint.
       api-version: 2025-04-01-preview
       # Optional sampling params; blank means the provider's own default is used.
       temperature:
       top-p:
+      # Additional attempts to re-request a response that fails the mandatory server-side
+      # JSON-schema validation (T-1), on top of the first attempt; exhausted -> controlled failure
+      # (ExtractAttributesService#generateValidated, NfA-3). 1 = one retry, two attempts total.
+      max-retries: 1
     embedding:
-      # Local Ollama's OpenAI-compatible embeddings endpoint by default (ADR-011).
-      base-url: ${docextract.ollama.base-uri}/v1
-      api-key:
-      model-id: qwen3-embedding:0.6b
+      # Local Ollama's OpenAI-compatible embeddings endpoint by default (ADR-011); override in a
+      # local, git-ignored .env (see README) to point at a real provider. Defaults to
+      # docextract.ollama.base-uri so it tracks that override automatically unless set explicitly.
+      base-url: ${DOCEXTRACT_ADAPTERS_EMBEDDING_BASE_URL:${docextract.ollama.base-uri}/v1}
+      api-key: ${DOCEXTRACT_ADAPTERS_EMBEDDING_API_KEY:}
+      model-id: ${DOCEXTRACT_ADAPTERS_EMBEDDING_MODEL_ID:qwen3-embedding:0.6b}
   content:
     # First-N-words plain text for FR-3 (ADR-012): no chunking, no structure/table
     # reconstruction. Must stay <= the embedding model's context window.

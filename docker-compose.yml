@@ -110,6 +110,42 @@ services:
     profiles:
       - mock
 
+  # Mocks an OpenAI-compatible chat-completions/embeddings provider (ADR-009/-011) for local
+  # development/CI smoke tests without real provider credentials or a pulled Ollama model
+  # ("LLM als Mock", doc/CONTEXT.md C-6). Opt-in only, never used by the "dev"/"ci"/"prod"
+  # application profiles by default:
+  #   docker compose --profile mock up llm-mock
+  # Point docextract.adapters.llm.base-url / docextract.adapters.embedding.base-url at it, see
+  # docker/llm-mock/README.md.
+  llm-mock:
+    build:
+      context: ./docker/llm-mock
+    ports:
+      - "127.0.0.1:${LLM_MOCK_PORT:-8082}:8080"
+    # Bind-mount the stub directories so recorded mappings/bodies land directly back in the repo
+    # instead of only inside the container.
+    volumes:
+      - ./docker/llm-mock/mappings:/home/wiremock/mappings
+      - ./docker/llm-mock/__files:/home/wiremock/__files
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--spider",
+          "-q",
+          "http://localhost:8082/__admin/health",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - docextract
+    profiles:
+      - mock
+
 configs:
   postgres-init:
     content: |

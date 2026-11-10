@@ -1,8 +1,8 @@
 {
   "id": "9aeae084-852d-4feb-baa0-46979c793791",
-  "name": "dms_o2_t000004235",
+  "name": "dms_o2",
   "request": {
-    "urlPathPattern": "/dms/r/[^/]+/o2/T000004235/",
+    "urlPathPattern": "/dms/r/[^/]+/o2/[^/]+/",
     "method": "GET"
   },
   "response": {

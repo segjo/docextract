@@ -8,10 +8,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 /**
- * ANN similarity search restricted to {@code APPROVED} embeddings, with the tenant_id predicate
- * embedded directly in the query as a pre-filter — never applied as a post-filter (ADR-002,
- * NfA-4/T-3). {@code PENDING} rows are structurally unreachable, since {@code status = 'APPROVED'}
- * is a mandatory query predicate, not an optional one.
+ * ANN similarity search restricted to {@code APPROVED} embeddings, with {@code tenant_id},
+ * {@code embedding_model} and {@code extraction_source} embedded directly in the query as a
+ * mandatory pre-filter — never applied as a post-filter (ADR-002, NfA-4/T-3, SPEC §3 FR-3).
+ * {@code PENDING} rows are structurally unreachable, since {@code status = 'APPROVED'} is a
+ * mandatory query predicate, not an optional one.
  */
 @Component
 public class PgVectorSearchAdapter implements VectorSearchPort {
@@ -23,7 +24,12 @@ public class PgVectorSearchAdapter implements VectorSearchPort {
   }
 
   @Override
-  public List<RetrievalResult> search(String tenantId, EmbeddingVector queryEmbedding, int topK) {
+  public List<RetrievalResult> search(
+      String tenantId,
+      EmbeddingVector queryEmbedding,
+      int topK,
+      String embeddingModel,
+      String extractionSource) {
     String queryVector = PgVectorLiteral.of(queryEmbedding.values());
     return jdbcTemplate.query(
         """
@@ -31,6 +37,8 @@ public class PgVectorSearchAdapter implements VectorSearchPort {
         FROM embedding
         WHERE status = 'APPROVED'
           AND tenant_id = ?
+          AND embedding_model = ?
+          AND extraction_source = ?
         ORDER BY embedding <=> ?::vector
         LIMIT ?
         """,
@@ -42,6 +50,8 @@ public class PgVectorSearchAdapter implements VectorSearchPort {
                 null),
         queryVector,
         tenantId,
+        embeddingModel,
+        extractionSource,
         queryVector,
         topK);
   }

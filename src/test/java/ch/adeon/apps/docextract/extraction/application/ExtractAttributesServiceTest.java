@@ -17,12 +17,16 @@ import ch.adeon.apps.docextract.audit.application.AuditPort;
 import ch.adeon.apps.docextract.content.application.ContentStagingPort;
 import ch.adeon.apps.docextract.content.domain.Representation;
 import ch.adeon.apps.docextract.content.port.DocumentContent;
+import ch.adeon.apps.docextract.extraction.domain.ExtractionException;
 import ch.adeon.apps.docextract.extraction.domain.LlmResponse;
 import ch.adeon.apps.docextract.extraction.domain.ModelInfo;
 import ch.adeon.apps.docextract.extraction.port.LlmPort;
+import ch.adeon.apps.docextract.process.application.ProcessEvent;
 import ch.adeon.apps.docextract.process.application.ProcessEventPort;
 import ch.adeon.apps.docextract.process.application.ProcessNotFoundException;
 import ch.adeon.apps.docextract.process.application.ProcessRepositoryPort;
+import ch.adeon.apps.docextract.process.application.ProcessStep;
+import ch.adeon.apps.docextract.process.application.StepStatus;
 import ch.adeon.apps.docextract.retrieval.application.DocumentTypeCandidatesPort;
 import ch.adeon.apps.docextract.retrieval.application.RetrievalResultPort;
 import ch.adeon.apps.docextract.retrieval.port.DmsDocumentMetadata;
@@ -63,7 +67,8 @@ class ExtractAttributesServiceTest {
           mock(ProcessRepositoryPort.class),
           "repo-1",
           50,
-          10);
+          10,
+          1);
 
   private static DmsPropertyDefinition writable(String id) {
     return new DmsPropertyDefinition(
@@ -96,9 +101,8 @@ class ExtractAttributesServiceTest {
     when(contentStagingPort.retrieve("proc-1"))
         .thenReturn(
             Optional.of(new DocumentContent(Representation.FULLTEXT, "Rechnung Muster AG")));
-    when(llmPort.generate(anyString(), anyString(), anyMap()))
-        .thenReturn(new LlmResponse("{\"documentTypeId\":\"DREC\"}", MODEL, 11));
     when(llmPort.generate(anyString(), anyString(), anyMap(), anyList()))
+        .thenReturn(new LlmResponse("{\"documentTypeId\":\"DREC\"}", MODEL, 11))
         .thenReturn(
             new LlmResponse(
                 "{\"attributes\":[{\"propertyId\":\"p1\",\"value\":null,\"values\":null,"
@@ -122,6 +126,70 @@ class ExtractAttributesServiceTest {
           assertThat(event.argsHash()).hasSize(64).doesNotContain("Muster");
         });
     assertThat(events.getAllValues()).extracting(AuditEvent::tokenCount).containsExactly(11, 22);
+  }
+
+  @Test
+  void invalid_llm_json_is_retried_then_ends_in_a_controlled_failure() {
+    when(candidatesPort.find("tenant-a", "proc-1"))
+        .thenReturn(Optional.of(List.of(candidate("DREC"), candidate("DLET"))));
+    when(contentStagingPort.retrieve("proc-1"))
+        .thenReturn(
+            Optional.of(new DocumentContent(Representation.FULLTEXT, "Rechnung Muster AG")));
+    // Neither attempt (first call + the one configured retry) is valid JSON for ClassifyResponse.
+    when(llmPort.generate(anyString(), anyString(), anyMap(), anyList()))
+        .thenReturn(new LlmResponse("not json", MODEL, 11));
+
+    assertThatThrownBy(() -> service.extract("tenant-a", "proc-1", CREDENTIAL))
+        .isInstanceOf(ExtractionException.class)
+        .hasCauseInstanceOf(LlmException.class);
+
+    verify(llmPort, org.mockito.Mockito.times(2))
+        .generate(anyString(), anyString(), anyMap(), anyList());
+    verify(auditPort, org.mockito.Mockito.times(2)).append(any());
+    verify(extractionResultPort, never()).store(any(), any(), any());
+    verify(processEventPort)
+        .publish(
+            "tenant-a", new ProcessEvent("proc-1", ProcessStep.EXTRACTED, StepStatus.FAILED, null));
+  }
+
+  @Test
+  void llm_suggested_value_outside_the_known_value_list_is_rejected_as_unknown() {
+    DmsPropertyDefinition withValueList =
+        new DmsPropertyDefinition(
+            "p1",
+            "p1",
+            DmsPropertyDataType.ALPHANUMERIC,
+            false,
+            true,
+            false,
+            false,
+            true,
+            false,
+            false,
+            false,
+            0,
+            0,
+            List.of("A", "B"),
+            false);
+    DmsDocumentMetadata singleCandidate =
+        new DmsDocumentMetadata(
+            new DmsDocumentType("DREC", "DREC", List.of(withValueList)), null, List.of());
+    when(candidatesPort.find("tenant-a", "proc-1")).thenReturn(Optional.of(List.of(singleCandidate)));
+    when(contentStagingPort.retrieve("proc-1"))
+        .thenReturn(
+            Optional.of(new DocumentContent(Representation.FULLTEXT, "Rechnung Muster AG")));
+    when(llmPort.generate(anyString(), anyString(), anyMap(), anyList()))
+        .thenReturn(
+            new LlmResponse(
+                "{\"attributes\":[{\"propertyId\":\"p1\",\"value\":\"ZZZ\",\"values\":null,"
+                    + "\"confidence\":0.9,\"sourceExcerpt\":null}]}",
+                MODEL,
+                22));
+
+    ExtractionResult result = service.extract("tenant-a", "proc-1", CREDENTIAL);
+
+    assertThat(result.attributes())
+        .containsExactly(new ExtractedAttribute("p1", null, null, 0.0, null));
   }
 
   @Test

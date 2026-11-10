@@ -1,8 +1,8 @@
 {
   "id": "2b1f517b-3c1e-4858-9fa1-ca28c2bf049b",
-  "name": "dms_validvalues_p_15",
+  "name": "dms_validvalues_p",
   "request": {
-    "urlPathPattern": "/dms/r/[^/]+/validvalues/p/15",
+    "urlPathPattern": "/dms/r/[^/]+/validvalues/p/[^/]+",
     "method": "POST"
   },
   "response": {

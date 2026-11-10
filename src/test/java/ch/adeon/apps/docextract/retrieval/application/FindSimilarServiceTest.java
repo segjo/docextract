@@ -67,14 +67,16 @@ class FindSimilarServiceTest {
           50,
           0.0,
           List.of(),
-          "repo-1");
+          "repo-1",
+          "qwen3-embedding:0.6b",
+          "pdfbox");
 
   @Test
   void searches_with_the_staged_embedding_and_the_given_tenant() {
     when(stageEmbeddings.stage(TENANT, "p1"))
         .thenReturn(Optional.of(new EmbeddingVector(new float[] {1f, 1f})));
     RetrievalResult top = new RetrievalResult("repo-1", "doc-1", 0.9, null);
-    when(vectorSearchPort.search(eq(TENANT), any(), eq(5))).thenReturn(List.of(top));
+    when(vectorSearchPort.search(eq(TENANT), any(), eq(5), any(), any())).thenReturn(List.of(top));
     when(dmsObjectMetadataPort.fetchProperties("repo-1", "doc-1", credential))
         .thenReturn("{\"id\":\"doc-1\"}");
 
@@ -82,7 +84,13 @@ class FindSimilarServiceTest {
 
     RetrievalResult enriched = new RetrievalResult("repo-1", "doc-1", 0.9, "{\"id\":\"doc-1\"}");
     assertThat(results).containsExactly(enriched);
-    verify(vectorSearchPort).search(TENANT, new EmbeddingVector(new float[] {1f, 1f}), 5);
+    verify(vectorSearchPort)
+        .search(
+            TENANT,
+            new EmbeddingVector(new float[] {1f, 1f}),
+            5,
+            "qwen3-embedding:0.6b",
+            "pdfbox");
     verify(retrievalResultPort).store(TENANT, "p1", List.of(enriched));
     verify(processEventPort)
         .publish(TENANT, new ProcessEvent("p1", ProcessStep.RETRIEVED, StepStatus.STARTED, null));
@@ -95,7 +103,7 @@ class FindSimilarServiceTest {
     when(stageEmbeddings.stage(TENANT, "p1"))
         .thenReturn(Optional.of(new EmbeddingVector(new float[] {1f, 1f})));
     RetrievalResult blankRepository = new RetrievalResult("", "doc-1", 0.9, null);
-    when(vectorSearchPort.search(eq(TENANT), any(), eq(5))).thenReturn(List.of(blankRepository));
+    when(vectorSearchPort.search(eq(TENANT), any(), eq(5), any(), any())).thenReturn(List.of(blankRepository));
 
     List<RetrievalResult> results = service.find(TENANT, "p1", 5, credential);
 
@@ -108,7 +116,7 @@ class FindSimilarServiceTest {
     when(stageEmbeddings.stage(TENANT, "p1"))
         .thenReturn(Optional.of(new EmbeddingVector(new float[] {1f, 1f})));
     RetrievalResult top = new RetrievalResult("repo-1", "doc-1", 0.9, null);
-    when(vectorSearchPort.search(eq(TENANT), any(), eq(5))).thenReturn(List.of(top));
+    when(vectorSearchPort.search(eq(TENANT), any(), eq(5), any(), any())).thenReturn(List.of(top));
     when(dmsObjectMetadataPort.fetchProperties("repo-1", "doc-1", credential))
         .thenThrow(new RuntimeException("dms unreachable"));
 
@@ -134,12 +142,14 @@ class FindSimilarServiceTest {
             50,
             0.8,
             List.of(),
-            "repo-1");
+            "repo-1",
+            "qwen3-embedding:0.6b",
+            "pdfbox");
     when(stageEmbeddings.stage(TENANT, "p1"))
         .thenReturn(Optional.of(new EmbeddingVector(new float[] {1f, 1f})));
     RetrievalResult strong = new RetrievalResult("repo-1", "doc-1", 0.9, null);
     RetrievalResult weak = new RetrievalResult("repo-1", "doc-2", 0.3, null);
-    when(vectorSearchPort.search(eq(TENANT), any(), eq(5))).thenReturn(List.of(strong, weak));
+    when(vectorSearchPort.search(eq(TENANT), any(), eq(5), any(), any())).thenReturn(List.of(strong, weak));
 
     List<RetrievalResult> results = thresholded.find(TENANT, "p1", 5, credential);
 
@@ -155,7 +165,7 @@ class FindSimilarServiceTest {
     List<RetrievalResult> results = service.find(TENANT, "p1", 5, credential);
 
     assertThat(results).isEmpty();
-    verify(vectorSearchPort, never()).search(any(), any(), anyInt());
+    verify(vectorSearchPort, never()).search(any(), any(), anyInt(), any(), any());
     verify(retrievalResultPort).store(TENANT, "p1", List.of());
     verify(processEventPort)
         .publish(TENANT, new ProcessEvent("p1", ProcessStep.RETRIEVED, StepStatus.COMPLETED, null));
@@ -179,7 +189,7 @@ class FindSimilarServiceTest {
     RetrievalResult typeAWeak = withProperties("repo-1", "doc-1", 0.91, "DREC");
     RetrievalResult typeAStrong = withProperties("repo-1", "doc-2", 0.95, "DREC");
     RetrievalResult typeBSingle = withProperties("repo-1", "doc-3", 0.99, "DLIEF");
-    when(vectorSearchPort.search(eq(TENANT), any(), eq(5)))
+    when(vectorSearchPort.search(eq(TENANT), any(), eq(5), any(), any()))
         .thenReturn(List.of(typeAWeak, typeAStrong, typeBSingle));
     stubDmsProperties(typeAWeak, typeAStrong, typeBSingle);
     when(dmsObjectDefinitionPort.fetchAll("repo-1", credential))
@@ -226,7 +236,7 @@ class FindSimilarServiceTest {
   void fetches_all_dms_document_type_candidates_when_no_similar_document_is_found() {
     when(stageEmbeddings.stage(TENANT, "p1"))
         .thenReturn(Optional.of(new EmbeddingVector(new float[] {1f, 1f})));
-    when(vectorSearchPort.search(eq(TENANT), any(), eq(5))).thenReturn(List.of());
+    when(vectorSearchPort.search(eq(TENANT), any(), eq(5), any(), any())).thenReturn(List.of());
     List<DmsDocumentMetadata> candidates =
         List.of(
             new DmsDocumentMetadata(
@@ -243,7 +253,7 @@ class FindSimilarServiceTest {
   void enriches_candidate_properties_having_a_value_list_when_no_similar_document_is_found() {
     when(stageEmbeddings.stage(TENANT, "p1"))
         .thenReturn(Optional.of(new EmbeddingVector(new float[] {1f, 1f})));
-    when(vectorSearchPort.search(eq(TENANT), any(), eq(5))).thenReturn(List.of());
+    when(vectorSearchPort.search(eq(TENANT), any(), eq(5), any(), any())).thenReturn(List.of());
     DmsPropertyDefinition category = definition("27", true);
     DmsPropertyDefinition plain = definition("28", false);
     when(dmsObjectDefinitionPort.fetchAll("repo-1", credential))

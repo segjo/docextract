@@ -1749,3 +1749,175 @@ auf `AppConfigPort`, (4) `provider`/`model_id` in `audit_entry`, (5) LLM-Ereigni
 - Bestehende Deployments ohne `DOCEXTRACT_AUDIT_ACTOR_KEY` starten nach diesem Stand nicht mehr.
 - Bei `docker-compose.yml`/README wurde der neue Pflichtparameter nicht ergänzt.
 - Guardrail-Code geändert: `SessionAuthContextAdapter` — bitte gegenlesen.
+
+---
+
+## 2026-11-10 (4) — FR-3/FR-4 Umsetzungsstand geprüft, Pre-Filter und Retry ergänzt (Block 3, 3.6)
+
+**Tool/Modell:** GitHub Copilot Chat (Agent-Modus).
+
+**Auftrag (Prompt-Zusammenfassung):** Umsetzungsstand von FR-3/FR-4 hinter `EmbeddingPort`/`LlmPort`
+prüfen und als Tabelle festhalten; nur eindeutig in SPEC/ARCHITECTURE beschriebene Lücken minimal
+schliessen; Tests (LLM gemockt) für ungültiges-JSON-Retry, Wert-ausserhalb-Werteliste, Cross-Tenant;
+Contract-Test-Suite für `LlmPort` anlegen, falls fehlend; PROJEKTPLAN.md 3.6 mit den Befunden
+nachführen.
+
+**Befund (1): Umsetzungsstand**
+
+| Baustein | Status | Befund |
+| --- | --- | --- |
+| `LlmPort` + OpenAI-kompatibler Adapter | ✅ vorhanden | `LlmPort`, `OpenAiCompatibleLlmAdapter`; ein generischer Adapter für lokal/extern (ADR-011), kein zweiter konkreter Adaptertyp (NfA-8 "≥ 2 Adapter" bleibt über Konfiguration, nicht über Code, erfüllt) |
+| `EmbeddingPort` + Adapter | ✅ vorhanden | `EmbeddingPort`, `OpenAiCompatibleEmbeddingAdapter` |
+| Serverseitige JSON-Schema-Validierung mit Retry gemäss `max-retries` | ⚠️ war teilweise → jetzt ✅ | Jackson-Deserialisierung validierte bereits strukturell, aber ohne Retry: ein ungültiges LLM-JSON führte sofort zum Abbruch. Ergänzt: `ExtractAttributesService#generateValidated` ruft das LLM bei einer ungültigen Antwort bis zu `docextract.adapters.llm.max-retries` (neu, Default 1) weitere Male auf, auditiert jeden Versuch, und endet danach kontrolliert in `LlmException` → `ExtractionException` → `FAILED` (ARCHITECTURE § 6.5) |
+| „unbekannt"-Pfad | ✅ vorhanden | `ExtractAttributesService#resolveOne`: ein `hasValueList`-Vorschlag ohne Treffer wird mit `value=null, confidence=0.0` abgelehnt statt übernommen (E-5), bereits mit Test belegt |
+| Audit mit Modell-ID/Token | ✅ vorhanden | `ExtractAttributesService#audit`, `StagePendingEmbeddingsService#audit`: SHA-256 des Prompts/Texts, Tokenzahl, Anbieter, Modell-ID, nie der Rohtext (C-4) |
+| Pre-Filter-Query (`tenant_id`, `APPROVED`, `embedding_model`, `extraction_source`) | ⚠️ war teilweise → jetzt ✅ | `PgVectorSearchAdapter`/`VectorSearchPort` filterten nur `tenant_id` + `status='APPROVED'`; `embedding_model`/`extraction_source` fehlten als SQL-Prädikat (nur implizit über `ReindexService`, das einen abgelösten `embedding_model` auf `STALE` setzt). Ergänzt: beide Spalten sind jetzt Pflichtparameter von `VectorSearchPort#search` und Teil der `WHERE`-Klausel; `FindSimilarService` übergibt die konfigurierten Werte (`docextract.retrieval.embedding-model`, `docextract.adapters.text-extraction`) |
+
+**Beobachtung (nicht behoben, ausserhalb des Auftrags):** Die DB-`CHECK`-Constraint `chk_model` auf
+`embedding.embedding_model` (`V7__embedding_source_model.sql`) erlaubt aktuell nur den einen Wert
+`qwen3-embedding:0.6b` und widerspricht damit dem in `ReindexService`/ADR-012 beschriebenen
+Mehr-Modell-Re-Indexierungsszenario (ein zweites Modell könnte gar nicht erst eingefügt werden). War
+nicht Teil des Auftrags; siehe „Zu prüfen durch Mensch".
+
+**Umgesetzt (2):**
+
+- `ExtractAttributesService`: neuer Konstruktorparameter `maxRetries`
+  (`@Value("${docextract.adapters.llm.max-retries:1}")`), neue private Methode `generateValidated`
+  (generate → Jackson-Parse → bei Fehler bis zu `maxRetries` weitere Versuche, jeder auditiert; danach
+  `LlmException`), beide LLM-Aufrufstellen (`classifyDocumentType`, `suggestAttributes`) darauf
+  umgestellt. `application.yml`: `docextract.adapters.llm.max-retries: 1` dokumentiert.
+- `VectorSearchPort#search` um `embeddingModel`/`extractionSource` erweitert; `PgVectorSearchAdapter`
+  filtert beide in der `WHERE`-Klausel; `FindSimilarService` liest beide aus der bestehenden
+  Konfiguration und reicht sie durch.
+
+**Tests (3):**
+
+- `ExtractAttributesServiceTest.invalid_llm_json_is_retried_then_ends_in_a_controlled_failure`:
+  durchgehend ungültiges JSON → genau 2 LLM-Aufrufe (1 + `max-retries`=1), 2 Audit-Einträge,
+  `ExtractionException` mit `LlmException`-Ursache, `FAILED`-Event, kein `ExtractionResult` gespeichert.
+- `ExtractAttributesServiceTest.llm_suggested_value_outside_the_known_value_list_is_rejected_as_unknown`:
+  LLM schlägt einen Wert vor, der nicht in der bekannten Werteliste steht → `ExtractedAttribute` mit
+  `value=null, confidence=0.0` (bereits vorhandenes Verhalten, jetzt direkt mit Test belegt).
+- `PgVectorSearchAdapterTest.finds_only_approved_embeddings_for_the_caller_s_tenant` (bereits
+  vorhanden, nur Signatur angepasst) und neu
+  `excludes_approved_embeddings_of_a_different_extraction_source_or_embedding_model`: Cross-Tenant
+  bzw. abweichender `extraction_source`/`embedding_model` → 0 Treffer, mit echtem Postgres/pgvector
+  (Testcontainers).
+- `IngestToSuggestionsWithMockLlmTest` (neu): `StagePendingEmbeddingsService` →
+  `FindSimilarService` → `ExtractAttributesService` end-to-end mit handgeschriebenem Mock-`LlmPort`
+  und Mock-`EmbeddingPort` (kein Netzwerk/Modell nötig) — ein Dokument erreicht über die echten
+  Produktions-Services einen Attributvorschlag. Deckt die Akzeptanz sinngemäss ab; siehe „Zu prüfen
+  durch Mensch" zum Umfang.
+
+**Contract-Test-Suite LlmPort (4):**
+
+- Fehlte vollständig (nur `OpenApiContractTest` existierte projektweit). Neu angelegt:
+  `LlmPortContractTest` (abstrakt, in `extraction.port`): prüft, dass `generate(...)` parsebares JSON
+  mit Modell-Identität und Tokenzahl liefert und `capabilities()` nicht `null` ist.
+  `OpenAiCompatibleLlmAdapterContractTest` lässt den vorhandenen Adapter diese Suite erfüllen, gegen
+  einen In-Prozess-`HttpServer`-Stub (JDK, keine neue Abhängigkeit), der das
+  OpenAI-kompatible Chat-Completions-Protokoll nachbildet — kein echtes Modell/Netzwerk nötig.
+
+**Geänderte Dateien:**
+
+- `ExtractAttributesService.java`, `VectorSearchPort.java`, `PgVectorSearchAdapter.java`,
+  `FindSimilarService.java`, `application.yml`
+- Tests: `ExtractAttributesServiceTest.java`, `FindSimilarServiceTest.java`,
+  `PgVectorSearchAdapterTest.java`, neu `LlmPortContractTest.java`,
+  `OpenAiCompatibleLlmAdapterContractTest.java`, `IngestToSuggestionsWithMockLlmTest.java`
+- `doc/PROJEKTPLAN.md` § 5 (3.6-Status)
+
+**Build:** `mvn -o clean verify` grün (233 Tests, inkl. ArchUnit, `OpenApiContractTest`,
+Testcontainers-Postgres-Tests).
+
+**Zu prüfen durch Mensch:**
+
+- OFFEN: Default von `docextract.adapters.llm.max-retries` (hier `1`, d. h. 2 Versuche gesamt) ist
+  eine Implementierungsannahme, kein SPEC-Wert — bitte gegen das reale Fehlerbudget (NfA-3,
+  Fehlerinjektions-Testsuite) prüfen.
+- OFFEN: Die `chk_model`-Constraint (siehe Beobachtung oben) verhindert aktuell technisch jeden
+  zweiten `embedding_model`-Wert in der DB und damit das in ADR-012/`ReindexService` beschriebene
+  Re-Indexierungsszenario; nicht angefasst, da ausserhalb des engen Auftrags (Pre-Filter-Query).
+- OFFEN: Das Akzeptanzkriterium „Ein Dokument durchläuft im Profil `ci` (Mock-LLM) Upload →
+  Vorschläge" ist mit `IngestToSuggestionsWithMockLlmTest` auf Service-Ebene belegt (reale
+  `StagePendingEmbeddingsService`/`FindSimilarService`/`ExtractAttributesService` mit
+  Mock-`LlmPort`/`EmbeddingPort`), **nicht** als HTTP-Ende-zu-Ende-Test über den REST-Ingest-Endpunkt
+  unter dem Spring-Profil `ci`. Im Repo existiert aktuell kein einziger `@SpringBootTest`; ein solcher
+  Harness (plus Mock-DMS, Mock-LLM/-Embedding als echte `@Profile("ci")`-Beans) wäre ein
+  eigenständiges, grösseres Vorhaben und keine „minimale Ergänzung" — bitte entscheiden, ob das
+  nachgezogen werden soll.
+- NfA-8 bleibt mit nur einem konkreten `LlmPort`-Adaptertyp (OpenAI-kompatibel, lokal/extern nur über
+  Konfiguration unterschieden) formal "1 Adaptertyp, 2 Konfigurationen" statt zweier unabhängiger
+  Adapterimplementierungen; wie in ARCHITECTURE § 9 (ADR-011) bereits so entschieden, hier nur erneut
+  festgehalten.
+
+---
+
+## 2026-11-10 (5) — V18, Full-Stack-Test unter Profil `ci`, parametrisierte LlmPort-Suite (Block 3, 3.6)
+
+**Tool/Modell:** GitHub Copilot Chat (Agent-Modus).
+
+**Auftrag (Prompt-Zusammenfassung):** (1) Migration V18: `chk_model` entfernen, Vektordimension und
+Status-Constraint prüfen und nur melden, Test mit zwei `embedding_model`-Werten. (2) `@SpringBootTest`
+(Profil `ci`, Testcontainers-Postgres, DMS/IdP-Mock, In-Prozess-Stub für LLM/Embedding):
+Upload → 202 → `extraction-result`. (3) `IngestToSuggestionsWithMockLlmTest` umbenennen oder entfernen.
+(4) `LlmPortContractTest` mit zwei Konfigurationen. (5) Doku nachführen.
+
+**Korrektur am Vorgehen (Veto):** Ich hatte zunächst die Test-Dependency `org.wiremock:wiremock` in die
+`pom.xml` aufgenommen. Das Repo hat bereits WireMock-Images (`docker/dvelop-mock`, `docker/llm-mock`);
+die Dependency wurde wieder entfernt. Stattdessen baut der Test das vorhandene `docker/dvelop-mock` per
+Testcontainers (`ImageFromDockerfile`, schon vorhandene Testcontainers-Core-Klasse). **Es kamen keine
+neuen Dependencies hinzu** (Awaitility und `junit-jupiter-params` sind transitiv über
+`spring-boot-starter-test` da).
+
+**Befund Schema (1):**
+
+| Frage | Befund |
+| --- | --- |
+| Vektorspalte fest dimensioniert? | **Ja**: `embedding vector(1024)` (V3). Ein Modell mit anderer Dimension lässt sich nicht einfügen, auch ohne `chk_model` nicht. |
+| Status-Constraint, der `STALE` verhindert? | **Nein**: `status` ist `VARCHAR(16)` ohne `CHECK`; `STALE` (`ReindexService`) war schon vorher zulässig. |
+
+- OFFEN: Multi-Modell-Re-Indexierung (ADR-012) bleibt für andere Dimensionen blockiert; nötig wäre eine
+  eigene Migration (Dimension je Modell, z. B. eigene Spalte/Tabelle). Nicht geändert, nur gemeldet.
+- OFFEN: Der Index `idx_embedding_approved_tenant` und der HNSW/IVFFlat-Index (falls später) gelten für
+  genau eine Dimension; bei Modellwechsel mitprüfen.
+
+**Umgesetzt:**
+
+- `V18__embedding_drop_chk_model.sql` (V7 unverändert). Test
+  `PgVectorSearchAdapterTest.pre_filter_separates_two_distinct_embedding_model_values_in_the_same_corpus`
+  (Testcontainers): zwei `embedding_model`-Werte einfügbar, Pre-Filter trennt sie; der ältere Test
+  wurde auf echte zwei Modelle umgestellt.
+- `IngestToExtractionResultHttpTest` (neu, `@SpringBootTest`, Profil `ci`, Zufallsport): echte
+  Anwendung gegen Testcontainers-pgvector, das Repo-Image `docker/dvelop-mock` (IdP, objdef,
+  Chunk-Upload, Werteliste) und `OpenAiCompatibleStub`. `POST /api/v1/ingest/documents` → `202` +
+  `processId` → Polling auf `GET /processes/{id}/extraction-result` → Dokumenttyp `DREC` und Attribut
+  `11`. Zusätzlich belegt: 1 Embedding-Aufruf, 2 Chat-Aufrufe, 1 `PENDING`-Vektor im Mandanten
+  `default-tenant`, 2 Audit-Einträge mit Modell-ID, Tokenzahl und 64-stelligem Hash (kein Klartext).
+  Keine Mock-Beans, kein Test-Code im Produktivcode.
+- `OpenAiCompatibleStub` (Test-Sources, `shared.testsupport`): aus dem Contract-Test herausgelöst und
+  für beide Tests wiederverwendet (JDK-`HttpServer`, antwortet auf `/chat/completions` und
+  `/embeddings`, Chat-Antwort aus dem Request abgeleitet).
+- `IngestToSuggestionsWithMockLlmTest` **entfernt**: der Startpunkt war nicht der Upload, und der neue
+  Test deckt Upload → Vorschläge vollständig ab (mit echten Adaptern statt Hand-Fakes). Verweis in
+  `docker/llm-mock/README.md` angepasst. (Frühere Tagebuch-Einträge nennen ihn historisch weiter.)
+- `LlmPortContractTest` jetzt parametrisiert (`@ParameterizedTest`, `configurations()`); ausgeführt mit
+  „lokal (ohne api-key)" und „extern (api-key + api-version)" (4 Läufe).
+
+**Geänderte Dateien:** `V18__embedding_drop_chk_model.sql`, `PgVectorSearchAdapterTest.java`,
+`LlmPortContractTest.java`, `OpenAiCompatibleLlmAdapterContractTest.java`, neu
+`OpenAiCompatibleStub.java`, `IngestToExtractionResultHttpTest.java`, gelöscht
+`IngestToSuggestionsWithMockLlmTest.java`, `docker/llm-mock/README.md`, `doc/PROJEKTPLAN.md`.
+
+**Build:** `mvn -o clean verify` grün (236 Tests).
+
+**Zu prüfen durch Mensch:**
+
+- OFFEN: Dimensions-Frage siehe oben (Multi-Modell mit anderer Dimension).
+- OFFEN: Der Full-Stack-Test braucht Docker (pgvector-Image, Bau von `docker/dvelop-mock` inkl. Pull des
+  WireMock-Basis-Images). Das passt zu den bestehenden Testcontainers-Tests, verlängert aber den Build
+  um etwa 10 s und braucht in der CI Zugriff auf das Basis-Image.
+- OFFEN: Der Stub antwortet auf Embedding immer mit demselben Vektor; Retrieval-Güte (NfA-6) und
+  Treffer aus dem `APPROVED`-Korpus werden damit nicht geprüft (nur der Pfad ohne ähnliche Dokumente).
+- Der Test nutzt `docextract.dvelop.system-base-uri` mit absichtlich 404 liefernder jstore-URI statt
+  des echten jstore-Mocks (dessen `systembaseuri` zeigt auf `localhost:6380`).
