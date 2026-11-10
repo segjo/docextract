@@ -14,7 +14,7 @@ import java.util.Optional;
  */
 public interface DocumentTypeCandidatesPort {
 
-  void store(String processId, List<DmsDocumentMetadata> candidates);
+  void store(String tenantId, String processId, List<DmsDocumentMetadata> candidates);
 
-  Optional<List<DmsDocumentMetadata>> find(String processId);
+  Optional<List<DmsDocumentMetadata>> find(String tenantId, String processId);
 }

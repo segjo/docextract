@@ -13,7 +13,7 @@ import java.util.Optional;
  */
 public interface RetrievalResultPort {
 
-  void store(String processId, List<RetrievalResult> results);
+  void store(String tenantId, String processId, List<RetrievalResult> results);
 
-  Optional<List<RetrievalResult>> find(String processId);
+  Optional<List<RetrievalResult>> find(String tenantId, String processId);
 }

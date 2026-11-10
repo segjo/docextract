@@ -11,5 +11,6 @@ import ch.adeon.apps.docextract.security.application.DvelopCredential;
  */
 public interface RetryExtraction {
 
-  ExtractionResult retry(String processId, String documentTypeId, DvelopCredential credential);
+  ExtractionResult retry(
+      String tenantId, String processId, String documentTypeId, DvelopCredential credential);
 }

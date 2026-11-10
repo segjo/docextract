@@ -9,6 +9,9 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -43,12 +46,11 @@ public class PgProcessEventAdapter implements ProcessEventPort, SmartLifecycle {
   private final String username;
   private final String password;
   private final ExecutorService listenerExecutor =
-      Executors.newSingleThreadExecutor(
-          runnable -> {
-            Thread thread = new Thread(runnable, "process-event-listener");
-            thread.setDaemon(true);
-            return thread;
-          });
+      Executors.newSingleThreadExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "process-event-listener");
+        thread.setDaemon(true);
+        return thread;
+      });
 
   private final Map<String, List<Subscription>> subscriptionsByProcessId =
       new ConcurrentHashMap<>();
@@ -70,12 +72,13 @@ public class PgProcessEventAdapter implements ProcessEventPort, SmartLifecycle {
   }
 
   @Override
-  public void publish(ProcessEvent event) {
+  public void publish(String tenantId, ProcessEvent event) {
     Long id =
         jdbcTemplate.queryForObject(
-            "INSERT INTO process_step (process_id, step, status, blob_id) VALUES (?, ?, ?, ?)"
-                + " RETURNING id",
+            "INSERT INTO process_step (tenant_id, process_id, step, status, blob_id)"
+                + " VALUES (?, ?, ?, ?, ?) RETURNING id",
             Long.class,
+            tenantId,
             event.processId(),
             event.step().name(),
             event.status().name(),
@@ -87,12 +90,36 @@ public class PgProcessEventAdapter implements ProcessEventPort, SmartLifecycle {
         "SELECT pg_notify(?, ?)",
         (rs, rowNum) -> null,
         CHANNEL,
-        serialize(new NotifyPayload(id, event)));
+        serialize(new NotifyPayload(id, tenantId, event)));
   }
 
   @Override
-  public void subscribe(String processId, ProcessEventListener listener) {
-    Subscription subscription = new Subscription(listener);
+  public boolean exists(String tenantId, String processId) {
+    Boolean found =
+        jdbcTemplate.queryForObject(
+            "SELECT EXISTS (SELECT 1 FROM process_step WHERE process_id = ? AND tenant_id = ?)",
+            Boolean.class,
+            processId,
+            tenantId);
+    return Boolean.TRUE.equals(found);
+  }
+
+  @Override
+  public int deleteStepsOfIdleProcesses(Instant idleBefore, Collection<String> keepProcessIds) {
+    return jdbcTemplate.update(
+        """
+        DELETE FROM process_step
+        WHERE process_id IN (
+            SELECT process_id FROM process_step GROUP BY process_id HAVING max(created_at) < ?)
+          AND process_id <> ALL (?::varchar[])
+        """,
+        Timestamp.from(idleBefore),
+        keepProcessIds.toArray(String[]::new));
+  }
+
+  @Override
+  public void subscribe(String tenantId, String processId, ProcessEventListener listener) {
+    Subscription subscription = new Subscription(tenantId, listener);
     subscriptionsByProcessId
         .computeIfAbsent(processId, id -> new CopyOnWriteArrayList<>())
         .add(subscription);
@@ -100,7 +127,7 @@ public class PgProcessEventAdapter implements ProcessEventPort, SmartLifecycle {
     // rendering) before a client's SSE connection is even opened. The watermark on the
     // subscription prevents a racing live NOTIFY for one of these same rows from being delivered
     // twice.
-    replayHistory(processId, subscription);
+    replayHistory(tenantId, processId, subscription);
   }
 
   @Override
@@ -111,10 +138,11 @@ public class PgProcessEventAdapter implements ProcessEventPort, SmartLifecycle {
     }
   }
 
-  private void replayHistory(String processId, Subscription subscription) {
+  private void replayHistory(String tenantId, String processId, Subscription subscription) {
     List<Object[]> rows =
         jdbcTemplate.query(
-            "SELECT id, step, status, blob_id FROM process_step WHERE process_id = ? ORDER BY id",
+            "SELECT id, step, status, blob_id FROM process_step"
+                + " WHERE process_id = ? AND tenant_id = ? ORDER BY id",
             (rs, rowNum) ->
                 new Object[] {
                   rs.getLong("id"),
@@ -124,7 +152,8 @@ public class PgProcessEventAdapter implements ProcessEventPort, SmartLifecycle {
                       StepStatus.valueOf(rs.getString("status")),
                       rs.getString("blob_id"))
                 },
-            processId);
+            processId,
+            tenantId);
     for (Object[] row : rows) {
       subscription.deliverIfNewer((long) row[0], (ProcessEvent) row[1]);
     }
@@ -148,20 +177,24 @@ public class PgProcessEventAdapter implements ProcessEventPort, SmartLifecycle {
     List<Subscription> subscriptions =
         subscriptionsByProcessId.get(notifyPayload.event().processId());
     if (subscriptions != null) {
-      subscriptions.forEach(
-          subscription -> subscription.deliverIfNewer(notifyPayload.id(), notifyPayload.event()));
+      subscriptions.stream()
+          .filter(subscription -> subscription.tenantId.equals(notifyPayload.tenantId()))
+          .forEach(subscription ->
+              subscription.deliverIfNewer(notifyPayload.id(), notifyPayload.event()));
     }
   }
 
   /** NOTIFY payload: carries the durable row id so subscribers can dedupe against replay. */
-  private record NotifyPayload(long id, ProcessEvent event) {}
+  private record NotifyPayload(long id, String tenantId, ProcessEvent event) {}
 
   /** Tracks the highest {@code process_step.id} already delivered to a listener (dedupe/replay). */
   private static final class Subscription {
+    private final String tenantId;
     private final ProcessEventListener listener;
     private long lastDeliveredId;
 
-    Subscription(ProcessEventListener listener) {
+    Subscription(String tenantId, ProcessEventListener listener) {
+      this.tenantId = tenantId;
       this.listener = listener;
     }
 

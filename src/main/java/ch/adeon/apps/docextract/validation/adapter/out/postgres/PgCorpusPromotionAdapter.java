@@ -21,7 +21,8 @@ public class PgCorpusPromotionAdapter implements CorpusPromotionPort {
   }
 
   @Override
-  public void promote(String processId, String repositoryId, String dmsDocumentId) {
+  public void promote(
+      String tenantId, String processId, String repositoryId, String dmsDocumentId) {
     jdbcTemplate.update(
         """
         UPDATE embedding
@@ -30,11 +31,12 @@ public class PgCorpusPromotionAdapter implements CorpusPromotionPort {
             dms_document_id = ?,
             approved_at = ?,
             expires_at = NULL
-        WHERE process_id = ? AND status = 'PENDING'
+        WHERE process_id = ? AND tenant_id = ? AND status = 'PENDING'
         """,
         repositoryId,
         dmsDocumentId,
         Timestamp.from(Instant.now()),
-        processId);
+        processId,
+        tenantId);
   }
 }

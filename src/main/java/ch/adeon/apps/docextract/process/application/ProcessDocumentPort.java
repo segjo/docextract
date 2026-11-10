@@ -9,10 +9,10 @@ import java.util.Optional;
  */
 public interface ProcessDocumentPort {
 
-  void save(String processId, String dmsLocation, String filename);
+  void save(String tenantId, String processId, String dmsLocation, String filename);
 
-  Optional<StoredDocument> find(String processId);
+  /** Empty for an unknown process and for one owned by another tenant (NfA-4). */
+  Optional<StoredDocument> find(String tenantId, String processId);
 
-  /** {@code tenantId} is the process owner, used for the tenant check on confirm (NfA-4). */
-  record StoredDocument(String dmsLocation, String filename, String tenantId) {}
+  record StoredDocument(String dmsLocation, String filename) {}
 }

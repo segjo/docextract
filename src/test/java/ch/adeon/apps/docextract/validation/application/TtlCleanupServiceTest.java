@@ -12,7 +12,6 @@ import ch.adeon.apps.docextract.validation.domain.Finalization;
 import ch.adeon.apps.docextract.validation.domain.FinalizationStatus;
 import ch.adeon.apps.docextract.validation.port.PendingEmbeddingDeletePort;
 import java.util.List;
-import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -26,16 +25,15 @@ class TtlCleanupServiceTest {
 
   @BeforeEach
   void setUp() {
-    when(finalizationStatePort.find("p-pending"))
+    when(finalizationStatePort.findByStatus(FinalizationStatus.FINALIZED_INDEX_PENDING))
         .thenReturn(
-            Optional.of(
+            List.of(
                 new Finalization(
                     "p-pending",
                     "tenant-a",
                     FinalizationStatus.FINALIZED_INDEX_PENDING,
                     "repo-1",
                     "doc-1")));
-    when(finalizationStatePort.find("p-orphan")).thenReturn(Optional.empty());
   }
 
   // (c) TTL-Cleanup überspringt FINALIZED_INDEX_PENDING.
@@ -52,12 +50,8 @@ class TtlCleanupServiceTest {
 
   @Test
   void cleans_up_processes_whose_promotion_was_abandoned() {
+    // INDEX_FAILED is not FINALIZED_INDEX_PENDING, so it is not returned as protected
     when(embeddingPort.findExpiredProcessIds()).thenReturn(List.of("p-failed"));
-    when(finalizationStatePort.find("p-failed"))
-        .thenReturn(
-            Optional.of(
-                new Finalization(
-                    "p-failed", "tenant-a", FinalizationStatus.INDEX_FAILED, "repo-1", "doc-1")));
 
     service.purgeExpired();
 

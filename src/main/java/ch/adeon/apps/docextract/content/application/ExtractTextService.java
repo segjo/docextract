@@ -51,10 +51,11 @@ public class ExtractTextService implements ExtractText {
     log.info(
         "text extraction started processId={} blobId={}", command.processId(), command.blobId());
     processEventPort.publish(
+        command.tenantId(),
         new ProcessEvent(
             command.processId(), ProcessStep.TEXT_EXTRACTED, StepStatus.STARTED, null));
     try {
-      byte[] content = readOriginal(command.blobId());
+      byte[] content = readOriginal(command.tenantId(), command.blobId());
       ExtractedText extractedText =
           textExtractionPort.extract(content, command.mediaType(), maxWords);
       textStagingPort.stage(command.processId(), extractedText);
@@ -63,21 +64,23 @@ public class ExtractTextService implements ExtractText {
           command.processId(),
           extractedText.wordCount());
       processEventPort.publish(
+          command.tenantId(),
           new ProcessEvent(
               command.processId(), ProcessStep.TEXT_EXTRACTED, StepStatus.COMPLETED, null));
       return extractedText;
     } catch (RuntimeException ex) {
       log.warn("text extraction failed processId={}", command.processId(), ex);
       processEventPort.publish(
+          command.tenantId(),
           new ProcessEvent(
               command.processId(), ProcessStep.TEXT_EXTRACTED, StepStatus.FAILED, null));
       throw new ContentException("Text extraction failed for process " + command.processId(), ex);
     }
   }
 
-  private byte[] readOriginal(java.util.UUID blobId) {
-    BlobRef blob = documentBlobPort.describe(blobId);
-    return documentBlobPort.readRange(blobId, PageRange.full(blob.sizeBytes()));
+  private byte[] readOriginal(String tenantId, java.util.UUID blobId) {
+    BlobRef blob = documentBlobPort.describe(tenantId, blobId);
+    return documentBlobPort.readRange(tenantId, blobId, PageRange.full(blob.sizeBytes()));
   }
 
   @Override

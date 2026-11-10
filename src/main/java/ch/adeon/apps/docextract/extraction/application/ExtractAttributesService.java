@@ -7,9 +7,11 @@ import ch.adeon.apps.docextract.content.port.DocumentContent;
 import ch.adeon.apps.docextract.extraction.domain.ExtractionException;
 import ch.adeon.apps.docextract.extraction.domain.LlmResponse;
 import ch.adeon.apps.docextract.extraction.domain.LlmTool;
+import ch.adeon.apps.docextract.extraction.domain.ModelInfo;
 import ch.adeon.apps.docextract.extraction.port.LlmPort;
 import ch.adeon.apps.docextract.process.application.ProcessEvent;
 import ch.adeon.apps.docextract.process.application.ProcessEventPort;
+import ch.adeon.apps.docextract.process.application.ProcessNotFoundException;
 import ch.adeon.apps.docextract.process.application.ProcessRepositoryPort;
 import ch.adeon.apps.docextract.process.application.ProcessStep;
 import ch.adeon.apps.docextract.process.application.StepStatus;
@@ -126,15 +128,24 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
   }
 
   @Override
-  public ExtractionResult extract(String processId, DvelopCredential credential) {
-    return doExtract(processId, null, credential);
+  public ExtractionResult extract(String tenantId, String processId, DvelopCredential credential) {
+    return doExtract(tenantId, processId, null, credential);
   }
 
   @Override
   public ExtractionResult retry(
-      String processId, String documentTypeId, DvelopCredential credential) {
+      String tenantId, String processId, String documentTypeId, DvelopCredential credential) {
     Objects.requireNonNull(documentTypeId, "documentTypeId");
-    return doExtract(processId, documentTypeId, credential);
+    // Unknown for this tenant: 404, before any event is published for it.
+    boolean hasCandidates =
+        documentTypeCandidatesPort
+            .find(tenantId, processId)
+            .filter(list -> !list.isEmpty())
+            .isPresent();
+    if (!hasCandidates && !processEventPort.exists(tenantId, processId)) {
+      throw new ProcessNotFoundException(processId);
+    }
+    return doExtract(tenantId, processId, documentTypeId, credential);
   }
 
   /**
@@ -144,14 +155,14 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
    * for a reviewer-triggered {@link RetryExtraction retry} after changing the document type.
    */
   private ExtractionResult doExtract(
-      String processId, String forcedDocumentTypeId, DvelopCredential credential) {
+      String tenantId, String processId, String forcedDocumentTypeId, DvelopCredential credential) {
     log.info("extraction started processId={}", processId);
     processEventPort.publish(
-        new ProcessEvent(processId, ProcessStep.EXTRACTED, StepStatus.STARTED, null));
+        tenantId, new ProcessEvent(processId, ProcessStep.EXTRACTED, StepStatus.STARTED, null));
     try {
       List<DmsDocumentMetadata> candidates =
           documentTypeCandidatesPort
-              .find(processId)
+              .find(tenantId, processId)
               .filter(list -> !list.isEmpty())
               .orElseThrow(() ->
                   new ExtractionException(
@@ -164,7 +175,8 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
           forcedDocumentTypeId != null
               ? findCandidate(candidates, forcedDocumentTypeId, processId)
               : bestScoredCandidate(candidates)
-                  .orElseGet(() -> classifyDocumentType(processId, documentText, candidates));
+                  .orElseGet(
+                      () -> classifyDocumentType(tenantId, processId, documentText, candidates));
 
       List<DmsPropertyDefinition> writableProperties =
           selectedType.documentType().properties().stream()
@@ -178,28 +190,31 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
               ? List.of()
               : resolveValueLists(
                   suggestAttributes(
+                      tenantId,
                       documentText,
                       selectedType,
                       writableProperties,
-                      similarExamples(processId, selectedType),
-                      valueListTool(processId, selectedType, writableProperties, credential)),
+                      similarExamples(tenantId, processId, selectedType),
+                      valueListTool(
+                          tenantId, processId, selectedType, writableProperties, credential)),
                   selectedType,
+                  tenantId,
                   processId,
                   credential);
       ExtractionResult result = new ExtractionResult(selectedType.documentType().id(), attributes);
-      extractionResultPort.store(processId, result);
+      extractionResultPort.store(tenantId, processId, result);
       log.info(
           "extraction completed processId={} documentTypeId={} attributeCount={}",
           processId,
           result.documentTypeId(),
           attributes.size());
       processEventPort.publish(
-          new ProcessEvent(processId, ProcessStep.EXTRACTED, StepStatus.COMPLETED, null));
+          tenantId, new ProcessEvent(processId, ProcessStep.EXTRACTED, StepStatus.COMPLETED, null));
       return result;
     } catch (RuntimeException ex) {
       log.warn("extraction failed processId={}", processId, ex);
       processEventPort.publish(
-          new ProcessEvent(processId, ProcessStep.EXTRACTED, StepStatus.FAILED, null));
+          tenantId, new ProcessEvent(processId, ProcessStep.EXTRACTED, StepStatus.FAILED, null));
       if (ex instanceof ExtractionException extractionException) {
         throw extractionException;
       }
@@ -242,7 +257,10 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
   }
 
   private DmsDocumentMetadata classifyDocumentType(
-      String processId, String documentText, List<DmsDocumentMetadata> candidates) {
+      String tenantId,
+      String processId,
+      String documentText,
+      List<DmsDocumentMetadata> candidates) {
     List<String> ids =
         candidates.stream()
             .map(candidate -> candidate.documentType().id())
@@ -266,7 +284,7 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
     schema.put("additionalProperties", false);
 
     LlmResponse response = llmPort.generate(CLASSIFY_SYSTEM_PROMPT, userPrompt, schema);
-    audit("extraction.classify", userPrompt, response);
+    audit(tenantId, "extraction.classify", userPrompt, response);
 
     String chosenId =
         objectMapper.readValue(response.json(), ClassifyResponse.class).documentTypeId();
@@ -289,9 +307,9 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
    * none, e.g. after a retry with a type no similar document has.
    */
   private Map<String, List<String>> similarExamples(
-      String processId, DmsDocumentMetadata selectedType) {
+      String tenantId, String processId, DmsDocumentMetadata selectedType) {
     Map<String, List<String>> examples = new LinkedHashMap<>();
-    List<RetrievalResult> hits = retrievalResultPort.find(processId).orElse(List.of());
+    List<RetrievalResult> hits = retrievalResultPort.find(tenantId, processId).orElse(List.of());
     hits.stream()
         .sorted(Comparator.comparingDouble(RetrievalResult::score).reversed())
         .map(this::parseMetadata)
@@ -343,6 +361,7 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
   }
 
   private ValueListLookupTool valueListTool(
+      String tenantId,
       String processId,
       DmsDocumentMetadata selectedType,
       List<DmsPropertyDefinition> writableProperties,
@@ -351,7 +370,8 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
         valueListPort,
         auditPort,
         objectMapper,
-        processRepositoryPort.retrieve(processId).orElse(defaultRepositoryId),
+        tenantId,
+        processRepositoryPort.retrieve(tenantId, processId).orElse(defaultRepositoryId),
         selectedType.documentType().id(),
         credential,
         writableProperties,
@@ -360,6 +380,7 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
   }
 
   private List<SuggestedAttribute> suggestAttributes(
+      String tenantId,
       String documentText,
       DmsDocumentMetadata selectedType,
       List<DmsPropertyDefinition> writableProperties,
@@ -403,7 +424,7 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
     List<LlmTool> tools =
         valueListTool.isApplicable() ? List.of(valueListTool.asLlmTool()) : List.of();
     LlmResponse response = llmPort.generate(EXTRACT_SYSTEM_PROMPT, userPrompt, schema, tools);
-    audit("extraction.suggest-attributes", userPrompt, response);
+    audit(tenantId, "extraction.suggest-attributes", userPrompt, response);
 
     SuggestResponse parsed = objectMapper.readValue(response.json(), SuggestResponse.class);
     if (parsed.attributes() == null) {
@@ -515,6 +536,7 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
   private List<ExtractedAttribute> resolveValueLists(
       List<SuggestedAttribute> suggestions,
       DmsDocumentMetadata selectedType,
+      String tenantId,
       String processId,
       DvelopCredential credential) {
     Map<String, DmsPropertyDefinition> byId =
@@ -550,6 +572,7 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
         pending,
         byId,
         selectedType,
+        tenantId,
         processId,
         credential,
         resolvedById,
@@ -572,6 +595,7 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
       List<SuggestedAttribute> pending,
       Map<String, DmsPropertyDefinition> byId,
       DmsDocumentMetadata selectedType,
+      String tenantId,
       String processId,
       DvelopCredential credential,
       Map<String, ExtractedAttribute> resolvedById,
@@ -588,6 +612,7 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
                 suggestion,
                 definition,
                 selectedType,
+                tenantId,
                 processId,
                 credential,
                 knownValues,
@@ -629,6 +654,7 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
       SuggestedAttribute suggestion,
       DmsPropertyDefinition definition,
       DmsDocumentMetadata selectedType,
+      String tenantId,
       String processId,
       DvelopCredential credential,
       Map<String, String> knownValues,
@@ -649,7 +675,8 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
         && candidate != null
         && !candidate.isBlank()) {
       try {
-        String repositoryId = processRepositoryPort.retrieve(processId).orElse(defaultRepositoryId);
+        String repositoryId =
+            processRepositoryPort.retrieve(tenantId, processId).orElse(defaultRepositoryId);
         DmsValueList fetched =
             valueListPort.fetchValues(
                 repositoryId,
@@ -705,8 +732,16 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
   }
 
   /** Audits the prompt's hash, never the raw prompt text itself (C-4: no roh-PII in the trail). */
-  private void audit(String eventType, String prompt, LlmResponse response) {
-    auditPort.append(new AuditEvent(eventType, sha256(prompt), response.promptTokenCount()));
+  private void audit(String tenantId, String eventType, String prompt, LlmResponse response) {
+    ModelInfo model = response.modelInfo();
+    auditPort.append(
+        AuditEvent.llm(
+            tenantId,
+            eventType,
+            sha256(prompt),
+            response.promptTokenCount(),
+            model == null ? null : model.provider(),
+            model == null ? null : model.modelId()));
   }
 
   private static String sha256(String text) {

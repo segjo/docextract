@@ -1,4 +1,4 @@
-package ch.adeon.apps.docextract.validation.application;
+package ch.adeon.apps.docextract.process.application;
 
 /**
  * Process unknown, already cleaned up, or owned by another tenant — deliberately indistinguishable

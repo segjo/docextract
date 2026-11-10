@@ -16,8 +16,6 @@ import ch.adeon.apps.docextract.retrieval.port.DmsValueList;
 import ch.adeon.apps.docextract.retrieval.port.RetrievalResult;
 import ch.adeon.apps.docextract.retrieval.port.ValueListPort;
 import ch.adeon.apps.docextract.retrieval.port.VectorSearchPort;
-import ch.adeon.apps.docextract.security.application.AuthContext;
-import ch.adeon.apps.docextract.security.application.AuthContextPort;
 import ch.adeon.apps.docextract.security.application.DvelopCredential;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -49,7 +47,6 @@ public class FindSimilarService implements FindSimilar {
   private static final Logger log = LoggerFactory.getLogger(FindSimilarService.class);
 
   private final StageEmbeddings stageEmbeddings;
-  private final AuthContextPort authContextPort;
   private final VectorSearchPort vectorSearchPort;
   private final ProcessEventPort processEventPort;
   private final RetrievalResultPort retrievalResultPort;
@@ -66,7 +63,6 @@ public class FindSimilarService implements FindSimilar {
 
   public FindSimilarService(
       StageEmbeddings stageEmbeddings,
-      AuthContextPort authContextPort,
       VectorSearchPort vectorSearchPort,
       ProcessEventPort processEventPort,
       RetrievalResultPort retrievalResultPort,
@@ -81,7 +77,6 @@ public class FindSimilarService implements FindSimilar {
       @Value("${docextract.retrieval.document-type-filter:}") List<String> documentTypeFilter,
       @Value("${docextract.ingest.dms.repository-id}") String defaultRepositoryId) {
     this.stageEmbeddings = stageEmbeddings;
-    this.authContextPort = authContextPort;
     this.vectorSearchPort = vectorSearchPort;
     this.processEventPort = processEventPort;
     this.retrievalResultPort = retrievalResultPort;
@@ -98,25 +93,26 @@ public class FindSimilarService implements FindSimilar {
   }
 
   @Override
-  public List<RetrievalResult> find(String processId, int topK, DvelopCredential credential) {
+  public List<RetrievalResult> find(
+      String tenantId, String processId, int topK, DvelopCredential credential) {
     log.info("retrieval started processId={}", processId);
     processEventPort.publish(
-        new ProcessEvent(processId, ProcessStep.RETRIEVED, StepStatus.STARTED, null));
+        tenantId, new ProcessEvent(processId, ProcessStep.RETRIEVED, StepStatus.STARTED, null));
     try {
-      Optional<EmbeddingVector> queryEmbeddingOpt = stageEmbeddings.stage(processId);
+      Optional<EmbeddingVector> queryEmbeddingOpt = stageEmbeddings.stage(tenantId, processId);
       if (queryEmbeddingOpt.isEmpty()) {
         log.info("no text embedded for processId={}, skipping similarity search", processId);
-        retrievalResultPort.store(processId, List.of());
-        stageDocumentTypeCandidates(processId, credential, List.of());
+        retrievalResultPort.store(tenantId, processId, List.of());
+        stageDocumentTypeCandidates(tenantId, processId, credential, List.of());
         processEventPort.publish(
+            tenantId,
             new ProcessEvent(processId, ProcessStep.RETRIEVED, StepStatus.COMPLETED, null));
         return List.of();
       }
 
       EmbeddingVector queryEmbedding = queryEmbeddingOpt.get();
-      AuthContext auth = authContextPort.current();
       List<RetrievalResult> results =
-          vectorSearchPort.search(auth.tenantId(), queryEmbedding, topK).stream()
+          vectorSearchPort.search(tenantId, queryEmbedding, topK).stream()
               .filter(result -> result.score() >= minScore)
               .map(result -> withDmsProperties(result, credential))
               .toList();
@@ -126,15 +122,15 @@ public class FindSimilarService implements FindSimilar {
           processId,
           results.size(),
           bestTypeResults.size());
-      retrievalResultPort.store(processId, bestTypeResults);
-      stageDocumentTypeCandidates(processId, credential, results);
+      retrievalResultPort.store(tenantId, processId, bestTypeResults);
+      stageDocumentTypeCandidates(tenantId, processId, credential, results);
       processEventPort.publish(
-          new ProcessEvent(processId, ProcessStep.RETRIEVED, StepStatus.COMPLETED, null));
+          tenantId, new ProcessEvent(processId, ProcessStep.RETRIEVED, StepStatus.COMPLETED, null));
       return bestTypeResults;
     } catch (RuntimeException ex) {
       log.warn("retrieval failed processId={}", processId, ex);
       processEventPort.publish(
-          new ProcessEvent(processId, ProcessStep.RETRIEVED, StepStatus.FAILED, null));
+          tenantId, new ProcessEvent(processId, ProcessStep.RETRIEVED, StepStatus.FAILED, null));
       if (ex instanceof RetrievalException retrievalException) {
         throw retrievalException;
       }
@@ -220,13 +216,14 @@ public class FindSimilarService implements FindSimilar {
    * is empty too, nothing is staged. It must not fail the whole retrieval step.
    */
   private void stageDocumentTypeCandidates(
-      String processId, DvelopCredential credential, List<RetrievalResult> hits) {
+      String tenantId, String processId, DvelopCredential credential, List<RetrievalResult> hits) {
     List<DmsDocumentMetadata> typedCandidates = distinctDocumentTypes(hits);
     Map<String, Double> scores = documentTypeScores(hits);
     List<DmsDocumentMetadata> candidates = typedCandidates;
     String repositoryId = defaultRepositoryId;
     try {
-      repositoryId = processRepositoryPort.retrieve(processId).orElse(defaultRepositoryId);
+      repositoryId =
+          processRepositoryPort.retrieve(tenantId, processId).orElse(defaultRepositoryId);
       candidates = dmsObjectDefinitionPort.fetchAll(repositoryId, credential);
     } catch (RuntimeException ex) {
       log.warn("failed to fetch DMS document type candidates processId={}", processId, ex);
@@ -248,6 +245,7 @@ public class FindSimilarService implements FindSimilar {
         processId);
     String effectiveRepositoryId = repositoryId;
     documentTypeCandidatesPort.store(
+        tenantId,
         processId,
         candidates.stream()
             .map(c -> withValueLists(c, effectiveRepositoryId, credential))

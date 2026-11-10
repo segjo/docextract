@@ -99,6 +99,40 @@ Der Stack ist für einen reproduzierbaren Betrieb mit Docker Compose auf folgend
 
 Die konkrete Compose-Konfiguration und die erforderlichen Umgebungsvariablen werden zusammen mit der Implementierung im Repository bereitgestellt. Verbindliche Betriebs- und Sicherheitsentscheidungen sind in den Architekturentscheidungen dokumentiert.
 
+### Audit-Schlüssel (`DOCEXTRACT_AUDIT_ACTOR_KEY`)
+
+Das Audit-Protokoll (`audit_entry`) speichert nie die Benutzer-ID, sondern einen Pseudonym-Hash
+(`actor_hash` = HMAC-SHA256 über Mandant und User-ID, [ARCHITECTURE.md § 8.6](doc/ARCHITECTURE.md)).
+Der HMAC-Schlüssel kommt aus der Umgebungsvariable `DOCEXTRACT_AUDIT_ACTOR_KEY`
+(Property `docextract.audit.actor-key`).
+
+| Regel                 | Wert                                                                                      |
+| --------------------- | ----------------------------------------------------------------------------------------- |
+| Pflicht               | Ja. Ohne Wert bricht der Start ab (Ausnahme: Profil `dev`, dort Dev-Schlüssel mit `WARN`) |
+| Mindestlänge          | 32 Zeichen, in jedem Profil                                                               |
+| Nicht wiederverwenden | Muss sich von `DOCEXTRACT_TENANT_APP_SECRET` unterscheiden                                |
+| Identisch             | Auf allen Backend-Instanzen eines Clusters derselbe Wert                                  |
+| Stabil                | Über Neustarts hinweg gleich; ein Wechsel macht alte und neue `actor_hash` unvergleichbar |
+| Geheimhaltung         | Nicht ins Repository, nicht ins Image; nur als Umgebungsvariable oder Secret              |
+
+Schlüssel einmal erzeugen und in einer lokalen `.env` ablegen (`.env` ist in `.gitignore`; Docker
+Compose liest sie automatisch):
+
+```bash
+echo "DOCEXTRACT_AUDIT_ACTOR_KEY=$(openssl rand -base64 48)" >> .env
+```
+
+Im Container wird der Wert nur durchgereicht, zum Beispiel für einen Backend-Service in Compose:
+
+```yaml
+environment:
+  DOCEXTRACT_AUDIT_ACTOR_KEY: ${DOCEXTRACT_AUDIT_ACTOR_KEY:?in .env setzen}
+```
+
+Ein automatisches Erzeugen beim Containerstart (z. B. im Entrypoint) ist bewusst nicht vorgesehen: jede
+Instanz und jeder Neustart bekäme einen anderen Schlüssel, die Hashes derselben Person wären nicht mehr
+vergleichbar. Im Cloud-Betrieb gehört der Wert in den Secret-Store der Plattform.
+
 ## Manuelles End-to-End-Testen
 
 Runnable HTTP-Requests gegen die laufende App (d.velop-Mock + echtes Gotenberg statt Test-Doubles) liegen unter [e2e/](e2e/README.md), inklusive Upload-Beispielen für native PDFs und Nicht-PDFs.
@@ -111,10 +145,11 @@ Runnable HTTP-Requests gegen die laufende App (d.velop-Mock + echtes Gotenberg s
    docker compose up dvelop-mock
    ```
 
-2. Anwendung bauen und starten (Profil `local`):
+2. Anwendung bauen und starten (Profil `dev`, mit Dev-Audit-Schlüssel; ohne Profil `dev` ist
+   `DOCEXTRACT_AUDIT_ACTOR_KEY` Pflicht, siehe [Audit-Schlüssel](#audit-schlüssel-docextract_audit_actor_key)):
 
    ```bash
-   mvn spring-boot:run -Dspring-boot.run.profiles=local
+   mvn spring-boot:run -Dspring-boot.run.profiles=dev
    ```
 
 3. Aufruf testen:

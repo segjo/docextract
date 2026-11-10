@@ -96,7 +96,7 @@ class PgPendingEmbeddingDeleteAdapterTest {
     finalizationState.save(pending);
     finalizationState.save(pending.withStatus(FinalizationStatus.COMPLETED));
 
-    assertThat(finalizationState.find("p1"))
+    assertThat(finalizationState.find("tenant-a", "p1"))
         .contains(pending.withStatus(FinalizationStatus.COMPLETED));
     assertThat(finalizationState.findByStatus(FinalizationStatus.FINALIZED_INDEX_PENDING))
         .isEmpty();
@@ -111,7 +111,7 @@ class PgPendingEmbeddingDeleteAdapterTest {
             .withFirstFailedAt(failedAt);
     finalizationState.save(pending);
 
-    assertThat(finalizationState.find("p1")).contains(pending);
+    assertThat(finalizationState.find("tenant-a", "p1")).contains(pending);
   }
 
   @Test
@@ -123,11 +123,22 @@ class PgPendingEmbeddingDeleteAdapterTest {
         new Finalization(
             "p2", "tenant-a", FinalizationStatus.FINALIZED_INDEX_PENDING, "repo-1", "doc-2"));
 
-    finalizationState.discardWriteStarted("p1");
-    finalizationState.discardWriteStarted("p2");
+    finalizationState.discardWriteStarted("tenant-a", "p1");
+    finalizationState.discardWriteStarted("tenant-a", "p2");
 
-    assertThat(finalizationState.find("p1")).isEmpty();
-    assertThat(finalizationState.find("p2")).isPresent();
+    assertThat(finalizationState.find("tenant-a", "p1")).isEmpty();
+    assertThat(finalizationState.find("tenant-a", "p2")).isPresent();
+  }
+
+  @Test
+  void another_tenant_neither_sees_nor_discards_the_saga_state() {
+    finalizationState.save(
+        new Finalization("p1", "tenant-a", FinalizationStatus.DMS_WRITE_STARTED, "repo-1", null));
+
+    assertThat(finalizationState.find("tenant-b", "p1")).isEmpty();
+    finalizationState.discardWriteStarted("tenant-b", "p1");
+
+    assertThat(finalizationState.find("tenant-a", "p1")).isPresent();
   }
 
   // Keine TTL: nur Löschantrag je tenant_id entfernt Saga-Zustände.
@@ -140,19 +151,48 @@ class PgPendingEmbeddingDeleteAdapterTest {
 
     finalizationState.deleteByTenant("tenant-a");
 
-    assertThat(finalizationState.find("p-a")).isEmpty();
-    assertThat(finalizationState.find("p-b")).isPresent();
+    assertThat(finalizationState.find("tenant-a", "p-a")).isEmpty();
+    assertThat(finalizationState.find("tenant-b", "p-b")).isPresent();
   }
 
   @Test
-  void pending_check_reports_owner_tenant_and_expiry() {
+  void pending_check_reports_expiry_for_the_owning_tenant_only() {
     insertPending("p-expired", "now() - interval '1 minute'");
     insertPending("p-valid", "now() + interval '1 hour'");
 
-    assertThat(pendingCheck.find("p-expired"))
-        .contains(new PendingEmbeddingCheck("tenant-a", true));
-    assertThat(pendingCheck.find("p-valid")).contains(new PendingEmbeddingCheck("tenant-a", false));
-    assertThat(pendingCheck.find("p-unknown")).isEmpty();
+    assertThat(pendingCheck.find("tenant-a", "p-expired"))
+        .contains(new PendingEmbeddingCheck(true));
+    assertThat(pendingCheck.find("tenant-a", "p-valid")).contains(new PendingEmbeddingCheck(false));
+    assertThat(pendingCheck.find("tenant-a", "p-unknown")).isEmpty();
+    assertThat(pendingCheck.find("tenant-b", "p-valid")).isEmpty();
+  }
+
+  @Test
+  void another_tenant_cannot_delete_a_pending_embedding() {
+    insertPending("p1", "now() + interval '1 hour'");
+
+    adapter.delete("tenant-b", "p1");
+    assertThat(processIds()).containsExactly("p1");
+
+    adapter.delete("tenant-a", "p1");
+    assertThat(processIds()).isEmpty();
+  }
+
+  @Test
+  void another_tenant_cannot_promote_a_pending_embedding() {
+    insertPending("p1", "now() + interval '1 hour'");
+    PgCorpusPromotionAdapter promotion = new PgCorpusPromotionAdapter(jdbcTemplate);
+
+    promotion.promote("tenant-b", "p1", "repo-1", "doc-1");
+    assertThat(statusOf("p1")).isEqualTo("PENDING");
+
+    promotion.promote("tenant-a", "p1", "repo-1", "doc-1");
+    assertThat(statusOf("p1")).isEqualTo("APPROVED");
+  }
+
+  private String statusOf(String processId) {
+    return jdbcTemplate.queryForObject(
+        "SELECT status FROM embedding WHERE process_id = ?", String.class, processId);
   }
 
   private void insertPending(String processId, String expiresAtSql) {

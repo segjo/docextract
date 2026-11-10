@@ -37,27 +37,24 @@ public class PreviewStreamService implements StreamPreview {
 
   @Override
   public PreviewChunk stream(UUID originalBlobId, PageRange range) {
-    BlobRef original = documentBlobPort.describe(originalBlobId);
-    requireOwnership(originalBlobId, original);
+    AuthContext auth = authContextPort.current();
+    BlobRef original = documentBlobPort.describe(auth.tenantId(), originalBlobId);
+    // The port filters by tenant; a blob additionally belongs to the user who uploaded it.
+    if (!Objects.equals(auth.userId(), original.userId())) {
+      throw new BlobNotFoundException(originalBlobId);
+    }
 
     BlobRef source = original.mediaType().isPdf() ? original : renderPreview(original);
 
     PageRange effectiveRange = range != null ? range : PageRange.full(source.sizeBytes());
-    byte[] content = documentBlobPort.readRange(source.blobId(), effectiveRange);
+    byte[] content = documentBlobPort.readRange(auth.tenantId(), source.blobId(), effectiveRange);
     return new PreviewChunk(content, source.sizeBytes());
-  }
-
-  private void requireOwnership(UUID blobId, BlobRef blob) {
-    AuthContext auth = authContextPort.current();
-    if (!Objects.equals(auth.tenantId(), blob.tenantId())
-        || !Objects.equals(auth.userId(), blob.userId())) {
-      throw new BlobNotFoundException(blobId);
-    }
   }
 
   private BlobRef renderPreview(BlobRef original) {
     byte[] originalBytes =
-        documentBlobPort.readRange(original.blobId(), PageRange.full(original.sizeBytes()));
+        documentBlobPort.readRange(
+            original.tenantId(), original.blobId(), PageRange.full(original.sizeBytes()));
     byte[] pdf =
         previewRenderPort.renderPreview(
             original.blobId().toString(), original.mediaType(), originalBytes);

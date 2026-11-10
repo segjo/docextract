@@ -8,8 +8,6 @@ import ch.adeon.apps.docextract.retrieval.domain.PendingEmbedding;
 import ch.adeon.apps.docextract.retrieval.domain.RetrievalException;
 import ch.adeon.apps.docextract.retrieval.port.EmbeddingPort;
 import ch.adeon.apps.docextract.retrieval.port.PendingEmbeddingPort;
-import ch.adeon.apps.docextract.security.application.AuthContext;
-import ch.adeon.apps.docextract.security.application.AuthContextPort;
 import java.util.List;
 import java.util.Optional;
 import org.slf4j.Logger;
@@ -31,7 +29,6 @@ public class StagePendingEmbeddingsService implements StageEmbeddings {
   private static final Logger log = LoggerFactory.getLogger(StagePendingEmbeddingsService.class);
 
   private final TextStagingPort textStagingPort;
-  private final AuthContextPort authContextPort;
   private final EmbeddingPort embeddingPort;
   private final PendingEmbeddingPort pendingEmbeddingPort;
   private final DocumentHashStagingPort documentHashStagingPort;
@@ -40,14 +37,12 @@ public class StagePendingEmbeddingsService implements StageEmbeddings {
 
   public StagePendingEmbeddingsService(
       TextStagingPort textStagingPort,
-      AuthContextPort authContextPort,
       EmbeddingPort embeddingPort,
       PendingEmbeddingPort pendingEmbeddingPort,
       DocumentHashStagingPort documentHashStagingPort,
       @Value("${docextract.retrieval.embedding-model}") String embeddingModel,
       @Value("${docextract.adapters.text-extraction}") String extractionSource) {
     this.textStagingPort = textStagingPort;
-    this.authContextPort = authContextPort;
     this.embeddingPort = embeddingPort;
     this.pendingEmbeddingPort = pendingEmbeddingPort;
     this.documentHashStagingPort = documentHashStagingPort;
@@ -56,7 +51,7 @@ public class StagePendingEmbeddingsService implements StageEmbeddings {
   }
 
   @Override
-  public Optional<EmbeddingVector> stage(String processId) {
+  public Optional<EmbeddingVector> stage(String tenantId, String processId) {
     ExtractedText extractedText =
         textStagingPort
             .retrieve(processId)
@@ -68,11 +63,10 @@ public class StagePendingEmbeddingsService implements StageEmbeddings {
       return Optional.empty();
     }
 
-    AuthContext auth = authContextPort.current();
     String documentHash = documentHashStagingPort.retrieve(processId).orElse(null);
     Optional<EmbeddingVector> reused =
         pendingEmbeddingPort.findApprovedByHash(
-            auth.tenantId(), documentHash, embeddingModel, extractionSource);
+            tenantId, documentHash, embeddingModel, extractionSource);
 
     EmbeddingVector vector;
     if (reused.isPresent()) {
@@ -99,12 +93,7 @@ public class StagePendingEmbeddingsService implements StageEmbeddings {
     pendingEmbeddingPort.stage(
         List.of(
             new PendingEmbedding(
-                processId,
-                vector,
-                auth.tenantId(),
-                extractionSource,
-                embeddingModel,
-                documentHash)));
+                processId, vector, tenantId, extractionSource, embeddingModel, documentHash)));
     log.info("staged PENDING embedding for processId={}", processId);
     return Optional.of(vector);
   }

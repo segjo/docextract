@@ -52,30 +52,43 @@ class PgProcessRepositoryAdapterTest {
   @Test
   void staged_repository_is_visible_to_another_adapter_instance() {
     storeOriginal("p-1");
-    new PgProcessRepositoryAdapter(jdbcTemplate).stage("p-1", "repo-a");
+    new PgProcessRepositoryAdapter(jdbcTemplate).stage("t", "p-1", "repo-a");
 
-    assertThat(new PgProcessRepositoryAdapter(jdbcTemplate).retrieve("p-1")).contains("repo-a");
+    assertThat(new PgProcessRepositoryAdapter(jdbcTemplate).retrieve("t", "p-1"))
+        .contains("repo-a");
+  }
+
+  @Test
+  void another_tenant_neither_reads_nor_overwrites_the_repository() {
+    storeOriginal("p-1");
+    PgProcessRepositoryAdapter adapter = new PgProcessRepositoryAdapter(jdbcTemplate);
+    adapter.stage("t", "p-1", "repo-a");
+
+    adapter.stage("other", "p-1", "repo-x");
+
+    assertThat(adapter.retrieve("other", "p-1")).isEmpty();
+    assertThat(adapter.retrieve("t", "p-1")).contains("repo-a");
   }
 
   @Test
   void restaging_overwrites_the_repository() {
     storeOriginal("p-1");
     PgProcessRepositoryAdapter adapter = new PgProcessRepositoryAdapter(jdbcTemplate);
-    adapter.stage("p-1", "repo-a");
-    adapter.stage("p-1", "repo-b");
+    adapter.stage("t", "p-1", "repo-a");
+    adapter.stage("t", "p-1", "repo-b");
 
-    assertThat(adapter.retrieve("p-1")).contains("repo-b");
+    assertThat(adapter.retrieve("t", "p-1")).contains("repo-b");
   }
 
   @Test
   void unknown_process_or_deleted_blob_yields_empty() {
     storeOriginal("p-1");
     PgProcessRepositoryAdapter adapter = new PgProcessRepositoryAdapter(jdbcTemplate);
-    adapter.stage("p-1", "repo-a");
+    adapter.stage("t", "p-1", "repo-a");
     jdbcTemplate.update("DELETE FROM document_blob WHERE process_id = 'p-1'");
 
-    assertThat(adapter.retrieve("p-1")).isEmpty();
-    assertThat(adapter.retrieve("unknown")).isEmpty();
+    assertThat(adapter.retrieve("t", "p-1")).isEmpty();
+    assertThat(adapter.retrieve("t", "unknown")).isEmpty();
   }
 
   private static void storeOriginal(String processId) {

@@ -2,21 +2,20 @@ package ch.adeon.apps.docextract.agentgateway.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import ch.adeon.apps.docextract.agentgateway.application.AgentToolException.Code;
+import ch.adeon.apps.docextract.audit.application.ActorKind;
+import ch.adeon.apps.docextract.audit.application.AuditChannel;
 import ch.adeon.apps.docextract.audit.application.AuditEvent;
 import ch.adeon.apps.docextract.audit.application.AuditPort;
 import ch.adeon.apps.docextract.extraction.application.ExtractedAttribute;
 import ch.adeon.apps.docextract.extraction.application.ExtractionResult;
 import ch.adeon.apps.docextract.extraction.application.GetExtractionResult;
-import ch.adeon.apps.docextract.process.application.ProcessDocumentPort;
-import ch.adeon.apps.docextract.process.application.ProcessDocumentPort.StoredDocument;
+import ch.adeon.apps.docextract.process.application.ProcessNotFoundException;
 import ch.adeon.apps.docextract.retrieval.application.GetSimilarDocuments;
 import ch.adeon.apps.docextract.retrieval.port.RetrievalResult;
 import ch.adeon.apps.docextract.security.application.AuthContext;
@@ -24,7 +23,6 @@ import ch.adeon.apps.docextract.security.application.AuthContextPort;
 import ch.adeon.apps.docextract.shared.hash.Sha256;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -36,30 +34,25 @@ class AgentGatewayServiceTest {
 
   private static final String PROCESS_ID = "3f2b8c1e-4a5d-4e6f-8a9b-0c1d2e3f4a5b";
   private static final String SECRET_VALUE = "Muster AG, Bahnhofstrasse 1";
+  private static final String ACTOR_HASH = "a".repeat(64);
 
   private final GetExtractionResult getExtractionResult = mock(GetExtractionResult.class);
   private final GetSimilarDocuments getSimilarDocuments = mock(GetSimilarDocuments.class);
-  private final ProcessDocumentPort processDocumentPort = mock(ProcessDocumentPort.class);
   private final AuthContextPort authContextPort = mock(AuthContextPort.class);
   private final AuditPort auditPort = mock(AuditPort.class);
 
   private final AgentGatewayService service =
-      new AgentGatewayService(
-          getExtractionResult,
-          getSimilarDocuments,
-          processDocumentPort,
-          authContextPort,
-          auditPort);
+      new AgentGatewayService(getExtractionResult, getSimilarDocuments, authContextPort, auditPort);
 
   @BeforeEach
-  void callerIsTenantA() {
-    when(authContextPort.current()).thenReturn(new AuthContext("tenant-a", "agent", "Agent"));
+  void callerIsAgentOfTenantA() {
+    when(authContextPort.current())
+        .thenReturn(new AuthContext("tenant-a", "agent", "Agent", true, ACTOR_HASH));
   }
 
   @Test
   void returns_suggestions_of_own_process_via_same_read_service_as_rest() {
-    ownedBy("tenant-a");
-    when(getExtractionResult.get(PROCESS_ID))
+    when(getExtractionResult.get("tenant-a", PROCESS_ID))
         .thenReturn(
             new ExtractionResult(
                 "DREC",
@@ -76,8 +69,7 @@ class AgentGatewayServiceTest {
 
   @Test
   void returns_similar_documents_without_dms_metadata() {
-    ownedBy("tenant-a");
-    when(getSimilarDocuments.get(PROCESS_ID))
+    when(getSimilarDocuments.get("tenant-a", PROCESS_ID))
         .thenReturn(List.of(new RetrievalResult("repo-1", "doc-1", 0.93, "{\"name\":\"x\"}")));
 
     assertThat(service.findSimilarDocuments(PROCESS_ID))
@@ -85,27 +77,20 @@ class AgentGatewayServiceTest {
     assertThat(auditedEvent().eventType()).isEqualTo("mcp.tool.find_similar_documents.ok");
   }
 
+  // The read services answer unknown and foreign processes alike with ProcessNotFoundException.
   @Test
-  void foreign_tenant_process_is_not_found_and_no_data_is_read() {
-    ownedBy("tenant-b");
+  void unknown_or_foreign_process_is_not_found() {
+    when(getExtractionResult.get("tenant-a", PROCESS_ID))
+        .thenThrow(new ProcessNotFoundException(PROCESS_ID));
+    when(getSimilarDocuments.get("tenant-a", PROCESS_ID))
+        .thenThrow(new ProcessNotFoundException(PROCESS_ID));
 
     assertThatThrownBy(() -> service.getProcessSuggestions(PROCESS_ID))
         .isInstanceOfSatisfying(
             AgentToolException.class, ex -> assertThat(ex.code()).isEqualTo(Code.NOT_FOUND));
     assertThatThrownBy(() -> service.findSimilarDocuments(PROCESS_ID))
-        .isInstanceOf(AgentToolException.class);
-
-    verifyNoInteractions(getExtractionResult, getSimilarDocuments);
-  }
-
-  @Test
-  void unknown_process_is_not_found() {
-    when(processDocumentPort.find(PROCESS_ID)).thenReturn(Optional.empty());
-
-    assertThatThrownBy(() -> service.findSimilarDocuments(PROCESS_ID))
         .isInstanceOfSatisfying(
             AgentToolException.class, ex -> assertThat(ex.code()).isEqualTo(Code.NOT_FOUND));
-    assertThat(auditedEvent().eventType()).isEqualTo("mcp.tool.find_similar_documents.not_found");
   }
 
   @ParameterizedTest
@@ -117,16 +102,40 @@ class AgentGatewayServiceTest {
         .isInstanceOfSatisfying(
             AgentToolException.class, ex -> assertThat(ex.code()).isEqualTo(Code.INVALID_ARGUMENT));
 
-    verify(processDocumentPort, never()).find(anyString());
-    verifyNoInteractions(getExtractionResult);
+    verifyNoInteractions(getExtractionResult, getSimilarDocuments);
     assertThat(auditedEvent().eventType())
         .isEqualTo("mcp.tool.get_process_suggestions.invalid_argument");
   }
 
   @Test
-  void audit_entry_carries_only_the_argument_hash() {
-    ownedBy("tenant-a");
-    when(getExtractionResult.get(PROCESS_ID))
+  void audit_entry_of_an_agent_call_names_channel_tenant_and_actor_kind() {
+    when(getExtractionResult.get("tenant-a", PROCESS_ID)).thenReturn(ExtractionResult.EMPTY);
+
+    service.getProcessSuggestions(PROCESS_ID);
+
+    AuditEvent event = auditedEvent();
+    assertThat(event.channel()).isEqualTo(AuditChannel.MCP);
+    assertThat(event.actorKind()).isEqualTo(ActorKind.AGENT);
+    assertThat(event.tenantId()).isEqualTo("tenant-a");
+    assertThat(event.actorHash()).isEqualTo(ACTOR_HASH);
+  }
+
+  @Test
+  void audit_entry_of_a_person_on_the_mcp_endpoint_says_human() {
+    when(authContextPort.current())
+        .thenReturn(new AuthContext("tenant-a", "user-1", "User One", false));
+    when(getExtractionResult.get("tenant-a", PROCESS_ID)).thenReturn(ExtractionResult.EMPTY);
+
+    service.getProcessSuggestions(PROCESS_ID);
+
+    AuditEvent event = auditedEvent();
+    assertThat(event.channel()).isEqualTo(AuditChannel.MCP);
+    assertThat(event.actorKind()).isEqualTo(ActorKind.HUMAN);
+  }
+
+  @Test
+  void audit_entry_carries_only_hashes_no_attribute_values_or_user_id() {
+    when(getExtractionResult.get("tenant-a", PROCESS_ID))
         .thenReturn(
             new ExtractionResult(
                 "DREC", List.of(new ExtractedAttribute("p1", SECRET_VALUE, null, 0.9, "x"))));
@@ -134,14 +143,11 @@ class AgentGatewayServiceTest {
     service.getProcessSuggestions(PROCESS_ID);
 
     AuditEvent event = auditedEvent();
-    assertThat(event.promptHash())
-        .isEqualTo(Sha256.hex(PROCESS_ID.getBytes(StandardCharsets.UTF_8)));
-    assertThat(event.toString()).doesNotContain(SECRET_VALUE).doesNotContain(PROCESS_ID);
-  }
-
-  private void ownedBy(String tenantId) {
-    when(processDocumentPort.find(PROCESS_ID))
-        .thenReturn(Optional.of(new StoredDocument("/dms/r/repo/blob/chunk", "a.pdf", tenantId)));
+    assertThat(event.argsHash()).isEqualTo(Sha256.hex(PROCESS_ID.getBytes(StandardCharsets.UTF_8)));
+    assertThat(event.toString())
+        .doesNotContain(SECRET_VALUE)
+        .doesNotContain(PROCESS_ID)
+        .doesNotContain("agent,");
   }
 
   private AuditEvent auditedEvent() {

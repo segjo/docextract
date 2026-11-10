@@ -22,8 +22,8 @@ import org.springframework.transaction.annotation.Transactional;
  * Transient blobstore for Roh-/Preview-Bytes (ADR-008): header data lives in {@code document_blob},
  * content in 1-MiB {@code document_blob_page} segments so reads stay range-capable without
  * materializing the whole object. TTL cleanup runs in validation's {@code TtlCleanupService} (skips
- * FINALIZED_INDEX_PENDING); the ACL pre-filter enforcement (NfA-4) lives in the application layer.
- * This adapter only persists what it is given.
+ * FINALIZED_INDEX_PENDING); reads and deletes are filtered by tenant (NfA-4), the per-user check
+ * lives in the application layer.
  */
 @Component
 public class PgDocumentBlobAdapter implements DocumentBlobPort {
@@ -83,17 +83,17 @@ public class PgDocumentBlobAdapter implements DocumentBlobPort {
       segmentNo++;
     }
 
-    return describe(blobId);
+    return describe(tenantId, blobId);
   }
 
   @Override
-  public BlobRef describe(UUID blobId) {
+  public BlobRef describe(String tenantId, UUID blobId) {
     List<BlobRef> rows =
         jdbcTemplate.query(
             """
             SELECT blob_id, kind, media_type, size_bytes, process_id, tenant_id, user_id
             FROM document_blob
-            WHERE blob_id = ?
+            WHERE blob_id = ? AND tenant_id = ?
             """,
             (rs, rowNum) ->
                 new BlobRef(
@@ -104,13 +104,14 @@ public class PgDocumentBlobAdapter implements DocumentBlobPort {
                     rs.getString("process_id"),
                     rs.getString("tenant_id"),
                     rs.getString("user_id")),
-            blobId);
+            blobId,
+            tenantId);
     return rows.stream().findFirst().orElseThrow(() -> new BlobNotFoundException(blobId));
   }
 
   @Override
-  public byte[] readRange(UUID blobId, PageRange range) {
-    BlobRef blob = describe(blobId);
+  public byte[] readRange(String tenantId, UUID blobId, PageRange range) {
+    BlobRef blob = describe(tenantId, blobId);
     long clampedEnd = Math.min(range.endInclusive(), blob.sizeBytes() - 1);
     if (clampedEnd < range.start()) {
       return new byte[0];
@@ -142,13 +143,15 @@ public class PgDocumentBlobAdapter implements DocumentBlobPort {
   }
 
   @Override
-  public void delete(UUID blobId) {
-    jdbcTemplate.update("DELETE FROM document_blob WHERE blob_id = ?", blobId);
+  public void delete(String tenantId, UUID blobId) {
+    jdbcTemplate.update(
+        "DELETE FROM document_blob WHERE blob_id = ? AND tenant_id = ?", blobId, tenantId);
   }
 
   @Override
-  public void deleteByProcess(String processId) {
-    jdbcTemplate.update("DELETE FROM document_blob WHERE process_id = ?", processId);
+  public void deleteByProcess(String tenantId, String processId) {
+    jdbcTemplate.update(
+        "DELETE FROM document_blob WHERE process_id = ? AND tenant_id = ?", processId, tenantId);
   }
 
   @Override

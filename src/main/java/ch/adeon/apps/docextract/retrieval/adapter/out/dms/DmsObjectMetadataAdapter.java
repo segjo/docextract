@@ -8,7 +8,6 @@ import ch.adeon.apps.docextract.retrieval.port.DmsPropertyDataType;
 import ch.adeon.apps.docextract.retrieval.port.DmsPropertyDefinition;
 import ch.adeon.apps.docextract.retrieval.port.DmsValueList;
 import ch.adeon.apps.docextract.retrieval.port.ValueListPort;
-import ch.adeon.apps.docextract.security.application.AppConfigPort;
 import ch.adeon.apps.docextract.security.application.DvelopCredential;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.HashMap;
@@ -39,18 +38,15 @@ public class DmsObjectMetadataAdapter implements DmsObjectMetadataPort {
   private static final Logger log = LoggerFactory.getLogger(DmsObjectMetadataAdapter.class);
 
   private final RestClient restClient;
-  private final AppConfigPort appConfigPort;
   private final ObjectMapper objectMapper;
   private final ValueListPort valueListPort;
   private final int maxValueListValues;
 
   public DmsObjectMetadataAdapter(
-      AppConfigPort appConfigPort,
       ObjectMapper objectMapper,
       ValueListPort valueListPort,
       @Value("${docextract.valuelist.max-values:50}") int maxValueListValues) {
     this.restClient = RestClient.create();
-    this.appConfigPort = appConfigPort;
     this.objectMapper = objectMapper;
     this.valueListPort = valueListPort;
     this.maxValueListValues = maxValueListValues;
@@ -64,7 +60,7 @@ public class DmsObjectMetadataAdapter implements DmsObjectMetadataPort {
           restClient
               .get()
               .uri(
-                  appConfigPort.systemBaseUri() + "/dms/r/{repositoryId}/o2/{documentId}/",
+                  credential.baseUri() + "/dms/r/{repositoryId}/o2/{documentId}/",
                   repositoryId,
                   documentId)
               .header(credential.headerName(), credential.headerValue())
@@ -126,9 +122,8 @@ public class DmsObjectMetadataAdapter implements DmsObjectMetadataPort {
     return documentProperties.stream()
         .filter(property -> "property_category".equals(property.id()))
         .findFirst()
-        .map(
-            property ->
-                new DmsDocumentType(property.value(), property.displayValue(), propertyDefinitions))
+        .map(property ->
+            new DmsDocumentType(property.value(), property.displayValue(), propertyDefinitions))
         .orElseGet(() -> new DmsDocumentType(null, raw.category(), propertyDefinitions));
   }
 
@@ -152,17 +147,16 @@ public class DmsObjectMetadataAdapter implements DmsObjectMetadataPort {
     Map<String, String> extendedProperties = filterContext(documentProperties);
     List<DmsPropertyDefinition> enriched =
         documentType.properties().stream()
-            .map(
-                definition ->
-                    definition.hasValueList()
-                        ? withValueList(
-                            definition,
-                            documentType.id(),
-                            extendedProperties,
-                            multivalueExtendedProperties,
-                            repositoryId,
-                            credential)
-                        : definition)
+            .map(definition ->
+                definition.hasValueList()
+                    ? withValueList(
+                        definition,
+                        documentType.id(),
+                        extendedProperties,
+                        multivalueExtendedProperties,
+                        repositoryId,
+                        credential)
+                    : definition)
             .toList();
     return new DmsDocumentType(documentType.id(), documentType.name(), enriched);
   }

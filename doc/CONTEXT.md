@@ -209,6 +209,10 @@ Zu jedem nicht-trivialen Beitrag gehören passende Tests:
 **CI-Gate:** Smoke- + Egress-Allowlist-Test (LLM als Mock) + Security-Scan (SAST/Dependency/Secret/Image/IaC).
 Publish erst nach bestandenem Gate.
 
+**Meldung „grün":** Ein Build oder Test gilt nur dann als grün, wenn `mvn -o clean verify` erfolgreich
+durchlief. Teilläufe (`-Dtest=…`, `test-compile` ohne `clean`) werden als solche gemeldet, nicht als grün;
+inkrementelles `test-compile` erkennt geänderte Signaturen in Tests nicht zuverlässig.
+
 ---
 
 ## 9. Qualitätsziele als Akzeptanz-Hebel (SMART, SPEC § 3)

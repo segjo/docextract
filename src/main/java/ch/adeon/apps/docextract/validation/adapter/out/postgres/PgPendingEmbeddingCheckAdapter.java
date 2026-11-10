@@ -16,16 +16,16 @@ public class PgPendingEmbeddingCheckAdapter implements PendingEmbeddingCheckPort
   }
 
   @Override
-  public Optional<PendingEmbeddingCheck> find(String processId) {
+  public Optional<PendingEmbeddingCheck> find(String tenantId, String processId) {
     return jdbcTemplate
         .query(
             """
-            SELECT tenant_id, expires_at < now() AS expired FROM embedding
-            WHERE process_id = ? AND status = 'PENDING'
+            SELECT expires_at < now() AS expired FROM embedding
+            WHERE process_id = ? AND tenant_id = ? AND status = 'PENDING'
             """,
-            (rs, i) ->
-                new PendingEmbeddingCheck(rs.getString("tenant_id"), rs.getBoolean("expired")),
-            processId)
+            (rs, i) -> new PendingEmbeddingCheck(rs.getBoolean("expired")),
+            processId,
+            tenantId)
         .stream()
         .findFirst();
   }

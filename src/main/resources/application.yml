@@ -73,6 +73,22 @@ logging:
     org.apache.pdfbox: error
 
 docextract:
+  tenant:
+    # Single-tenant operation (app-secret empty): every request belongs to this tenant, x-dv-*
+    # headers are ignored, the d.velop system base URI comes from docextract.dvelop.system-base-uri.
+    default-id: default-tenant
+    # d.velop cloud (multi-tenant): base64 app secret from the Cloudcenter. When set, the headers
+    # x-dv-tenant-id, x-dv-baseuri and x-dv-sig-1 are mandatory on every /api request and the
+    # signature (HMAC-SHA256 over baseuri + tenant id) is verified, otherwise 403. Env only.
+    app-secret: ${DOCEXTRACT_TENANT_APP_SECRET:}
+  agent:
+    # d.velop user group id of the agents (MCP clients): members may only use the MCP endpoint, the
+    # rest of /api is 403 for them. Required when MCP is enabled; 'none' = deliberately no group.
+    group-id: ${DOCEXTRACT_AGENT_GROUP_ID:}
+  audit:
+    # Key of the audit actor pseudonym (HMAC-SHA256 over tenant + user id), at least 32 characters and
+    # different from docextract.tenant.app-secret. Mandatory; only profile dev has a default key.
+    actor-key: ${DOCEXTRACT_AUDIT_ACTOR_KEY:}
   dvelop:
     jstore-uri: http://localhost:6380/store/httpgateway/appconfig
     # fallback used only when the jstore endpoint above is unreachable, e.g. https://dms.local
@@ -167,6 +183,10 @@ docextract:
   cleanup:
     # Interval of the TTL cleanup job over all expires_at tables (shared.cleanup.TtlCleanupJob).
     interval: PT5M
+  process:
+    # Age of the newest step after which a process's process_step rows are deleted (existence source
+    # of the process endpoints). Must be >= every result/blob/pending TTL and the promotion-retry-limit.
+    step-retention: PT48H
 ---
 spring:
   config:
@@ -177,6 +197,8 @@ docextract:
   adapters:
     mcp:
       enabled: true
+  agent:
+    group-id: none
 
 springdoc:
   api-docs:

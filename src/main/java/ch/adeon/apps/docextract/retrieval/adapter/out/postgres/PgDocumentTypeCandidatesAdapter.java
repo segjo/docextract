@@ -36,8 +36,11 @@ public class PgDocumentTypeCandidatesAdapter implements DocumentTypeCandidatesPo
   }
 
   @Override
-  public void store(String processId, List<DmsDocumentMetadata> candidates) {
-    jdbcTemplate.update("DELETE FROM document_type_candidate WHERE process_id = ?", processId);
+  public void store(String tenantId, String processId, List<DmsDocumentMetadata> candidates) {
+    jdbcTemplate.update(
+        "DELETE FROM document_type_candidate WHERE process_id = ? AND tenant_id = ?",
+        processId,
+        tenantId);
     if (candidates.isEmpty()) {
       return;
     }
@@ -45,22 +48,24 @@ public class PgDocumentTypeCandidatesAdapter implements DocumentTypeCandidatesPo
     Timestamp expiresAt = Timestamp.from(Instant.now().plus(ttl));
     jdbcTemplate.update(
         """
-        INSERT INTO document_type_candidate (process_id, candidates, expires_at)
-        VALUES (?, ?::jsonb, ?)
+        INSERT INTO document_type_candidate (tenant_id, process_id, candidates, expires_at)
+        VALUES (?, ?, ?::jsonb, ?)
         """,
+        tenantId,
         processId,
         json,
         expiresAt);
   }
 
   @Override
-  public Optional<List<DmsDocumentMetadata>> find(String processId) {
+  public Optional<List<DmsDocumentMetadata>> find(String tenantId, String processId) {
     List<String> rows =
         jdbcTemplate.queryForList(
-            "SELECT candidates FROM document_type_candidate WHERE process_id = ? AND expires_at >"
-                + " now()",
+            "SELECT candidates FROM document_type_candidate"
+                + " WHERE process_id = ? AND tenant_id = ? AND expires_at > now()",
             String.class,
-            processId);
+            processId,
+            tenantId);
     if (rows.isEmpty()) {
       return Optional.empty();
     }

@@ -13,7 +13,7 @@ import java.util.Optional;
  */
 public interface ProcessRepositoryPort {
 
-  void stage(String processId, String repositoryId);
+  void stage(String tenantId, String processId, String repositoryId);
 
-  Optional<String> retrieve(String processId);
+  Optional<String> retrieve(String tenantId, String processId);
 }

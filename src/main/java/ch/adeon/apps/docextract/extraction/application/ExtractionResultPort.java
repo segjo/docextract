@@ -10,7 +10,7 @@ import java.util.Optional;
  */
 public interface ExtractionResultPort {
 
-  void store(String processId, ExtractionResult result);
+  void store(String tenantId, String processId, ExtractionResult result);
 
-  Optional<ExtractionResult> find(String processId);
+  Optional<ExtractionResult> find(String tenantId, String processId);
 }

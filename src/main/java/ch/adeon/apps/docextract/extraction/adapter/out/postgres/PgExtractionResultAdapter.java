@@ -1,8 +1,8 @@
 package ch.adeon.apps.docextract.extraction.adapter.out.postgres;
 
-import ch.adeon.apps.docextract.extraction.application.ExtractionResultPort;
 import ch.adeon.apps.docextract.extraction.application.ExtractedAttribute;
 import ch.adeon.apps.docextract.extraction.application.ExtractionResult;
+import ch.adeon.apps.docextract.extraction.application.ExtractionResultPort;
 import ch.adeon.apps.docextract.shared.cleanup.TtlPurger;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -39,15 +39,20 @@ public class PgExtractionResultAdapter implements ExtractionResultPort, TtlPurge
   }
 
   @Override
-  public void store(String processId, ExtractionResult result) {
-    jdbcTemplate.update("DELETE FROM extraction_result WHERE process_id = ?", processId);
+  public void store(String tenantId, String processId, ExtractionResult result) {
+    jdbcTemplate.update(
+        "DELETE FROM extraction_result WHERE process_id = ? AND tenant_id = ?",
+        processId,
+        tenantId);
     String json = objectMapper.writeValueAsString(result.attributes());
     Timestamp expiresAt = Timestamp.from(Instant.now().plus(ttl));
     jdbcTemplate.update(
         """
-        INSERT INTO extraction_result (process_id, document_type_id, attributes, expires_at)
-        VALUES (?, ?, ?::jsonb, ?)
+        INSERT INTO extraction_result
+            (tenant_id, process_id, document_type_id, attributes, expires_at)
+        VALUES (?, ?, ?, ?::jsonb, ?)
         """,
+        tenantId,
         processId,
         result.documentTypeId(),
         json,
@@ -55,13 +60,14 @@ public class PgExtractionResultAdapter implements ExtractionResultPort, TtlPurge
   }
 
   @Override
-  public Optional<ExtractionResult> find(String processId) {
+  public Optional<ExtractionResult> find(String tenantId, String processId) {
     List<ExtractionResult> rows =
         jdbcTemplate.query(
-            "SELECT document_type_id, attributes FROM extraction_result WHERE process_id = ? AND"
-                + " expires_at > now()",
+            "SELECT document_type_id, attributes FROM extraction_result"
+                + " WHERE process_id = ? AND tenant_id = ? AND expires_at > now()",
             (ResultSet rs, int rowNum) -> mapRow(rs),
-            processId);
+            processId,
+            tenantId);
     return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
   }
 

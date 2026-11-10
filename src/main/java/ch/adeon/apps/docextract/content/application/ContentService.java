@@ -7,7 +7,6 @@ import ch.adeon.apps.docextract.ingest.port.BlobRef;
 import ch.adeon.apps.docextract.ingest.port.DocumentBlobPort;
 import ch.adeon.apps.docextract.ingest.port.PageRange;
 import ch.adeon.apps.docextract.shared.media.MediaType;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -38,8 +37,10 @@ public class ContentService implements ProvideContent {
   @Override
   public DocumentContent provide(ContentCommand command) {
     try {
-      BlobRef blob = documentBlobPort.describe(command.blobId());
-      byte[] bytes = documentBlobPort.readRange(command.blobId(), PageRange.full(blob.sizeBytes()));
+      BlobRef blob = documentBlobPort.describe(command.tenantId(), command.blobId());
+      byte[] bytes =
+          documentBlobPort.readRange(
+              command.tenantId(), command.blobId(), PageRange.full(blob.sizeBytes()));
       DocumentContent content = documentContentPort.provide(bytes, command.mediaType());
       contentStagingPort.stage(command.processId(), content);
       return content;

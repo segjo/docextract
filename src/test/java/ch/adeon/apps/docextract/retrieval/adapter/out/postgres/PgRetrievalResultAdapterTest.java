@@ -59,30 +59,49 @@ class PgRetrievalResultAdapterTest {
     // canonical spacing to keep this a plain equality check.
     RetrievalResult result = new RetrievalResult("repo-1", "doc-1", 0.9, "{\"id\": \"doc-1\"}");
 
-    adapter.store("process-1", List.of(result));
+    adapter.store("t", "process-1", List.of(result));
 
-    assertThat(adapter.find("process-1")).contains(List.of(result));
+    assertThat(adapter.find("t", "process-1")).contains(List.of(result));
+  }
+
+  @Test
+  void another_tenant_does_not_see_the_result() {
+    adapter.store(
+        "tenant-a", "process-1", List.of(new RetrievalResult("repo-1", "doc-1", 0.9, null)));
+
+    assertThat(adapter.find("tenant-b", "process-1")).isEmpty();
+    assertThat(adapter.find("tenant-a", "process-1")).isPresent();
+  }
+
+  @Test
+  void another_tenant_cannot_clear_the_result_by_storing_for_the_same_process() {
+    adapter.store(
+        "tenant-a", "process-1", List.of(new RetrievalResult("repo-1", "doc-1", 0.9, null)));
+
+    adapter.store("tenant-b", "process-1", List.of());
+
+    assertThat(adapter.find("tenant-a", "process-1")).isPresent();
   }
 
   @Test
   void a_process_that_was_never_stored_is_reported_as_absent() {
-    assertThat(adapter.find("unknown-process")).isEmpty();
+    assertThat(adapter.find("t", "unknown-process")).isEmpty();
   }
 
   @Test
   void storing_an_empty_result_clears_any_previous_one() {
-    adapter.store("process-1", List.of(new RetrievalResult("repo-1", "doc-1", 0.9, null)));
+    adapter.store("t", "process-1", List.of(new RetrievalResult("repo-1", "doc-1", 0.9, null)));
 
-    adapter.store("process-1", List.of());
+    adapter.store("t", "process-1", List.of());
 
-    assertThat(adapter.find("process-1")).isEmpty();
+    assertThat(adapter.find("t", "process-1")).isEmpty();
   }
 
   @Test
   void an_expired_result_is_reported_as_absent() {
     PgRetrievalResultAdapter expiring = new PgRetrievalResultAdapter(jdbcTemplate, Duration.ZERO);
-    expiring.store("process-1", List.of(new RetrievalResult("repo-1", "doc-1", 0.9, null)));
+    expiring.store("t", "process-1", List.of(new RetrievalResult("repo-1", "doc-1", 0.9, null)));
 
-    assertThat(expiring.find("process-1")).isEmpty();
+    assertThat(expiring.find("t", "process-1")).isEmpty();
   }
 }

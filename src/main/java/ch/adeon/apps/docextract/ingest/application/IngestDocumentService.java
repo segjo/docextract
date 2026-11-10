@@ -1,5 +1,6 @@
 package ch.adeon.apps.docextract.ingest.application;
 
+import ch.adeon.apps.docextract.audit.application.AuditChannel;
 import ch.adeon.apps.docextract.audit.application.AuditEvent;
 import ch.adeon.apps.docextract.audit.application.AuditPort;
 import ch.adeon.apps.docextract.content.application.ContentCommand;
@@ -162,7 +163,7 @@ public class IngestDocumentService implements IngestDocument {
               // Persisted on the ORIGINAL blob row, so it must run after the insert but before
               // any dependent step (retrieval objdef fallback, value lists, confirm).
               if (command.repositoryId() != null && !command.repositoryId().isBlank()) {
-                processRepositoryPort.stage(processId, command.repositoryId());
+                processRepositoryPort.stage(auth.tenantId(), processId, command.repositoryId());
               }
               return blob;
             });
@@ -178,6 +179,7 @@ public class IngestDocumentService implements IngestDocument {
         blobFuture.thenCompose(blob -> {
           log.info("blob stored processId={} blobId={}", processId, blob.blobId());
           processEventPort.publish(
+              auth.tenantId(),
               new ProcessEvent(
                   processId,
                   ProcessStep.BLOB_STORED,
@@ -226,7 +228,7 @@ public class IngestDocumentService implements IngestDocument {
               // retrieval reads it; failures are already reported via the RETRIEVED/FAILED
               // process event.
               try {
-                findSimilar.find(processId, retrievalTopK, credential);
+                findSimilar.find(auth.tenantId(), processId, retrievalTopK, credential);
               } catch (RetrievalException ex) {
                 log.warn("retrieval failed processId={}", processId, ex);
                 return;
@@ -236,7 +238,7 @@ public class IngestDocumentService implements IngestDocument {
               // only once this step returns); failures are already reported via the
               // EXTRACTED/FAILED process event.
               try {
-                extractAttributes.extract(processId, credential);
+                extractAttributes.extract(auth.tenantId(), processId, credential);
               } catch (ExtractionException ex) {
                 log.warn("extraction failed processId={}", processId, ex);
               }
@@ -256,31 +258,41 @@ public class IngestDocumentService implements IngestDocument {
     } catch (CompletionException ex) {
       RuntimeException cause = unwrap(ex);
       log.warn("dms upload failed processId={}", processId, cause);
-      rollback(originalBlob, previewFuture);
+      rollback(auth.tenantId(), originalBlob, previewFuture);
       processEventPort.publish(
+          auth.tenantId(),
           new ProcessEvent(processId, ProcessStep.DMS_UPLOADED, StepStatus.FAILED, null));
       throw cause;
     }
 
     log.info("dms upload completed processId={} dmsLocation={}", processId, dmsLocation.uri());
-    processDocumentPort.save(processId, dmsLocation.uri(), upload.filename());
+    processDocumentPort.save(auth.tenantId(), processId, dmsLocation.uri(), upload.filename());
     processEventPort.publish(
+        auth.tenantId(),
         new ProcessEvent(processId, ProcessStep.DMS_UPLOADED, StepStatus.COMPLETED, null));
 
-    auditPort.append(new AuditEvent("ingest.completed", "", 0));
+    auditPort.append(
+        AuditEvent.byUser(
+            auth.tenantId(),
+            AuditChannel.UI,
+            auth.agent(),
+            auth.actorHash(),
+            "ingest.completed",
+            null));
 
     return new IngestedDocument(
         processId, dmsLocation.uri(), originalBlob.blobId().toString(), upload.mediaType().value());
   }
 
   /** Best-effort cleanup of already-persisted bytes when the DMS upload fails (C-7). */
-  private void rollback(BlobRef originalBlob, CompletableFuture<Optional<UUID>> previewFuture) {
+  private void rollback(
+      String tenantId, BlobRef originalBlob, CompletableFuture<Optional<UUID>> previewFuture) {
     try {
-      previewFuture.join().ifPresent(documentBlobPort::delete);
+      previewFuture.join().ifPresent(blobId -> documentBlobPort.delete(tenantId, blobId));
     } catch (CompletionException ignored) {
       // preview generation failures are already reported via SSE; nothing extra to clean up
     }
-    documentBlobPort.delete(originalBlob.blobId());
+    documentBlobPort.delete(tenantId, originalBlob.blobId());
   }
 
   /**

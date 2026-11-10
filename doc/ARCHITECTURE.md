@@ -9,17 +9,17 @@ Bezug: [SPEC.md](SPEC.md) · Blockplanung: [PROJEKTPLAN.md](PROJEKTPLAN.md) · E
 
 ## 0. Traceability zum Bewertungsraster
 
-| Rasterkriterium                                            | Erwartung                           | Abschnitt            |
-| ---------------------------------------------------------- | ----------------------------------- | -------------------- |
-| **Entwurf (4)** Lösungsansatz bildlich + textuell          | C4-Sichten + Prosa                  | § 3, § 5, § 7        |
-| **Entwurf (5)** Struktur · Verhalten · Interaktion         | alle drei Perspektiven              | § 5 · § 6 · § 3      |
-| **Entwurf (6)** Datenmodell                                | ER-Modell                           | § 8.4                |
-| **Programmierung (7)** Schichten/Module                    | Hexagonal + Modulschnitt            | § 4, § 5.4, § 5.5    |
-| **Programmierung (8)** Framework-Konzepte                  | DI, REST, Config, Fehler            | § 5.3, § 8.1         |
-| **Validierung (12)** Test-/Sicherheitsstrategie            | Teststufen + Threat-Mitigation      | § 10                 |
-| **KI & Architektur (16)** abgesicherte KI-Funktion         | Retrieval + Extraktion + Guardrails | § 6.1, § 8.5, § 10.3 |
-| **KI & Architektur (17)** Modulgrenzen, containerlauffähig | Modularer Monolith, Compose         | § 4, § 5, § 7        |
-| **KI & Architektur (18)** Reflexion/Veto                   | bewusst nicht delegierte Entscheide | § 9, § 11            |
+| Rasterkriterium                                            | Erwartung                           | Abschnitt                   |
+| ---------------------------------------------------------- | ----------------------------------- | --------------------------- |
+| **Entwurf (4)** Lösungsansatz bildlich + textuell          | C4-Sichten + Prosa                  | § 3, § 5, § 7               |
+| **Entwurf (5)** Struktur · Verhalten · Interaktion         | alle drei Perspektiven              | § 5 · § 6 · § 3             |
+| **Entwurf (6)** Datenmodell                                | ER-Modell                           | § 8.4                       |
+| **Programmierung (7)** Schichten/Module                    | Hexagonal + Modulschnitt            | § 4, § 5.4, § 5.5           |
+| **Programmierung (8)** Framework-Konzepte                  | DI, REST, Config, Fehler            | § 5.3, § 8.1                |
+| **Validierung (12)** Test-/Sicherheitsstrategie            | Teststufen + Threat-Mitigation      | § 8.6, § 10                 |
+| **KI & Architektur (16)** abgesicherte KI-Funktion         | Retrieval + Extraktion + Guardrails | § 6.1, § 8.5, § 8.6, § 10.3 |
+| **KI & Architektur (17)** Modulgrenzen, containerlauffähig | Modularer Monolith, Compose         | § 4, § 5, § 7               |
+| **KI & Architektur (18)** Reflexion/Veto                   | bewusst nicht delegierte Entscheide | § 9, § 11                   |
 
 ---
 
@@ -49,20 +49,20 @@ DocExtract liest eingehende Dokumente, schlägt Kategorie und Eigenschaftswerte 
 
 ## 2. Randbedingungen
 
-| Typ         | Randbedingung                                                                                                   | Quelle           |
-| ----------- | --------------------------------------------------------------------------------------------------------------- | ---------------- |
-| Technisch   | Java 21 · Spring Boot 4 · Angular (iframe) · Spring AI · PostgreSQL · Docker Compose (Empfehlung, kein Zwang)   | SPEC § 4         |
-| Integration | App als **iframe hinter d.velop Reverse Proxy**; AuthN über d.velop-Session-Cookie; `tenant_id` aus der Session | SPEC § 4         |
-| Betrieb     | `docker compose up` auf Linux und Windows/WSL2; mehrere Backend-Instanzen mit gemeinsamer DB                    | SPEC C-6         |
-| Fachlich    | Harte, konfigurierbare Limits (Default: 50 MB, Seitenzahl, Timeouts je Stufe)                                   | SPEC FR-1, T-4   |
-| Sicherheit  | Least Privilege, Modell-Pinning, append-only Audit                                                              | SPEC C-3/C-4/C-5 |
-| Prozess     | Versioniertes Architektur-Dokument, ADRs für Grundentscheide                                                    | Projektarbeit    |
+| Typ         | Randbedingung                                                                                                                                                                                                                                            | Quelle           |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| Technisch   | Java 21 · Spring Boot 4 · Angular (iframe) · Spring AI · PostgreSQL · Docker Compose (Empfehlung, kein Zwang)                                                                                                                                            | SPEC § 4         |
+| Integration | App als **iframe hinter d.velop Approuter/Reverse Proxy**; Mandant und Basis-URI aus den **signierten Headern** `x-dv-tenant-id`/`x-dv-baseuri`/`x-dv-sig-1` (HMAC-SHA256 mit App-Secret, § 8.6); Benutzer per Bearer/`AuthSessionId` beim IdP validiert | SPEC § 4         |
+| Betrieb     | `docker compose up` auf Linux und Windows/WSL2; mehrere Backend-Instanzen mit gemeinsamer DB                                                                                                                                                             | SPEC C-6         |
+| Fachlich    | Harte, konfigurierbare Limits (Default: 50 MB, Seitenzahl, Timeouts je Stufe)                                                                                                                                                                            | SPEC FR-1, T-4   |
+| Sicherheit  | Least Privilege (Agent-Gruppe nur auf MCP), Modell-Pinning, append-only Audit (`audit_entry`)                                                                                                                                                            | SPEC C-3/C-4/C-5 |
+| Prozess     | Versioniertes Architektur-Dokument, ADRs für Grundentscheide                                                                                                                                                                                             | Projektarbeit    |
 
 ---
 
 ## 3. Kontextabgrenzung — C4 Level 1 (Interaktion)
 
-Die Sachbearbeiter:in nutzt DocExtract im **d.velop-Frontend** (iframe); der Reverse Proxy routet auf den HTTP-Endpunkt. Ein **Agent** nutzt denselben Kern über ein **MCP-Tool** mit identischen Guardrails. LLM und Embedding werden über offene Schnittstellen angebunden. Sie laufen entweder auf einer **lokalen Runtime** oder bei einem **vom Kunden konfigurierten externen Anbieter**.
+Die Sachbearbeiter:in nutzt DocExtract im **d.velop-Frontend** (iframe); der Approuter/Reverse Proxy routet auf den HTTP-Endpunkt und setzt die signierten Mandanten-Header. Ein **Agent** nutzt denselben Kern über ein **MCP-Tool**; er ist ein technischer d.velop-User in der Agent-Gruppe und darf nur den MCP-Endpunkt aufrufen (§ 8.6). LLM und Embedding werden über offene Schnittstellen angebunden. Sie laufen entweder auf einer **lokalen Runtime** oder bei einem **vom Kunden konfigurierten externen Anbieter**.
 
 ```mermaid
 C4Context
@@ -74,7 +74,7 @@ C4Context
 
     Enterprise_Boundary(dv, "d.velop Plattform") {
         System_Ext(dvfe, "d.velop Frontend + Reverse Proxy", "Bettet DocExtract als iframe ein")
-        System_Ext(idp, "d.velop Identity Provider", "Cookie-AuthN, tenant_id")
+        System_Ext(idp, "d.velop Identity Provider", "validiert Bearer/AuthSessionId, Gruppen")
         System_Ext(dms, "d.velop DMS-API", "objdef, Metadaten, Upload, Rückschreiben")
     }
 
@@ -84,9 +84,9 @@ C4Context
     System_Ext(tpa, "Third-Party-App (optional)", "Wertelisten per JIT-Webhook")
 
     Rel(sb, dvfe, "bedient", "HTTPS")
-    Rel(dvfe, docx, "routet Requests + Session-Cookie", "HTTP")
+    Rel(dvfe, docx, "routet Requests + signierte Mandanten-Header", "HTTP")
     Rel(agent, docx, "ruft Tools", "MCP")
-    Rel(docx, idp, "validiert Session")
+    Rel(docx, idp, "validiert Token/Session gegen x-dv-baseuri")
     Rel(docx, dms, "liest objdef/Metadaten, schreibt nach Freigabe")
     Rel(docx, ai, "Embedding / Attributvorschlag", "HTTP(S)")
     Rel(docx, tpa, "holt Wertelisten (JIT)")
@@ -94,15 +94,15 @@ C4Context
 
 ### 3.1 Externe Schnittstellen
 
-| Nachbarsystem           | Richtung | Protokoll                                      | Zweck                                                                                                                                                                                     | Hinweis                                 |
-| ----------------------- | -------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| d.velop Frontend/Proxy  | in       | HTTP (iframe, REST)                            | UI + API                                                                                                                                                                                  | Session-Cookie durchgereicht            |
-| d.velop Frontend/Proxy  | out      | SSE `GET /api/v1/processes/{processId}/events` | Fortschritt: Event-Name = Schritt (`blob_stored`, `dms_uploaded`, `preview`, `text_extracted`, `retrieved`, `extracted`), `status` `STARTED`/`COMPLETED`/`FAILED`                         | Nur Metadaten, keine PII                |
-| d.velop IdP             | out      | HTTP                                           | Session → `tenant_id`                                                                                                                                                                     | Basis für NfA-4                         |
-| d.velop DMS-API         | in/out   | HTTP                                           | Lesen: `/r/{repositoryId}/objdef`, `/dms/r/{repositoryId}/o2/{document_id}/` (live, kein Cache). Schreiben: Chunk-Upload → `Location`, Finalisierung mit Attributen **nur nach Freigabe** | Chunk-Upload ist write-only (→ ADR-008) |
-| LLM-/Embedding-Anbieter | out      | HTTP(S), z. B. OpenAI-kompatible API           | Embedding, Attributvorschlag                                                                                                                                                              | lokal oder extern per Konfiguration     |
-| Third-Party-App         | out      | Webhook (JIT)                                  | Wertelisten                                                                                                                                                                               | Client-only, kein Import                |
-| Agent                   | in       | MCP                                            | Extraktion/Retrieval                                                                                                                                                                      | Minimale Scopes, Consent (T-6)          |
+| Nachbarsystem           | Richtung | Protokoll                                      | Zweck                                                                                                                                                                                     | Hinweis                                  |
+| ----------------------- | -------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| d.velop Frontend/Proxy  | in       | HTTP (iframe, REST)                            | UI + API                                                                                                                                                                                  | Signierte Mandanten-Header durchgereicht |
+| d.velop Frontend/Proxy  | out      | SSE `GET /api/v1/processes/{processId}/events` | Fortschritt: Event-Name = Schritt (`blob_stored`, `dms_uploaded`, `preview`, `text_extracted`, `retrieved`, `extracted`), `status` `STARTED`/`COMPLETED`/`FAILED`                         | Nur Metadaten, keine PII                 |
+| d.velop IdP             | out      | HTTP                                           | Bearer/`AuthSessionId` und Gruppen des Benutzers validieren (gegen `x-dv-baseuri`)                                                                                                        | Basis für NfA-4                          |
+| d.velop DMS-API         | in/out   | HTTP                                           | Lesen: `/r/{repositoryId}/objdef`, `/dms/r/{repositoryId}/o2/{document_id}/` (live, kein Cache). Schreiben: Chunk-Upload → `Location`, Finalisierung mit Attributen **nur nach Freigabe** | Chunk-Upload ist write-only (→ ADR-008)  |
+| LLM-/Embedding-Anbieter | out      | HTTP(S), z. B. OpenAI-kompatible API           | Embedding, Attributvorschlag                                                                                                                                                              | lokal oder extern per Konfiguration      |
+| Third-Party-App         | out      | Webhook (JIT)                                  | Wertelisten                                                                                                                                                                               | Client-only, kein Import                 |
+| Agent                   | in       | MCP                                            | Extraktion/Retrieval                                                                                                                                                                      | Agent-Gruppe: nur MCP, nur lesend (T-6)  |
 
 ---
 
@@ -154,7 +154,7 @@ C4Container
     Rel(app, rt, "Embedding / LLM (lokaler Adapter)")
     Rel(app, extai, "Embedding / LLM (externer Adapter)")
     Rel(app, pg, "JDBC / pgvector")
-    Rel(app, idp, "Session → tenant_id")
+    Rel(app, idp, "Token/Session gegen x-dv-baseuri")
     Rel(app, dms, "objdef, Metadaten, Upload, Rückschreiben")
     Rel(app, tpa, "Wertelisten")
 ```
@@ -174,28 +174,28 @@ Der Kern hängt ausschliesslich von diesen Ports ab. Jeder Adapter muss die **Co
 
 **Weitere, interne Outbound-Ports** (nicht produktgebunden), bewusst schmal statt eines einzelnen breiten Ports (C-3 Least Privilege):
 
-| Port                         | Modul (Paket)                                 | Zweck                                                                                          |
-| ---------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `PendingEmbeddingPort`       | retrieval (`port`)                            | `PENDING` stagen; Duplikat-Lookup `APPROVED` per `document_hash`                               |
-| `DmsObjectDefinitionPort`    | retrieval (`port`)                            | `GET .../objdef` (lesend)                                                                      |
-| `DmsObjectMetadataPort`      | retrieval (`port`)                            | `GET .../o2/{document_id}/` (lesend)                                                           |
-| `ValueListPort`              | retrieval (`port`), von extraction mitgenutzt | Wertelisten JIT, gefiltert (`searchTerm`) und abhängig von anderen Eigenschaften (lesend)      |
-| `CorpusPromotionPort`        | validation (`port`)                           | `PENDING → APPROVED` — einzige Schreibberechtigung auf `status`                                |
-| `PendingEmbeddingDeletePort` | validation (`port`)                           | Ablehnung/TTL: `PENDING` löschen; TTL-Löschung überspringt `FINALIZED_INDEX_PENDING` (ADR-015) |
-| `PendingEmbeddingCheckPort`  | validation (`port`)                           | Vorprüfung vor dem DMS-Write: Tenant und Ablauf des `PENDING`-Embeddings (§ 6.2, ADR-015)      |
-| `DmsWritePort`               | validation (`port`)                           | einziger DMS-Schreibpfad (nur nach Freigabe, C-2)                                              |
-| `DmsChunkUploadPort`         | ingest (`port`)                               | Original als Chunk ins DMS (write-only)                                                        |
-| `DmsRepositoryPort`          | ingest (`port`)                               | DMS-Repositories lesen (`GET /repo/repositories`)                                              |
-| `DocumentBlobPort`           | ingest (`port`)                               | transiente Roh-/Preview-Bytes (TTL, ADR-008); Löschen je Prozess nach Freigabe/Ablehnung       |
-| `AuthContextPort`            | security (`application`)                      | Session → `tenant_id`, Benutzer                                                                |
-| `OutboundCredentialPort`     | security (`application`)                      | d.velop-Credential für ausgehende DMS-Aufrufe                                                  |
-| `IdentityProviderPort`       | security (`application`)                      | Session-Cookie/Bearer-Token beim IdP validieren                                                |
-| `AppConfigPort`              | security (`application`)                      | System-Basis-URI                                                                               |
-| `AuditPort`                  | audit (`application`)                         | append-only Audit-Ereignis ohne Roh-PII (C-4)                                                  |
-| `ProcessEventPort`           | process (`application`)                       | Fortschritt publizieren/abonnieren (`PROCESS_STEP`, LISTEN/NOTIFY, ADR-004)                    |
-| `ProcessDocumentPort`        | process (`application`)                       | DMS-Location und Dateiname je Prozess                                                          |
-| `ProcessRepositoryPort`      | process (`application`)                       | Import-Repository je Prozess                                                                   |
-| `CorpusMaintenancePort`      | retrieval (`application`)                     | Embeddings eines abgelösten Modells als `STALE` markieren (Re-Indexierung, ADR-012)            |
+| Port                         | Modul (Paket)                                 | Zweck                                                                                                                                                |
+| ---------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PendingEmbeddingPort`       | retrieval (`port`)                            | `PENDING` stagen; Duplikat-Lookup `APPROVED` per `document_hash`                                                                                     |
+| `DmsObjectDefinitionPort`    | retrieval (`port`)                            | `GET .../objdef` (lesend)                                                                                                                            |
+| `DmsObjectMetadataPort`      | retrieval (`port`)                            | `GET .../o2/{document_id}/` (lesend)                                                                                                                 |
+| `ValueListPort`              | retrieval (`port`), von extraction mitgenutzt | Wertelisten JIT, gefiltert (`searchTerm`) und abhängig von anderen Eigenschaften (lesend)                                                            |
+| `CorpusPromotionPort`        | validation (`port`)                           | `PENDING → APPROVED` — einzige Schreibberechtigung auf `status`                                                                                      |
+| `PendingEmbeddingDeletePort` | validation (`port`)                           | Ablehnung/TTL: `PENDING` löschen; TTL-Löschung überspringt `FINALIZED_INDEX_PENDING` (ADR-015)                                                       |
+| `PendingEmbeddingCheckPort`  | validation (`port`)                           | Vorprüfung vor dem DMS-Write: Tenant und Ablauf des `PENDING`-Embeddings (§ 6.2, ADR-015)                                                            |
+| `DmsWritePort`               | validation (`port`)                           | einziger DMS-Schreibpfad (nur nach Freigabe, C-2)                                                                                                    |
+| `DmsChunkUploadPort`         | ingest (`port`)                               | Original als Chunk ins DMS (write-only)                                                                                                              |
+| `DmsRepositoryPort`          | ingest (`port`)                               | DMS-Repositories lesen (`GET /repo/repositories`)                                                                                                    |
+| `DocumentBlobPort`           | ingest (`port`)                               | transiente Roh-/Preview-Bytes (TTL, ADR-008); Löschen je Prozess nach Freigabe/Ablehnung                                                             |
+| `AuthContextPort`            | security (`application`)                      | Aufrufer aus dem Security-Kontext: `tenant_id`, Benutzer, Agent-Flag (§ 8.6); ohne Authentifizierung `IllegalStateException`                         |
+| `OutboundCredentialPort`     | security (`application`)                      | d.velop-Credential für ausgehende DMS-Aufrufe                                                                                                        |
+| `IdentityProviderPort`       | security (`application`)                      | Bearer-Token/`AuthSessionId` beim IdP des Mandanten validieren (Basis-URI aus `x-dv-baseuri`)                                                        |
+| `AppConfigPort`              | security (`application`)                      | System-Basis-URI (nur Einzelmandant; im Mehrmandantenbetrieb aus `x-dv-baseuri`)                                                                     |
+| `AuditPort`                  | audit (`application`)                         | append-only Audit-Ereignis ohne Roh-PII (C-4), Tabelle `audit_entry`                                                                                 |
+| `ProcessEventPort`           | process (`application`)                       | Fortschritt publizieren/abonnieren (`PROCESS_STEP`, LISTEN/NOTIFY, ADR-004); `exists(tenantId, processId)`, `deleteStepsOfIdleProcesses` (Retention) |
+| `ProcessDocumentPort`        | process (`application`)                       | DMS-Location und Dateiname je Prozess                                                                                                                |
+| `ProcessRepositoryPort`      | process (`application`)                       | Import-Repository je Prozess                                                                                                                         |
+| `CorpusMaintenancePort`      | retrieval (`application`)                     | Embeddings eines abgelösten Modells als `STALE` markieren (Re-Indexierung, ADR-012)                                                                  |
 
 **Interne Staging-/Übergabe-Ports** (prozessbezogene Zwischenstände zwischen Pipeline-Stufen, alle im `application`-Paket):
 
@@ -208,6 +208,8 @@ Der Kern hängt ausschliesslich von diesen Ports ab. Jeder Adapter muss die **Co
 | `DocumentTypeCandidatesPort` | retrieval  | Dokumenttyp-Kandidaten inkl. objdef/Top-5-Metadaten je Prozess (für FR-4)                                              |
 | `ExtractionResultPort`       | extraction | Attributvorschläge je Prozess                                                                                          |
 | `FinalizationStatePort`      | validation | Saga-Zustand (`DMS_WRITE_STARTED`/`FINALIZED_INDEX_PENDING`/`COMPLETED`/`INDEX_FAILED`) + DMS-IDs je Prozess (ADR-015) |
+
+**Mandant in den Ports (§ 8.6):** Jeder Outbound-Port, der prozessbezogene Daten liest oder schreibt (`ProcessEventPort`, `ProcessDocumentPort`, `ProcessRepositoryPort`, `RetrievalResultPort`, `DocumentTypeCandidatesPort`, `ExtractionResultPort`, `DocumentBlobPort`, `FinalizationStatePort`, `PendingEmbeddingCheckPort`, `CorpusPromotionPort`, `PendingEmbeddingDeletePort`), nimmt `tenantId` als ersten Parameter, und der Postgres-Adapter filtert danach (`WHERE ... AND tenant_id = ?`). Ausgenommen sind die mandantenübergreifenden Systemjobs (TTL-Cleanup, Promotion-Retry per `findByStatus`) und die in-memory Staging-Ports (nur auf der Instanz des Prozesses, ADR-006).
 
 **Neutrales Datenformat im Kern (Auszug):** `DocumentRef`, `ExtractedText`, `DocumentContent`, `EmbeddingVector(modelId, dim, values)`, `ExtractionRequest`, `ExtractionResponse`, `ExtractedAttribute(propertyId, value, values, confidence, sourceExcerpt)`, `ModelInfo(provider, modelId)`, `LlmTool(name, description, inputSchema, handler)` (ADR-014), `LlmCapabilities(structuredOutput: NATIVE|NONE, inputs: TEXT|IMAGES)`.
 
@@ -253,10 +255,10 @@ docextract:
 | **retrieval**    | Ein Embedding je Dokument, Staging als `PENDING`, Top-5-Suche mit Pre-Filter (FR-3)                                                                                | `FindSimilar`                                                          | `EmbeddingPort`, `PendingEmbeddingPort`, `VectorSearchPort`, `DmsObjectDefinitionPort`, `DmsObjectMetadataPort`, `ValueListPort`, `AuthContextPort`                                                                          |
 | **extraction**   | KI-Attributvorschläge mit objdef, Top-5-Metadaten, Wertelisten; Schema-Validierung, Retry (FR-4)                                                                   | `ExtractAttributes`                                                    | `LlmPort`, `ValueListPort`, `DocumentTypeCandidatesPort` (objdef/Top-5-Metadaten), `RetrievalResultPort` (alle aus retrieval), `ContentStagingPort` (aus content), `ProcessEventPort`, `ProcessRepositoryPort` (aus process) |
 | **validation**   | Freigabe, DMS-Rückschreiben, Promotion `PENDING → APPROVED`, separater Vorlagen-Consent (FR-5)                                                                     | `Confirm`, `Reject`, `RetryCorpusPromotion`, `TtlPurger` (TTL-Cleanup) | `DmsWritePort`, `CorpusPromotionPort`, `PendingEmbeddingDeletePort`, `PendingEmbeddingCheckPort`, `FinalizationStatePort`, `DocumentBlobPort` (aus ingest)                                                                   |
-| **agentgateway** | MCP-Tool, nutzt dieselben Application-Services (FR-6); nur lesend, Ownership-Check und Audit je Tool-Call (§ 6.3)                                                  | `McpTool`                                                              | `GetExtractionResult` (aus extraction), `GetSimilarDocuments` (aus retrieval), `ProcessDocumentPort` (aus process), `AuthContextPort` (aus security), `AuditPort` (aus audit)                                                |
+| **agentgateway** | MCP-Tool, nutzt dieselben Application-Services (FR-6); nur lesend, Mandantenfilter + `exists` und Audit je Tool-Call (§ 6.3)                                       | `McpTool`                                                              | `GetExtractionResult` (aus extraction), `GetSimilarDocuments` (aus retrieval), `ProcessDocumentPort` (aus process), `AuthContextPort` (aus security), `AuditPort` (aus audit)                                                |
 | **process**      | Fortschritt/SSE (`PROCESS_STEP`, LISTEN/NOTIFY), Lease/Heartbeat, Recovery; keine Orchestrierung der Pipeline (liegt in ingest)                                    | `SubscribeProgress`                                                    | `ProcessEventPort`, `ProcessDocumentPort`, `ProcessRepositoryPort`                                                                                                                                                           |
 | **audit**        | Append-only Protokoll, Token/Kosten (C-4, NfA-7)                                                                                                                   | —                                                                      | `AuditPort`                                                                                                                                                                                                                  |
-| **security**     | Session → `tenant_id`, Consent-Gate                                                                                                                                | `AuthContextPort`                                                      | —                                                                                                                                                                                                                            |
+| **security**     | Signierte Header → `tenant_id`/Basis-URI, IdP-Validierung, Agent-Gruppe (`SecurityConfig`), Aufrufer mit Actor-Hash                                                | `AuthContextPort`                                                      | —                                                                                                                                                                                                                            |
 
 ### 5.5 Paketstruktur
 
@@ -288,15 +290,15 @@ ch.adeon.apps.docextract
 │  └─ adapter.out   # openai-compatible | springai.*
 ├─ validation
 │  ├─ domain        # Finalization, FinalizationStatus, PendingEmbeddingCheck
-│  ├─ application   # ConfirmAndWriteBackService (Consent-Gate, Saga, Promotion-Retry), RejectSuggestionService, TtlCleanupService (Embeddings + Blobs), FinalizationStatePort; ConfirmationCommand, ConfirmationResult
+│  ├─ application   # ConfirmAndWriteBackService (Freigabe, Saga, Promotion-Retry), RejectSuggestionService, TtlCleanupService (Embeddings + Blobs), ProcessStepRetentionService (`process_step`, § 8.6), FinalizationStatePort; ConfirmationCommand, ConfirmationResult
 │  ├─ port          # DmsWritePort, CorpusPromotionPort, PendingEmbeddingDeletePort, PendingEmbeddingCheckPort
 │  └─ adapter       # in.rest, in.scheduler (FinalizationRecoveryScheduler), out.dms, out.postgres
 ├─ agentgateway
-│  ├─ application   # McpTool (Inbound-Port), AgentGatewayService (Validierung, Ownership, Audit); ProcessSuggestions, SimilarDocument, AgentToolException
+│  ├─ application   # McpTool (Inbound-Port), AgentGatewayService (Validierung, Mandantenfilter + exists, Audit); ProcessSuggestions, SimilarDocument, AgentToolException
 │  └─ adapter.in.mcp # McpToolAdapter (Tool-Spezifikationen, Spring AI MCP Server), McpServerConfig
 ├─ process          # Fortschritt (ProcessEvent, ProcessStep, StepStatus), SSE, PgNotify, StaleJobRecovery; ProcessEventPort, ProcessDocumentPort, ProcessRepositoryPort (Import-Repository je Prozess)
 ├─ audit            # AuditPort, AuditEvent; append-only, ohne Roh-PII
-├─ security         # AuthContext, DvelopCredential (application), TenantResolver, ConsentGuard
+├─ security         # AuthContext, DvelopCredential, AuthContextPort (application); RequestTenant, AgentGroup (domain); DvelopAuthenticationFilter, TenantSignature, SecurityConfig (adapter.in.web); SessionAuthContextAdapter (adapter.out.session)
 └─ shared           # Fehler, Config, Observability, media (MediaType), cleanup (TtlCleanupJob + TtlPurger: jedes Modul löscht nur eigene abgelaufene Zeilen)
 ```
 
@@ -398,7 +400,7 @@ sequenceDiagram
 
     SB->>FE: Dokument hochladen
     FE->>API: POST /api/v1/ingest/documents (multipart file, repositoryId)
-    API->>API: Session → tenant_id, Limits prüfen
+    API->>API: Signierte Header prüfen → tenant_id, Limits prüfen
     API->>BLB: ORIGINAL-Blob schreiben
     API->>DMS: Original als Chunk (write-only)
     DMS-->>API: Location
@@ -435,7 +437,7 @@ sequenceDiagram
         EXT->>DMS: Werteliste nachladen (ValueListPort, searchTerm + bereits ermittelte Eigenschaften, lesend)
     end
     EXT->>EXT: Server-seitige Schema-Validierung (+ Retry)
-    EXT->>AUD: Anbieter, Modell-ID, local/external, HMAC, Token, Status
+    EXT->>AUD: Tenant, Anbieter, Modell-ID, SHA-256 des Prompts, Token
     API-->>FE: extracted → Validierungs-UI
     FE-->>SB: Vorschläge mit Konfidenz, Quellen, Modellinfo
 ```
@@ -458,11 +460,12 @@ sequenceDiagram
     SB->>FE: bestätigt / korrigiert (+ optional Vorlagen-Consent)
     FE->>VAL: POST /api/v1/validation/confirm (processId im Body)
     VAL->>VDB: PENDING prüfen (vorhanden, gültig, gleicher Tenant)
+    VAL->>AUD: writeback-started (vor Marker und DMS-Write, fail closed)
     VAL->>DMS: Attribute an Location schreiben (Finalisierung)
     DMS-->>VAL: document_id
     VAL->>VDB: PENDING → APPROVED + document_id, repository_id
     VAL->>BLB: Blobs löschen
-    VAL->>AUD: Consent-, Write- und Promotion-Ereignis
+    VAL->>AUD: writeback (nach gespeichertem Saga-Zustand, Fehler nur geloggt), Promotion
 ```
 
 **Konsistenz (Saga):** Zuerst DMS-Finalisierung, dann Promotion. Schlägt die Promotion fehl, bleibt der Prozess in `FINALIZED_INDEX_PENDING`; ein idempotenter Retry promotet erneut. Der TTL-Cleanup überspringt diesen Zustand. Entscheid, Preis und Störfälle: ADR-015.
@@ -471,7 +474,7 @@ sequenceDiagram
 
 ### 6.3 Agent-Pfad (MCP)
 
-Das MCP-Tool ruft dieselben Services (`FindSimilar`, `ExtractAttributes`) mit minimalen Scopes auf. Ein DMS-Write ist auch hier nur nach expliziter menschlicher Freigabe möglich (C-2, T-6). Alle Tool-Calls werden auditiert.
+Das MCP-Tool ruft dieselben Services (`FindSimilar`, `ExtractAttributes`) mit der Agent-Gruppe auf. Ein DMS-Write ist auch hier nur nach expliziter menschlicher Freigabe möglich (C-2, T-6). Alle Tool-Calls werden auditiert.
 
 **Umsetzung (Block 3):** Die Tools lesen die Ergebnisse, die die Pipeline (`FindSimilar`, `ExtractAttributes`) je Prozess gestagt hat, über dieselben Lese-Services wie REST (`GetExtractionResult`, `GetSimilarDocuments`). Es gibt **kein** Tool für Upload, Confirm, Reject oder DMS-Write; die Tool-Beschreibung weist darauf hin, durchgesetzt wird es dadurch, dass `McpTool` keine solche Operation anbietet.
 
@@ -481,9 +484,9 @@ Das MCP-Tool ruft dieselben Services (`FindSimilar`, `ExtractAttributes`) mit mi
 | `find_similar_documents`  | wie oben                                                                                                 | `documents[]` (`documentId`, `repositoryId`, `score`), nur `APPROVED`, Top-5                  | `GET /api/v1/processes/{processId}/similar-documents` |
 
 - **Transport:** Spring AI MCP Server (`spring-ai-starter-mcp-server-webmvc`), Streamable HTTP unter `POST/GET /adeon-docextract/api/v1/mcp`, synchron. Ein- und ausgeschaltet über `docextract.adapters.mcp.enabled` (Default `false`); die Property schaltet auch den MCP-Server selbst (`spring.ai.mcp.server.enabled`). Tool-Aufrufe laufen auf dem Request-Thread (`immediateExecution`). Der asynchrone Redispatch der SSE-Antwort ist in `SecurityConfig` nur für `DispatcherType.ASYNC` freigegeben; der initiale Request braucht weiterhin ein gültiges Token.
-- **AuthN/Agent-Identität:** Der Agent erhält einen **technischen d.velop-User** und sendet dessen API-Key als `Authorization: Bearer <API-Key>`. Der Endpunkt liegt unter `/api/**` und durchläuft wie REST den `DvelopAuthenticationFilter` (Validierung beim d.velop IdP); es gibt keinen eigenen DocExtract-Token. `tenant_id` liefert `AuthContextPort` (vorerst `default-tenant`, Ableitung nach d.velop-Standard aus den Headern der Authentisierung). Agent-spezifische Scopes folgen in P5.
+- **AuthN/Agent-Identität:** Der Agent erhält einen **technischen d.velop-User** und sendet dessen API-Key als `Authorization: Bearer <API-Key>`. Der Endpunkt liegt unter `/api/**` und durchläuft wie REST den `DvelopAuthenticationFilter` (Validierung beim d.velop IdP); es gibt keinen eigenen DocExtract-Token. `tenant_id` und Basis-URI liefert `AuthContextPort` bzw. der `RequestTenant` (§ 8.6). Der Agent-Kanal ist auf den MCP-Endpunkt beschränkt (§ 8.6).
 - **Weggelassene Daten:** An den Agenten gehen weder `sourceExcerpt` noch die Eigenschaftswerte der ähnlichen Dokumente (`RetrievalResult.properties`). Von ähnlichen Dokumenten erhält er nur `documentId`, `repositoryId` und `score`. Die Attributvorschläge (`value`/`values`, `confidence`) des eigenen Dokuments gehen an ihn und können Personendaten enthalten. _Begründung:_ Die Eigenschaftswerte wurden mit der Session des Benutzers geladen; gäbe DocExtract sie weiter, sähe der Agent Werte, für die er im DMS keine Rechte hat. Über die `documentId` kann er sie selbst im DMS abfragen, dann gelten seine eigenen Rechte. _Restrisiko:_ Das LLM sieht die Werte der Top-5 als Kontext; ein Vorschlag kann deshalb einen Wert aus einem ähnlichen Dokument übernehmen. Modell-ID und lokal/extern gibt das Tool nicht aus (nicht je Ergebnis gespeichert; Nachweis über das Audit, C-4/NfA-7).
-- **Guardrails im Service** (`AgentGatewayService`, nicht im Adapter): Format der `processId`; Ownership (`processId` gehört zum Mandanten des Aufrufers, sonst wie bei unbekannter ID `not_found`, keine Daten); ein Audit-Eintrag je Aufruf (`mcp.tool.<name>.<ok|invalid_argument|not_found|error>`, nur SHA-256 der Argumente, C-4). Die Schema-Validierung des MCP-SDK ist abgeschaltet, damit auch ungültige Aufrufe den Service erreichen und auditiert werden; die Prüfung ist dort gleich streng. Umgesetzt mit einem `@Primary`-Customizer in `McpServerConfig`, der den Servlet-Customizer von Spring AI ersetzt (`immediateExecution(true)`, `validateToolInputs(false)`); **bei Spring-AI-Upgrades prüfen**, ob der ersetzte Customizer weitere Einstellungen setzt.
+- **Guardrails im Service** (`AgentGatewayService`, nicht im Adapter): Format der `processId`; Mandantenfilter und Existenz (`processId` gehört zum Mandanten des Aufrufers, sonst wie bei unbekannter ID `not_found`, keine Daten; über die Lese-Services und `ProcessEventPort.exists`, § 8.6); ein Audit-Eintrag je Aufruf (`mcp.tool.<name>.<ok|invalid_argument|not_found|error>`, nur SHA-256 der Argumente, C-4). Die Schema-Validierung des MCP-SDK ist abgeschaltet, damit auch ungültige Aufrufe den Service erreichen und auditiert werden; die Prüfung ist dort gleich streng. Umgesetzt mit einem `@Primary`-Customizer in `McpServerConfig`, der den Servlet-Customizer von Spring AI ersetzt (`immediateExecution(true)`, `validateToolInputs(false)`); **bei Spring-AI-Upgrades prüfen**, ob der ersetzte Customizer weitere Einstellungen setzt.
 - **Fehler:** `isError: true` mit `{ "code": "invalid_argument" | "not_found" | "internal_error", "message" }`, ohne PII. Einheitliche Fehlerform mit REST folgt in P7.
 - **Tests:** `AgentGatewayServiceTest`, `McpToolAdapterTest`, `McpServerWiringTest`, `McpEndpointSecurityTest` (echter HTTP-Stack: ohne Token `401` auf `/api/v1/mcp` und `/api/v1/processes/{id}/events`; schema-ungültiger Tool-Call erreicht den Service und wird auditiert).
 
@@ -543,15 +546,15 @@ flowchart TB
 
 ### 8.2 Sicherheit & Datenschutz
 
-- **AuthN/AuthZ:** d.velop-Session → `tenant_id` → Pre-Filter im Retrieval (NfA-4). Consent-Gate vor jeder irreversiblen Aktion (C-2).
-- **Least Privilege (C-3):** LLM- und Embedding-Adapter erhalten nur Eingabedaten und haben keinen Zugriff auf DB, Vektor-Store oder DMS. Nur der Validierungspfad setzt `APPROVED`. Das MCP-Tool hat minimale Scopes.
+- **AuthN/AuthZ:** Signierte d.velop-Header → `tenant_id` und Basis-URI (§ 8.6) → Filter in jeder prozessbezogenen Port-Abfrage und Pre-Filter im Retrieval (NfA-4). Freigabe durch den Menschen vor jeder irreversiblen Aktion (C-2); Agent-Gruppe ohne Zugriff auf Freigabe-Endpunkte.
+- **Least Privilege (C-3):** LLM- und Embedding-Adapter erhalten nur Eingabedaten und haben keinen Zugriff auf DB, Vektor-Store oder DMS. Nur der Validierungspfad setzt `APPROVED`. Das MCP-Tool hat keine schreibende Operation, der Agent ist per Gruppe auf `/api/v1/mcp/**` beschränkt.
 - **Prompt Injection (T-1):** Der Dokumentinhalt wird im Prompt klar als _untrusted data_ abgegrenzt. Die Antwort wird immer serverseitig gegen das JSON-Schema validiert. Aus LLM-Ausgaben werden keine schreibenden Tool-Calls abgeleitet; lesende nur per Allowlist (ADR-014).
 - **Datenminimierung (NfA-5):** Extrahierter Text und Dokumentrepräsentation leben nur im Job-Kontext. Persistiert werden ausschliesslich Embeddings (mit TTL bis zur Freigabe), Metadaten und Audit-Hashes. Roh-/Preview-Bytes liegen TTL-begrenzt im Blobstore. Die Löschkaskade umfasst Dokument, Blobs und Embeddings; Audit-Einträge bleiben ohne Roh-PII erhalten.
 
 ### 8.3 Observability & Audit
 
 - Strukturiertes Logging mit Latenz je Stufe (NfA-2), Metriken (Micrometer/Prometheus), Traces (OpenTelemetry).
-- **Audit je LLM-/Tool-Call (C-4):** Anbieter, Modell-ID, Prompt-/Schema-Version, mandantenspezifischer HMAC des kanonisierten Prompts, Token (Prompt/Completion) bzw. LLM-Sekunden lokal, Konfidenz, Ergebnisstatus. Datenquelle für NfA-7.
+- **Audit je LLM-/Tool-Call (C-4):** Tabelle `audit_entry` (§ 8.6): Mandant, Kanal, Actor-Art/-Hash, Anbieter und Modell-ID (`provider`, `model_id`, bei LLM-Aufrufen), **SHA-256** des Prompts bzw. der Argumente (`args_hash`, kein HMAC, kein Klartext), Token (Prompt) und Ereignistyp. Prompt-/Schema-Version, Completion-Token, Konfidenz und Ergebnisstatus werden nicht gespeichert. Datenquelle für NfA-7.
 - **Betriebsmetriken:** Anzahl/Alter von `PENDING`-Einträgen und Blobs, Adapter-Fehlerraten je Anbieter.
 
 ### 8.4 Datenmodell
@@ -567,7 +570,6 @@ erDiagram
     EXTRACTION_RUN ||--|| ATTRIBUTE_SUGGESTION : "liefert"
     ATTRIBUTE_SUGGESTION ||--o| CONFIRMATION : "wird bestätigt"
     CONFIRMATION ||--o| TEMPLATE : "optional, separater Consent"
-    EXTRACTION_RUN ||--o{ AUDIT_ENTRY : "protokolliert"
 
     DOCUMENT {
         uuid id PK
@@ -621,6 +623,7 @@ erDiagram
     PROCESS_STEP {
         uuid id PK
         uuid process_id FK
+        string tenant_id "Filter der SSE-Historie und -Events"
         string step
         string status "PII-frei"
         timestamptz created_at
@@ -654,16 +657,17 @@ erDiagram
         boolean quarantined
     }
     AUDIT_ENTRY {
-        uuid id PK
-        uuid run_id FK
+        bigint id PK
+        timestamptz created_at "append-only (Trigger)"
+        string tenant_id "NULL nur beim TTL-Cleanup"
+        string channel "MCP|UI|SYSTEM"
+        string actor_kind "HUMAN|AGENT, NULL bei SYSTEM"
+        string actor_hash "HMAC-SHA256(actor-key, tenant + user), nie die Roh-ID"
         string event_type
-        string provider
-        string model_id
-        string prompt_hmac
+        string args_hash "SHA-256 der Argumente bzw. des Prompts"
         int token_count
-        numeric confidence
-        string result_status
-        timestamptz created_at "append-only"
+        string provider "nur LLM-Aufrufe"
+        string model_id "nur LLM-Aufrufe"
     }
 ```
 
@@ -678,6 +682,39 @@ Zwei getrennte Modellnutzungen, je über einen eigenen Port und unabhängig konf
 - **Extraktion (FR-4):** Der LlmPort erhält (a) die konfigurierte Dokumentrepräsentation, (b) Kategorien und Eigenschaften aus objdef, (c) Kategorie und Werte der Top-5 live aus dem DMS sowie (d) Wertelisten. Unterstützt der Adapter Structured Output (`NATIVE`), wird schema-constrained Decoding genutzt. Die serverseitige Validierung erfolgt **immer**. Kann kein zulässiger Wert bestimmt werden, wird „unbekannt" zurückgegeben (E-5).
 - **Offenheit für offene LLMs:** Referenzprotokoll ist die verbreitete OpenAI-kompatible API. Damit sind lokale Runtimes mit offenen Modellen und gehostete Anbieter ohne neuen Code nutzbar. Anbieter ohne diese API werden über Spring-AI-Provider oder einen eigenen Adapter angebunden (ADR-009, ADR-011).
 - **Modellwechsel (C-5):** Nur per auditierter Konfigurationsänderung und mit Regressionslauf gegen das Eval-Set. Beim Embedding-Modell kommt eine Re-Indexierung hinzu.
+
+### 8.6 Sicherheitskonzept Agent / MCP
+
+Grundsatz: Die Prüfung sitzt im Dienst, nicht in der Tool-Beschreibung und nicht im MCP-Adapter. REST und MCP laufen durch dieselben Application-Services und Ports (§ 4, Adapter-Symmetrie). Die Mandantentrennung hängt **nicht** an einem eigenen Guard, sondern an den Ports: jeder prozessbezogene Port-Aufruf trägt die `tenantId`, die Abfrage filtert danach.
+
+**Mandant (`tenant_id`) und d.velop-Header.** Zwei Betriebsarten, gewählt über `docextract.tenant.app-secret` (Env `DOCEXTRACT_TENANT_APP_SECRET`, Base64-App-Secret aus dem Cloudcenter; die frühere Property `docextract.tenant.header` entfällt):
+
+- **Einzelmandant (Secret leer).** Jeder Request gehört zu `docextract.tenant.default-id` (Default `default-tenant`). `x-dv-*`-Header werden ignoriert, ein Client kann seinen Mandanten nicht wählen. Die System-Basis-URI kommt aus `AppConfigPort` (jstore, sonst `docextract.dvelop.system-base-uri`). Beim Start steht dies als `INFO` im Log.
+- **Mehrmandant (Secret gesetzt).** `x-dv-tenant-id`, `x-dv-baseuri` und `x-dv-sig-1` sind Pflicht. Der `DvelopAuthenticationFilter` prüft die Signatur **vor** der IdP-Validierung: HMAC-SHA256 über `baseuri + tenantId`, Schlüssel = Base64-dekodiertes Secret, Vergleich mit `MessageDigest.isEqual` gegen den Base64-dekodierten Header. Fehlt ein Header oder stimmt die Signatur nicht, antwortet er `403` (`tenantId` zusätzlich `[A-Za-z0-9._-]{1,128}`). IdP-Validierung und alle DMS-Aufrufe gehen gegen `x-dv-baseuri`; es gibt keinen Fallback auf `AppConfigPort`, ein `DvelopCredential` ohne Basis-URI ist ein Fehler (`IllegalArgumentException`), ein signierter, aber leerer `x-dv-baseuri` ist `403`. Testvektor der d.velop-Dokumentation: `TenantSignatureTest`.
+
+Der Filter setzt `RequestTenant(id, baseUri)` in den Security-Kontext; `SessionAuthContextAdapter` liefert `AuthContext.tenantId()`, die Basis-URI reist im `DvelopCredential` mit (über `OutboundCredentialPort`). Ohne Authentifizierung wirft `SessionAuthContextAdapter` eine `IllegalStateException`, es gibt keinen Default-Mandanten im Request-Pfad.
+
+**Wer reicht die `tenantId` weiter.** Die Adapter am Rand lösen den Mandanten einmal auf (`ProcessEventsController`, `RetrievalController`, `ExtractionController`, `AgentGatewayService`) und übergeben ihn explizit an `GetSimilarDocuments`, `GetDocumentTypeCandidates`, `GetExtractionResult`, `RetryExtraction`. Die asynchrone Pipeline (`IngestDocumentService` → `FindSimilar`, `StageEmbeddings`, `ExtractAttributes`, `ContentCommand`) bekommt ihn ebenfalls als Parameter, weil virtuelle Threads den Security-Kontext nicht erben; die Basis-URI reist im `DvelopCredential`. `ConfirmAndWriteBackService`, `RejectSuggestionService` und `PreviewStreamService` lesen ihn im Request-Thread aus `AuthContextPort`. Der Promotion-Retry (Scheduler, ohne Request) nimmt ihn aus dem gespeicherten Saga-Zustand (`Finalization.tenantId`).
+
+**Agent und Mensch getrennt (`docextract.agent.group-id`, Env `DOCEXTRACT_AGENT_GROUP_ID`).** Der Agent ist ein technischer d.velop-User in einer d.velop-Gruppe; deren Mitglieder erhalten die Authority `ROLE_GROUP_<id>`. `SecurityConfig` lässt `/api/v1/mcp/**` jedem authentifizierten Aufrufer offen, alle anderen `/api/**` sind für Mitglieder der Agent-Gruppe `403`. Ist MCP aktiv (`docextract.adapters.mcp.enabled`) und die Property leer, bricht der Start ab; `none` heißt bewusst keine Agent-Gruppe (Dev-Profil), dann ist niemand Agent. `AuthContext.agent()` trägt das Flag in die Dienste.
+
+**Audit.** `AuditPort` schreibt insert-only in `audit_entry` (V17, Trigger verweigert `UPDATE`/`DELETE`): `tenant_id`, `channel` (`MCP|UI|SYSTEM`), `actor_kind` (`HUMAN|AGENT`), `actor_hash` (HMAC-SHA256 über Mandant und User-ID mit `docextract.audit.actor-key`, Env `DOCEXTRACT_AUDIT_ACTOR_KEY`; immer Pflicht (sonst Startabbruch), mindestens 32 Zeichen und verschieden vom App-Secret; nur das Profil `dev` hat einen Dev-Schlüssel mit `WARN`), `event_type`, `args_hash`, `token_count`, `provider`, `model_id` (beide nur bei LLM-Aufrufen). Geschrieben werden MCP-Tool-Calls (auch Fehlerfälle, `mcp.tool.<name>.<ergebnis>`), `ingest.completed`, `validation.writeback-started` (vor Marker und DMS-Write, fail closed), `validation.writeback` (nach dem DMS-Write und dem gespeicherten Saga-Zustand), `validation.writeback-rejected`, `validation.reject` (Kanal `UI`) sowie Systemereignisse mit Mandant (`validation.promotion*`, LLM-Aufrufe `extraction.classify`/`extraction.suggest-attributes` mit Anbieter und Modell, Tool-Aufrufe `extraction.tool.lookup_value_list`). `tenant_id` ist nur beim TTL-Cleanup (`validation.ttl-cleanup`) `NULL`; `actor_kind`/`actor_hash` sind bei allen Systemereignissen `NULL`. Ein Audit-Fehler lässt die Anfrage scheitern (fail closed), außer nach dem DMS-Write: dort steht der Saga-Zustand schon, ein Fehler bei `validation.writeback` (und `validation.writeback-rejected`) wird nur als `ERROR` geloggt und die Antwort bleibt `200`; so führt ein Audit-Ausfall nie zu einem zweiten, abgelehnten DMS-Write.
+
+| #   | Regel                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Durchgesetzt in                                                                                                                                                                                                                                                                                                                                                                        | Test                                                                                                                                                                                 |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | **Autorisierung.** Der Agent authentisiert sich mit dem API-Key eines technischen d.velop-Users ohne DMS-Rechte als `Authorization: Bearer` (§ 6.3); ohne gültiges Token `401`. Mitglieder der Agent-Gruppe dürfen nur `/api/v1/mcp/**`; confirm, reject, extraction-result, SSE u. a. sind für sie `403`. Der Mandant kommt wie oben aus dem Einzelmandant-Default oder den signierten Headern.                                                                        | `DvelopAuthenticationFilter`, `SecurityConfig`, `SessionAuthContextAdapter`                                                                                                                                                                                                                                                                                                            | `McpEndpointSecurityTest` (401, Agent 403 auf REST, Agent/Mensch auf MCP mit Audit), `TenantResolutionTest`, `TenantSignatureTest`                                                   |
+| 2   | **Eingabeprüfung.** Tool-Argumente: genau `{ processId }`, kleingeschriebene UUID. Existenz und Ownership ohne Guard: die Lese-Services fragen den mandantengefilterten Port; nur bei leerem Ergebnis prüft `ProcessEventPort.exists(tenantId, processId)` (Zeile in `process_step`), sonst `ProcessNotFoundException` → `404` bzw. `not_found` (MCP). Gilt für similar-documents, document-type-candidates, extraction-result, retry, reject und SSE (vor dem Stream). | `AgentGatewayService` (Format), `GetSimilarDocumentsService`, `GetDocumentTypeCandidatesService`, `GetExtractionResultService`, `ExtractAttributesService.retry`, `RejectSuggestionService`, `ProcessEventsController`; Port-Filter in `PgProcessDocumentAdapter`, `PgRetrievalResultAdapter`, `PgExtractionResultAdapter`, `PgDocumentTypeCandidatesAdapter`, `PgProcessEventAdapter` | `AgentGatewayServiceTest`, `McpToolAdapterTest`, `TenantScopedEndpointsTest` (je Endpunkt), `PgTenantFilterAdapterTest`, `PgProcessEventAdapterTest`, `PgRetrievalResultAdapterTest` |
+| 3   | **Schreibende Aktionen nur auf dem eigenen Mandanten.** Confirm, Reject, Promotion und Blob-Löschung wirken nur auf Zeilen des Aufrufer-Mandanten.                                                                                                                                                                                                                                                                                                                      | `ConfirmAndWriteBackService`, `RejectSuggestionService`, `PgCorpusPromotionAdapter`, `PgPendingEmbeddingDeleteAdapter`, `PgFinalizationStateAdapter`, `PgDocumentBlobAdapter`                                                                                                                                                                                                          | `ConfirmAndWriteBackServiceTest`, `RejectSuggestionServiceTest`, `PgPendingEmbeddingDeleteAdapterTest`, `PgDocumentBlobAdapterTest`                                                  |
+
+**Antwort bei unbekanntem oder fremdem Prozess.** Beides ist für den Aufrufer dasselbe: `404` (RFC 9457) bzw. `not_found` im MCP-Tool, ohne Existenzhinweis (NfA-4). Ein eigener Prozess ohne Ergebnis liefert `200` mit leerer Liste bzw. leerem Ergebnis. `process_step` ist die Existenzquelle: `DMS_UPLOADED` wird synchron im Upload-Request vor dem `202` veröffentlicht und ist damit sicher committet; `BLOB_STORED` kommt aus der asynchronen Kette und ist vor dem `202` nicht garantiert (`IngestDocumentServiceTest`). Der `ProcessStepRetentionService` (`TtlPurger`) löscht alle Schritte eines Prozesses, dessen neuester Schritt älter als `docextract.process.step-retention` (Default `PT48H`) ist; Prozesse in `FINALIZED_INDEX_PENDING` überspringt er über die `process_id` allein (nicht über Mandant und Prozess; die IDs sind UUIDs). Beim Start muss die Retention ≥ jede Ergebnis-/Blob-/PENDING-TTL und ≥ `promotion-retry-limit` sein, sonst Abbruch.
+
+**Primärschlüssel.** `extraction_result`, `document_type_candidate` und `process_finalization` haben `(tenant_id, process_id)` als Primärschlüssel (V16); dieselbe `process_id` zweier Mandanten kollidiert nicht.
+
+**Offen (nicht umgesetzt):**
+
+- **Minimale Rechte (Scopes).** Es gibt keine Scope-Liste (`suggestions:read`, `similar:read`). Der Agent ist durch die Gruppe auf `/api/v1/mcp/**` beschränkt, das MCP-Tool bietet nur lesende Operationen. Der Agent-User sollte trotzdem keine DMS-Rechte haben.
+- **Vorlagen-Consent.** Existiert noch nicht; die Sperre für den Agent-Kanal gilt bereits für alle Nicht-MCP-Endpunkte.
+- **Audit-Schlüssel.** `docextract.audit.actor-key` wird nicht rotiert; ein Wechsel ändert alle künftigen `actor_hash` (alte Einträge bleiben, sind aber nicht mehr zuordenbar).
 
 ---
 
@@ -695,7 +732,7 @@ ADR-001 bis ADR-003 wurden **bewusst nicht an die KI delegiert** (Krit. 18). Arc
 ### ADR-002 — Mandanten-Pre-Filter im Retrieval
 
 - **Status:** akzeptiert
-- **Entscheidung:** `tenant_id` aus der Session ist Prädikat der Vektor-Query, kein Post-Filter.
+- **Entscheidung:** `tenant_id` aus dem signierten d.velop-Header (bzw. dem Einzelmandant-Default) ist Prädikat der Vektor-Query, kein Post-Filter.
 - **Begründung:** Garantiert 0 Fremdtreffer und ist testbar (NfA-4, T-3).
 - **Konsequenz:** Jeder VectorStore-Adapter muss den Pre-Filter im Contract-Test nachweisen.
 
@@ -774,9 +811,9 @@ ADR-001 bis ADR-003 wurden **bewusst nicht an die KI delegiert** (Krit. 18). Arc
 
 - **Status:** akzeptiert
 - **Kontext:** Nach der Freigabe (§ 6.2) muss `validation` zwei Dinge tun: die Attribute über den `DmsWritePort` ins DMS schreiben (externes System, HTTP) und das `PENDING`-Embedding über den `CorpusPromotionPort` auf `APPROVED` setzen (Tabelle `embedding`, fachlich im Besitz von `retrieval`). Beide Schritte liegen nicht in einer gemeinsamen ACID-Transaktion (CONTEXT § 6). Nur der Validierungspfad darf `APPROVED` setzen (C-3), und erst nach menschlicher Freigabe (C-2). Der DMS-Write ist **nicht idempotent**: ein zweiter Write auf dieselbe Location wird vom DMS mit `400` abgewiesen.
-- **Entscheidung:** Synchron, in-process, über Ports, orchestriert vom `ConfirmAndWriteBackService` im Confirm-Request (`POST /api/v1/validation/confirm`, `processId` im Body): 0. Vorprüfung: Prozess existiert und gehört dem `tenant_id` der Session (`ProcessDocumentPort`), das `PENDING`-Embedding (falls vorhanden) gehört demselben Tenant und ist nicht abgelaufen (`PendingEmbeddingCheckPort`). Sonst `404` bzw. `410`, ohne DMS-Write. Fehlt das Embedding, weil das Retrieval übersprungen wurde (§ 6.5), bleibt die Freigabe möglich.
-  1. Marker `DMS_WRITE_STARTED` speichern, dann `DmsWritePort.writeAttributes` (Finalisierung). Bei sauberer Ablehnung (`4xx`) wird der Marker verworfen (`422`); bei Server-/Netzfehler bleibt er stehen (`502`, Ausgang unbekannt),
-  2. `FinalizationStatePort.save(FINALIZED_INDEX_PENDING, tenant_id, repository_id, dms_document_id)` (Tabelle `process_finalization`, V14),
+- **Entscheidung:** Synchron, in-process, über Ports, orchestriert vom `ConfirmAndWriteBackService` im Confirm-Request (`POST /api/v1/validation/confirm`, `processId` im Body): 0. Vorprüfung: Prozess existiert und gehört dem `tenant_id` aus dem signierten Header bzw. dem Einzelmandant-Default (`ProcessDocumentPort`), das `PENDING`-Embedding (falls vorhanden) gehört demselben Tenant und ist nicht abgelaufen (`PendingEmbeddingCheckPort`). Sonst `404` bzw. `410`, ohne DMS-Write. Fehlt das Embedding, weil das Retrieval übersprungen wurde (§ 6.5), bleibt die Freigabe möglich.
+  1. Audit `validation.writeback-started` (fail closed: ohne Eintrag kein Marker und kein Write), dann Marker `DMS_WRITE_STARTED` speichern, dann `DmsWritePort.writeAttributes` (Finalisierung). Bei sauberer Ablehnung (`4xx`) wird der Marker verworfen (`422`); bei Server-/Netzfehler bleibt er stehen (`502`, Ausgang unbekannt),
+  2. `FinalizationStatePort.save(FINALIZED_INDEX_PENDING, tenant_id, repository_id, dms_document_id)` (Tabelle `process_finalization`, V14), danach Audit `validation.writeback` (ein Fehler dort wird nur geloggt, die Antwort bleibt `200`),
   3. `CorpusPromotionPort.promote` (idempotentes `UPDATE … WHERE status = 'PENDING'`),
   4. Zustand `COMPLETED`,
   5. Blobs löschen (`DocumentBlobPort.deleteByProcess`); die Bytes liegen jetzt im DMS, der Retry braucht nur die IDs.
@@ -800,11 +837,11 @@ ADR-001 bis ADR-003 wurden **bewusst nicht an die KI delegiert** (Krit. 18). Arc
     - Promotion-Fehler → `FINALIZED_INDEX_PENDING`, kein zweiter DMS-Write: `promotion_failure_leaves_finalized_index_pending_without_second_dms_write`
     - Retry nur Promotion: `repeated_confirm_in_finalized_index_pending_only_promotes`, `background_retry_only_promotes_and_never_writes_dms`, `background_retry_keeps_finalized_index_pending_when_promotion_fails_again`, `repeated_confirm_after_completion_neither_writes_nor_promotes`
     - Obergrenze: `background_retry_gives_up_after_the_retry_limit`, `background_retry_keeps_trying_within_the_retry_limit`
-    - Vorprüfung: `confirm_of_another_tenant_s_process_never_writes_dms`, `pending_embedding_of_another_tenant_blocks_the_dms_write`, `expired_pending_embedding_blocks_the_dms_write`, `confirm_without_pending_embedding_still_writes_dms`, `repeated_confirm_by_another_tenant_is_not_found`
+    - Vorprüfung: `confirm_of_another_tenant_s_process_is_not_found_and_never_writes_or_promotes`, `expired_pending_embedding_blocks_the_dms_write`, `confirm_without_pending_embedding_still_writes_dms`
     - Marker/Restfenster: `dms_rejection_after_unknown_outcome_is_reported_as_possibly_finalized`, `earlier_unknown_outcome_with_successful_retry_completes_the_saga`, `dms_failure_with_unknown_outcome_keeps_the_marker`, `must_reject_and_not_promote_when_dms_rejects_attributes`
-  - `RejectSuggestionServiceTest` — `refuses_reject_in_finalized_index_pending`, `reject_of_another_tenant_s_process_is_not_found`, `deletes_pending_embedding_and_blobs`
+  - `RejectSuggestionServiceTest` — `refuses_reject_in_finalized_index_pending`, `reject_never_addresses_another_tenant`, `deletes_pending_embedding_and_blobs_of_the_callers_tenant`
   - `TtlCleanupServiceTest` — `skips_embeddings_of_processes_in_finalized_index_pending`, `skips_blobs_of_processes_in_finalized_index_pending`, `cleans_up_processes_whose_promotion_was_abandoned`
-  - `PgPendingEmbeddingDeleteAdapterTest` — `delete_expired_never_removes_embedding_of_finalized_index_pending_process` (SQL-Guard), `finalization_state_is_deleted_only_for_the_requested_tenant`, `pending_check_reports_owner_tenant_and_expiry`, `first_failed_at_round_trips` (Testcontainers)
+  - `PgPendingEmbeddingDeleteAdapterTest` — `delete_expired_never_removes_embedding_of_finalized_index_pending_process` (SQL-Guard), `finalization_state_is_deleted_only_for_the_requested_tenant`, `pending_check_reports_expiry_for_the_owning_tenant_only`, `another_tenant_cannot_delete_a_pending_embedding`, `another_tenant_cannot_promote_a_pending_embedding`, `first_failed_at_round_trips` (Testcontainers)
   - `PgDocumentBlobAdapterTest` — `ttl_cleanup_finds_and_deletes_only_expired_blobs`, `delete_by_process_removes_original_and_preview`
   - `PgVectorSearchAdapterTest.finds_only_approved_embeddings_for_the_caller_s_tenant` — `PENDING` erscheint nie im Retrieval
   - `SchedulingWiringTest` — beide Jobs registriert, `PT5M` wird geparst
@@ -842,7 +879,7 @@ Je FR ein prüfbares Exit-Kriterium gemäss SPEC § 7 (M1–M3). Die KI-Funktion
 
 ### 10.3 Bedrohungsmodell (SPEC § 6)
 
-T-1 Prompt Injection → untrusted data + Schema-Validierung + lesende Tools nur per Allowlist (ADR-014) · T-2 Datenvergiftung → Quarantäne, Consent, Herkunft · T-3 Cross-Tenant → Pre-Filter · T-4 DoS → Limits/Timeouts je Adapter · T-5 Modellmanipulation → Digest/versionierte Modell-ID · T-6 MCP-Missbrauch → Consent + minimale Scopes.
+T-1 Prompt Injection → untrusted data + Schema-Validierung + lesende Tools nur per Allowlist (ADR-014) · T-2 Datenvergiftung → Quarantäne, Consent, Herkunft · T-3 Cross-Tenant → Pre-Filter · T-4 DoS → Limits/Timeouts je Adapter · T-5 Modellmanipulation → Digest/versionierte Modell-ID · T-6 MCP-Missbrauch → Agent-Gruppe nur auf dem MCP-Endpunkt, nur lesende Tools, Freigabe nur per Mensch.
 
 ---
 
@@ -855,7 +892,7 @@ T-1 Prompt Injection → untrusted data + Schema-Validierung + lesende Tools nur
 - **Externe Anbieter:** Ausfälle, Rate-Limits, Preisänderungen → Timeouts, definierter Fehlerzustand, Kosten je Anbieter ausweisen (NfA-7).
 - **Erosion der Modul- und Portgrenzen** → ArchUnit im CI-Gate.
 - **SSE hinter Proxy / NOTIFY-Limits** → Heartbeat, ungepuffertes Streaming, nur IDs im Payload.
-- **Verwaiste `PENDING`-Einträge und Blobs** → kurze TTL, gemeinsamer Cleanup-Job (`TtlCleanupJob`, alle `PT5M`, deckt `embedding`, `document_blob`, `retrieval_result`, `document_type_candidate`, `extraction_result` ab), Metriken. Offene Grenze: Ein Prozess in `FINALIZED_INDEX_PENDING` behält Embedding und ggf. Blobs bis zur Retry-Obergrenze (24 h, ADR-015); danach `INDEX_FAILED` und regulärer Cleanup. Der Alarm ist log-basiert (`ERROR`), eine Micrometer-Metrik fehlt noch (kein Actuator im Projekt).
+- **Verwaiste `PENDING`-Einträge und Blobs** → kurze TTL, gemeinsamer Cleanup-Job (`TtlCleanupJob`, alle `PT5M`, deckt `embedding`, `document_blob`, `retrieval_result`, `document_type_candidate`, `extraction_result` und `process_step` (`ProcessStepRetentionService`, `docextract.process.step-retention`, Default `PT48H`) ab), Metriken. Offene Grenze: Ein Prozess in `FINALIZED_INDEX_PENDING` behält Embedding und ggf. Blobs bis zur Retry-Obergrenze (24 h, ADR-015); danach `INDEX_FAILED` und regulärer Cleanup. Der Alarm ist log-basiert (`ERROR`), eine Micrometer-Metrik fehlt noch (kein Actuator im Projekt).
 - **TODO: Löschantrag je Mandant (NfA-5)** fehlt. `FinalizationStatePort.deleteByTenant` existiert, wird aber noch nirgends aufgerufen; `process_finalization` hat bewusst keine TTL.
 - **Self-Learning-Loop (Ausbaustufe):** Vergiftungsrisiko → nur mit separatem Consent, Quarantäne und Rollback.
 

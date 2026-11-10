@@ -9,5 +9,5 @@ import ch.adeon.apps.docextract.security.application.DvelopCredential;
  */
 public interface ExtractAttributes {
 
-  ExtractionResult extract(String processId, DvelopCredential credential);
+  ExtractionResult extract(String tenantId, String processId, DvelopCredential credential);
 }

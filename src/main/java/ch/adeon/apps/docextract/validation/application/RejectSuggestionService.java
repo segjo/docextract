@@ -1,71 +1,68 @@
 package ch.adeon.apps.docextract.validation.application;
 
+import ch.adeon.apps.docextract.audit.application.AuditChannel;
 import ch.adeon.apps.docextract.audit.application.AuditEvent;
 import ch.adeon.apps.docextract.audit.application.AuditPort;
 import ch.adeon.apps.docextract.ingest.port.DocumentBlobPort;
-import ch.adeon.apps.docextract.process.application.ProcessDocumentPort;
+import ch.adeon.apps.docextract.process.application.ProcessEventPort;
+import ch.adeon.apps.docextract.process.application.ProcessNotFoundException;
+import ch.adeon.apps.docextract.security.application.AuthContext;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
-import ch.adeon.apps.docextract.validation.domain.Finalization;
-import ch.adeon.apps.docextract.validation.domain.PendingEmbeddingCheck;
 import ch.adeon.apps.docextract.validation.domain.RejectionCommand;
-import ch.adeon.apps.docextract.validation.port.PendingEmbeddingCheckPort;
 import ch.adeon.apps.docextract.validation.port.PendingEmbeddingDeletePort;
-import java.util.Optional;
-import java.util.stream.Stream;
 import org.springframework.stereotype.Service;
 
 /**
- * Deletes the process's quarantined {@code PENDING} embedding and its blobs (ADR-006, C-7, T-2, §
- * 6.2) — rejection never touches the DMS and is refused once the DMS write happened (ADR-015).
+ * Deletes the caller's process's quarantined {@code PENDING} embedding and its blobs (ADR-006, C-7,
+ * T-2, § 6.2) — rejection never touches the DMS and is refused once the DMS write happened
+ * (ADR-015). The ports only see the caller's tenant, so another tenant's process is the same as an
+ * unknown one: 404.
  */
 @Service
 public class RejectSuggestionService implements RejectSuggestion {
 
   private final PendingEmbeddingDeletePort pendingEmbeddingDeletePort;
-  private final PendingEmbeddingCheckPort pendingEmbeddingCheckPort;
   private final DocumentBlobPort documentBlobPort;
-  private final ProcessDocumentPort processDocumentPort;
   private final FinalizationStatePort finalizationStatePort;
   private final AuthContextPort authContextPort;
   private final AuditPort auditPort;
+  private final ProcessEventPort processEventPort;
 
   public RejectSuggestionService(
       PendingEmbeddingDeletePort pendingEmbeddingDeletePort,
-      PendingEmbeddingCheckPort pendingEmbeddingCheckPort,
       DocumentBlobPort documentBlobPort,
-      ProcessDocumentPort processDocumentPort,
       FinalizationStatePort finalizationStatePort,
       AuthContextPort authContextPort,
-      AuditPort auditPort) {
+      AuditPort auditPort,
+      ProcessEventPort processEventPort) {
     this.pendingEmbeddingDeletePort = pendingEmbeddingDeletePort;
-    this.pendingEmbeddingCheckPort = pendingEmbeddingCheckPort;
     this.documentBlobPort = documentBlobPort;
-    this.processDocumentPort = processDocumentPort;
     this.finalizationStatePort = finalizationStatePort;
     this.authContextPort = authContextPort;
     this.auditPort = auditPort;
+    this.processEventPort = processEventPort;
   }
 
   @Override
   public void reject(RejectionCommand command) {
     String processId = command.processId();
-    String tenantId = authContextPort.current().tenantId();
-    Optional<Finalization> finalization = finalizationStatePort.find(processId);
-    boolean foreign =
-        Stream.of(
-                finalization.map(Finalization::tenantId),
-                processDocumentPort.find(processId).map(document -> document.tenantId()),
-                pendingEmbeddingCheckPort.find(processId).map(PendingEmbeddingCheck::tenantId))
-            .flatMap(Optional::stream)
-            .anyMatch(owner -> !owner.equals(tenantId));
-    if (foreign) {
-      throw new ProcessNotFoundException(processId);
-    }
-    if (finalization.isPresent()) {
+    AuthContext caller = authContextPort.current();
+    String tenantId = caller.tenantId();
+    if (finalizationStatePort.find(tenantId, processId).isPresent()) {
       throw new AlreadyFinalizedException(processId);
     }
-    pendingEmbeddingDeletePort.delete(processId);
-    documentBlobPort.deleteByProcess(processId);
-    auditPort.append(new AuditEvent("validation.reject", "", 0));
+    if (!processEventPort.exists(tenantId, processId)) {
+      throw new ProcessNotFoundException(processId);
+    }
+    pendingEmbeddingDeletePort.delete(tenantId, processId);
+    documentBlobPort.deleteByProcess(tenantId, processId);
+    auditPort.append(
+        AuditEvent.byUser(
+            tenantId,
+            AuditChannel.UI,
+            caller.agent(),
+            caller.actorHash(),
+            "validation.reject",
+            null));
   }
 }

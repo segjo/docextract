@@ -16,9 +16,11 @@ public class PgPendingEmbeddingDeleteAdapter implements PendingEmbeddingDeletePo
   }
 
   @Override
-  public void delete(String processId) {
+  public void delete(String tenantId, String processId) {
     jdbcTemplate.update(
-        "DELETE FROM embedding WHERE process_id = ? AND status = 'PENDING'", processId);
+        "DELETE FROM embedding WHERE process_id = ? AND tenant_id = ? AND status = 'PENDING'",
+        processId,
+        tenantId);
   }
 
   @Override
@@ -40,7 +42,8 @@ public class PgPendingEmbeddingDeleteAdapter implements PendingEmbeddingDeletePo
         WHERE e.process_id = ? AND e.status = 'PENDING' AND e.expires_at < now()
           AND NOT EXISTS (
             SELECT 1 FROM process_finalization f
-            WHERE f.process_id = e.process_id AND f.status = 'FINALIZED_INDEX_PENDING')
+            WHERE f.process_id = e.process_id AND f.tenant_id = e.tenant_id
+              AND f.status = 'FINALIZED_INDEX_PENDING')
         """,
         processId);
   }

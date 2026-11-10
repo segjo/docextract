@@ -12,5 +12,6 @@ import java.util.List;
  */
 public interface FindSimilar {
 
-  List<RetrievalResult> find(String processId, int topK, DvelopCredential credential);
+  List<RetrievalResult> find(
+      String tenantId, String processId, int topK, DvelopCredential credential);
 }

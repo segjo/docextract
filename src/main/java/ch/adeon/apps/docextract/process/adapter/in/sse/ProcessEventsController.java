@@ -1,10 +1,14 @@
 package ch.adeon.apps.docextract.process.adapter.in.sse;
 
+import static ch.adeon.apps.docextract.shared.config.OpenApiConfig.PROBLEM_JSON;
+import static ch.adeon.apps.docextract.shared.config.OpenApiConfig.PROBLEM_SCHEMA_REF;
 import static ch.adeon.apps.docextract.shared.config.OpenApiConfig.UNAUTHORIZED_REF;
 
 import ch.adeon.apps.docextract.process.application.ProcessEvent;
 import ch.adeon.apps.docextract.process.application.ProcessEventListener;
 import ch.adeon.apps.docextract.process.application.ProcessEventPort;
+import ch.adeon.apps.docextract.process.application.ProcessNotFoundException;
+import ch.adeon.apps.docextract.security.application.AuthContextPort;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -28,9 +32,12 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public class ProcessEventsController {
 
   private final ProcessEventPort processEventPort;
+  private final AuthContextPort authContextPort;
 
-  public ProcessEventsController(ProcessEventPort processEventPort) {
+  public ProcessEventsController(
+      ProcessEventPort processEventPort, AuthContextPort authContextPort) {
     this.processEventPort = processEventPort;
+    this.authContextPort = authContextPort;
   }
 
   @GetMapping(path = "/{processId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -49,7 +56,16 @@ public class ProcessEventsController {
               mediaType = MediaType.TEXT_EVENT_STREAM_VALUE,
               schema = @Schema(implementation = ProcessEvent.class)))
   @ApiResponse(responseCode = "401", ref = UNAUTHORIZED_REF)
+  @ApiResponse(
+      responseCode = "404",
+      description = "Prozess unbekannt oder gehört einem anderen Tenant (NfA-4).",
+      content = @Content(mediaType = PROBLEM_JSON, schema = @Schema(ref = PROBLEM_SCHEMA_REF)))
   public SseEmitter subscribe(@PathVariable String processId) {
+    String tenantId = authContextPort.current().tenantId();
+    // Before the stream opens: an unknown or foreign process gets a 404, not an empty stream.
+    if (!processEventPort.exists(tenantId, processId)) {
+      throw new ProcessNotFoundException(processId);
+    }
     SseEmitter emitter = new SseEmitter(0L);
     ProcessEventListener listener =
         event -> {
@@ -60,7 +76,7 @@ public class ProcessEventsController {
             emitter.completeWithError(ex);
           }
         };
-    processEventPort.subscribe(processId, listener);
+    processEventPort.subscribe(tenantId, processId, listener);
     Runnable unsubscribe = () -> processEventPort.unsubscribe(processId, listener);
     emitter.onCompletion(unsubscribe);
     emitter.onTimeout(unsubscribe);

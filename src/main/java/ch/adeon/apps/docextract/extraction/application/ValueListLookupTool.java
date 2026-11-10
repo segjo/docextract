@@ -39,6 +39,7 @@ final class ValueListLookupTool {
   private final ValueListPort valueListPort;
   private final AuditPort auditPort;
   private final ObjectMapper objectMapper;
+  private final String tenantId;
   private final String repositoryId;
   private final String objectDefinitionId;
   private final DvelopCredential credential;
@@ -52,6 +53,7 @@ final class ValueListLookupTool {
       ValueListPort valueListPort,
       AuditPort auditPort,
       ObjectMapper objectMapper,
+      String tenantId,
       String repositoryId,
       String objectDefinitionId,
       DvelopCredential credential,
@@ -61,6 +63,7 @@ final class ValueListLookupTool {
     this.valueListPort = valueListPort;
     this.auditPort = auditPort;
     this.objectMapper = objectMapper;
+    this.tenantId = tenantId;
     this.repositoryId = repositoryId;
     this.objectDefinitionId = objectDefinitionId;
     this.credential = credential;
@@ -89,8 +92,8 @@ final class ValueListLookupTool {
   String call(String argumentsJson) {
     String raw = argumentsJson == null ? "" : argumentsJson;
     auditPort.append(
-        new AuditEvent(
-            "extraction.tool." + NAME, Sha256.hex(raw.getBytes(StandardCharsets.UTF_8)), 0));
+        AuditEvent.system(
+            tenantId, "extraction.tool." + NAME, Sha256.hex(raw.getBytes(StandardCharsets.UTF_8))));
     if (++calls > maxCalls) {
       return error("tool call limit reached");
     }

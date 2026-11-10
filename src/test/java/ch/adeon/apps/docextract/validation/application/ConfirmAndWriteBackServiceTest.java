@@ -4,18 +4,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ch.adeon.apps.docextract.audit.application.AuditEvent;
 import ch.adeon.apps.docextract.audit.application.AuditPort;
 import ch.adeon.apps.docextract.ingest.port.DocumentBlobPort;
-import ch.adeon.apps.docextract.process.application.ProcessDocumentPort.StoredDocument;
 import ch.adeon.apps.docextract.process.application.ProcessDocumentPort;
+import ch.adeon.apps.docextract.process.application.ProcessDocumentPort.StoredDocument;
+import ch.adeon.apps.docextract.process.application.ProcessNotFoundException;
 import ch.adeon.apps.docextract.process.application.ProcessRepositoryPort;
 import ch.adeon.apps.docextract.security.application.AuthContext;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
@@ -55,6 +59,8 @@ class ConfirmAndWriteBackServiceTest {
   private ProcessDocumentPort processDocumentPort;
   private PendingEmbeddingCheckPort pendingEmbeddingCheckPort;
   private DocumentBlobPort documentBlobPort;
+  private AuthContextPort authContextPort;
+  private AuditPort auditPort;
   private ConfirmAndWriteBackService service;
 
   @BeforeEach
@@ -66,24 +72,27 @@ class ConfirmAndWriteBackServiceTest {
     pendingEmbeddingCheckPort = mock(PendingEmbeddingCheckPort.class);
     documentBlobPort = mock(DocumentBlobPort.class);
     OutboundCredentialPort outboundCredentialPort = mock(OutboundCredentialPort.class);
-    AuthContextPort authContextPort = mock(AuthContextPort.class);
+    authContextPort = mock(AuthContextPort.class);
+    auditPort = mock(AuditPort.class);
     ProcessRepositoryPort processRepositoryPort = mock(ProcessRepositoryPort.class);
     when(authContextPort.current()).thenReturn(new AuthContext("tenant-a", "user-1", "User"));
-    when(processDocumentPort.find("p1"))
-        .thenReturn(Optional.of(new StoredDocument("/blob/1", "a.pdf", "tenant-a")));
-    when(pendingEmbeddingCheckPort.find("p1"))
-        .thenReturn(Optional.of(new PendingEmbeddingCheck("tenant-a", false)));
-    when(processRepositoryPort.retrieve("p1")).thenReturn(Optional.of("repo-1"));
+    // The ports only return data of the tenant they are asked for (NfA-4): stubbed for tenant-a.
+    when(processDocumentPort.find("tenant-a", "p1"))
+        .thenReturn(Optional.of(new StoredDocument("/blob/1", "a.pdf")));
+    when(pendingEmbeddingCheckPort.find("tenant-a", "p1"))
+        .thenReturn(Optional.of(new PendingEmbeddingCheck(false)));
+    when(processRepositoryPort.retrieve("tenant-a", "p1")).thenReturn(Optional.of("repo-1"));
     when(outboundCredentialPort.current())
-        .thenReturn(new DvelopCredential("Authorization", "Bearer token", null));
-    when(finalizationStatePort.find("p1")).thenReturn(Optional.empty());
+        .thenReturn(
+            new DvelopCredential("Authorization", "Bearer token", null, "https://dms.local"));
+    when(finalizationStatePort.find("tenant-a", "p1")).thenReturn(Optional.empty());
     service =
         new ConfirmAndWriteBackService(
             dmsWritePort,
             corpusPromotionPort,
             outboundCredentialPort,
             authContextPort,
-            mock(AuditPort.class),
+            auditPort,
             processRepositoryPort,
             processDocumentPort,
             finalizationStatePort,
@@ -104,28 +113,28 @@ class ConfirmAndWriteBackServiceTest {
     assertThatThrownBy(() -> service.confirm(new ConfirmationCommand("p1", "DREC", Map.of())))
         .isInstanceOf(InvalidAttributesException.class);
 
-    verify(corpusPromotionPort, never()).promote(eq("p1"), any(), any());
+    verify(corpusPromotionPort, never()).promote(any(), eq("p1"), any(), any());
     verify(finalizationStatePort, never()).save(INDEX_PENDING);
-    verify(finalizationStatePort).discardWriteStarted("p1");
+    verify(finalizationStatePort).discardWriteStarted("tenant-a", "p1");
   }
 
   // Restfenster: früherer Versuch mit unbekanntem Ausgang, DMS weist zweiten Write mit 400 ab.
   @Test
   void dms_rejection_after_unknown_outcome_is_reported_as_possibly_finalized() {
-    when(finalizationStatePort.find("p1")).thenReturn(Optional.of(WRITE_STARTED));
+    when(finalizationStatePort.find("tenant-a", "p1")).thenReturn(Optional.of(WRITE_STARTED));
     when(dmsWritePort.writeAttributes(any(), any(), any(), any(), any(), any()))
         .thenThrow(new DmsWriteRejectedException("already stored"));
 
     assertThatThrownBy(() -> service.confirm(new ConfirmationCommand("p1", "DREC", Map.of())))
         .isInstanceOf(PossiblyAlreadyFinalizedException.class);
 
-    verify(finalizationStatePort, never()).discardWriteStarted(any());
-    verify(corpusPromotionPort, never()).promote(any(), any(), any());
+    verify(finalizationStatePort, never()).discardWriteStarted(any(), any());
+    verify(corpusPromotionPort, never()).promote(any(), any(), any(), any());
   }
 
   @Test
   void earlier_unknown_outcome_with_successful_retry_completes_the_saga() {
-    when(finalizationStatePort.find("p1")).thenReturn(Optional.of(WRITE_STARTED));
+    when(finalizationStatePort.find("tenant-a", "p1")).thenReturn(Optional.of(WRITE_STARTED));
     stubDmsWriteReturns("doc-1");
 
     ConfirmationResult result = service.confirm(new ConfirmationCommand("p1", "DREC", Map.of()));
@@ -142,7 +151,7 @@ class ConfirmAndWriteBackServiceTest {
         .isInstanceOf(DmsWriteFailedException.class);
 
     verify(finalizationStatePort).save(WRITE_STARTED);
-    verify(finalizationStatePort, never()).discardWriteStarted(any());
+    verify(finalizationStatePort, never()).discardWriteStarted(any(), any());
   }
 
   @Test
@@ -158,11 +167,92 @@ class ConfirmAndWriteBackServiceTest {
     order.verify(finalizationStatePort).save(WRITE_STARTED);
     order.verify(dmsWritePort).writeAttributes(any(), any(), any(), any(), any(), any());
     order.verify(finalizationStatePort).save(INDEX_PENDING);
-    order.verify(corpusPromotionPort).promote("p1", "repo-1", "doc-1");
+    order.verify(corpusPromotionPort).promote("tenant-a", "p1", "repo-1", "doc-1");
     order
         .verify(finalizationStatePort)
         .save(INDEX_PENDING.withStatus(FinalizationStatus.COMPLETED));
-    order.verify(documentBlobPort).deleteByProcess("p1");
+    order.verify(documentBlobPort).deleteByProcess("tenant-a", "p1");
+  }
+
+  @Test
+  void audits_started_before_the_marker_and_the_dms_write_and_writeback_after_the_saga_state() {
+    stubDmsWriteReturns("doc-1");
+
+    service.confirm(new ConfirmationCommand("p1", "DREC", Map.of()));
+
+    InOrder order = inOrder(auditPort, dmsWritePort, finalizationStatePort);
+    order.verify(auditPort).append(auditEvent("validation.writeback-started"));
+    order.verify(finalizationStatePort).save(WRITE_STARTED);
+    order.verify(dmsWritePort).writeAttributes(any(), any(), any(), any(), any(), any());
+    order.verify(finalizationStatePort).save(INDEX_PENDING);
+    order.verify(auditPort).append(auditEvent("validation.writeback"));
+  }
+
+  @Test
+  void failing_started_audit_blocks_the_dms_write_and_sets_no_marker() {
+    doThrow(new IllegalStateException("audit down"))
+        .when(auditPort)
+        .append(auditEvent("validation.writeback-started"));
+
+    assertThatThrownBy(() -> service.confirm(new ConfirmationCommand("p1", "DREC", Map.of())))
+        .isInstanceOf(IllegalStateException.class);
+
+    verify(dmsWritePort, never()).writeAttributes(any(), any(), any(), any(), any(), any());
+    verify(finalizationStatePort, never()).save(any());
+  }
+
+  // Audit-Fehler nach dem DMS-Write: Zustand gespeichert, Antwort 200, kein zweiter Write.
+  @Test
+  void failing_writeback_audit_after_the_dms_write_keeps_the_saga_state_and_the_response() {
+    stubDmsWriteReturns("doc-1");
+    doThrow(new IllegalStateException("audit down"))
+        .when(auditPort)
+        .append(auditEvent("validation.writeback"));
+
+    ConfirmationResult result = service.confirm(new ConfirmationCommand("p1", "DREC", Map.of()));
+
+    assertThat(result)
+        .isEqualTo(new ConfirmationResult("repo-1", "doc-1", true, FinalizationStatus.COMPLETED));
+    verify(finalizationStatePort).save(INDEX_PENDING);
+    verify(finalizationStatePort).save(INDEX_PENDING.withStatus(FinalizationStatus.COMPLETED));
+
+    when(finalizationStatePort.find("tenant-a", "p1"))
+        .thenReturn(Optional.of(INDEX_PENDING.withStatus(FinalizationStatus.COMPLETED)));
+    service.confirm(new ConfirmationCommand("p1", "DREC", Map.of()));
+    verify(dmsWritePort, times(1)).writeAttributes(any(), any(), any(), any(), any(), any());
+  }
+
+  @Test
+  void failing_writeback_audit_with_a_failing_promotion_stays_finalized_index_pending() {
+    stubDmsWriteReturns("doc-1");
+    doThrow(new IllegalStateException("audit down"))
+        .when(auditPort)
+        .append(auditEvent("validation.writeback"));
+    doThrow(new IllegalStateException("db down"))
+        .when(corpusPromotionPort)
+        .promote(anyString(), anyString(), anyString(), anyString());
+
+    ConfirmationResult result = service.confirm(new ConfirmationCommand("p1", "DREC", Map.of()));
+
+    assertThat(result.indexStatus()).isEqualTo(FinalizationStatus.FINALIZED_INDEX_PENDING);
+    verify(dmsWritePort, times(1)).writeAttributes(any(), any(), any(), any(), any(), any());
+  }
+
+  @Test
+  void failing_rejected_audit_does_not_hide_the_invalid_attributes_error_or_the_marker_cleanup() {
+    when(dmsWritePort.writeAttributes(any(), any(), any(), any(), any(), any())).thenReturn(null);
+    doThrow(new IllegalStateException("audit down"))
+        .when(auditPort)
+        .append(auditEvent("validation.writeback-rejected"));
+
+    assertThatThrownBy(() -> service.confirm(new ConfirmationCommand("p1", "DREC", Map.of())))
+        .isInstanceOf(InvalidAttributesException.class);
+
+    verify(finalizationStatePort).discardWriteStarted("tenant-a", "p1");
+  }
+
+  private static AuditEvent auditEvent(String eventType) {
+    return argThat(event -> event != null && eventType.equals(event.eventType()));
   }
 
   // (a) Promotion-Fehler → FINALIZED_INDEX_PENDING, kein zweiter DMS-Write.
@@ -171,7 +261,7 @@ class ConfirmAndWriteBackServiceTest {
     stubDmsWriteReturns("doc-1");
     doThrow(new IllegalStateException("db down"))
         .when(corpusPromotionPort)
-        .promote(anyString(), anyString(), anyString());
+        .promote(anyString(), anyString(), anyString(), anyString());
 
     ConfirmationResult result = service.confirm(new ConfirmationCommand("p1", "DREC", Map.of()));
 
@@ -187,59 +277,36 @@ class ConfirmAndWriteBackServiceTest {
   // (b) Retry im Zustand FINALIZED_INDEX_PENDING → nur Promotion, kein DMS-Write.
   @Test
   void repeated_confirm_in_finalized_index_pending_only_promotes() {
-    when(finalizationStatePort.find("p1")).thenReturn(Optional.of(INDEX_PENDING));
+    when(finalizationStatePort.find("tenant-a", "p1")).thenReturn(Optional.of(INDEX_PENDING));
 
     ConfirmationResult result = service.confirm(new ConfirmationCommand("p1", "DREC", Map.of()));
 
     assertThat(result)
         .isEqualTo(new ConfirmationResult("repo-1", "doc-1", true, FinalizationStatus.COMPLETED));
     verify(dmsWritePort, never()).writeAttributes(any(), any(), any(), any(), any(), any());
-    verify(corpusPromotionPort).promote("p1", "repo-1", "doc-1");
+    verify(corpusPromotionPort).promote("tenant-a", "p1", "repo-1", "doc-1");
     verify(finalizationStatePort).save(INDEX_PENDING.withStatus(FinalizationStatus.COMPLETED));
   }
 
+  // NfA-4: all ports above are stubbed for tenant-a only, so tenant-b finds nothing.
   @Test
-  void repeated_confirm_by_another_tenant_is_not_found() {
-    when(finalizationStatePort.find("p1"))
-        .thenReturn(
-            Optional.of(
-                new Finalization(
-                    "p1", "tenant-b", FinalizationStatus.FINALIZED_INDEX_PENDING, "r", "d")));
-
-    assertThatThrownBy(() -> service.confirm(new ConfirmationCommand("p1", "DREC", Map.of())))
-        .isInstanceOf(ProcessNotFoundException.class);
-
-    verify(corpusPromotionPort, never()).promote(any(), any(), any());
-  }
-
-  // § 6.2 pre-check: gleicher Tenant (NfA-4).
-  @Test
-  void confirm_of_another_tenant_s_process_never_writes_dms() {
-    when(processDocumentPort.find("p1"))
-        .thenReturn(Optional.of(new StoredDocument("/blob/1", "a.pdf", "tenant-b")));
+  void confirm_of_another_tenant_s_process_is_not_found_and_never_writes_or_promotes() {
+    when(authContextPort.current()).thenReturn(new AuthContext("tenant-b", "user-9", "Other"));
+    when(finalizationStatePort.find("tenant-a", "p1")).thenReturn(Optional.of(INDEX_PENDING));
 
     assertThatThrownBy(() -> service.confirm(new ConfirmationCommand("p1", "DREC", Map.of())))
         .isInstanceOf(ProcessNotFoundException.class);
 
     verify(dmsWritePort, never()).writeAttributes(any(), any(), any(), any(), any(), any());
-  }
-
-  @Test
-  void pending_embedding_of_another_tenant_blocks_the_dms_write() {
-    when(pendingEmbeddingCheckPort.find("p1"))
-        .thenReturn(Optional.of(new PendingEmbeddingCheck("tenant-b", false)));
-
-    assertThatThrownBy(() -> service.confirm(new ConfirmationCommand("p1", "DREC", Map.of())))
-        .isInstanceOf(ProcessNotFoundException.class);
-
-    verify(dmsWritePort, never()).writeAttributes(any(), any(), any(), any(), any(), any());
+    verify(corpusPromotionPort, never()).promote(any(), any(), any(), any());
+    verify(finalizationStatePort, never()).save(any());
   }
 
   // § 6.2 pre-check: PENDING gültig (C-7).
   @Test
   void expired_pending_embedding_blocks_the_dms_write() {
-    when(pendingEmbeddingCheckPort.find("p1"))
-        .thenReturn(Optional.of(new PendingEmbeddingCheck("tenant-a", true)));
+    when(pendingEmbeddingCheckPort.find("tenant-a", "p1"))
+        .thenReturn(Optional.of(new PendingEmbeddingCheck(true)));
 
     assertThatThrownBy(() -> service.confirm(new ConfirmationCommand("p1", "DREC", Map.of())))
         .isInstanceOf(ProcessExpiredException.class);
@@ -250,7 +317,7 @@ class ConfirmAndWriteBackServiceTest {
   // § 6.5: Retrieval übersprungen → kein PENDING, Freigabe bleibt möglich.
   @Test
   void confirm_without_pending_embedding_still_writes_dms() {
-    when(pendingEmbeddingCheckPort.find("p1")).thenReturn(Optional.empty());
+    when(pendingEmbeddingCheckPort.find("tenant-a", "p1")).thenReturn(Optional.empty());
     stubDmsWriteReturns("doc-1");
 
     ConfirmationResult result = service.confirm(new ConfirmationCommand("p1", "DREC", Map.of()));
@@ -268,9 +335,10 @@ class ConfirmAndWriteBackServiceTest {
 
     assertThat(promoted).isEqualTo(1);
     verify(dmsWritePort, never()).writeAttributes(any(), any(), any(), any(), any(), any());
-    verify(corpusPromotionPort).promote("p1", "repo-1", "doc-1");
+    // runs without request context: the tenant comes from the saga state
+    verify(corpusPromotionPort).promote("tenant-a", "p1", "repo-1", "doc-1");
     verify(finalizationStatePort).save(INDEX_PENDING.withStatus(FinalizationStatus.COMPLETED));
-    verify(documentBlobPort).deleteByProcess("p1");
+    verify(documentBlobPort).deleteByProcess("tenant-a", "p1");
   }
 
   @Test
@@ -279,7 +347,7 @@ class ConfirmAndWriteBackServiceTest {
         .thenReturn(List.of(INDEX_PENDING));
     doThrow(new IllegalStateException("db down"))
         .when(corpusPromotionPort)
-        .promote(anyString(), anyString(), anyString());
+        .promote(anyString(), anyString(), anyString(), anyString());
 
     int promoted = service.retryPendingPromotions();
 
@@ -298,7 +366,7 @@ class ConfirmAndWriteBackServiceTest {
         .thenReturn(List.of(failingSince));
     doThrow(new IllegalStateException("db down"))
         .when(corpusPromotionPort)
-        .promote(anyString(), anyString(), anyString());
+        .promote(anyString(), anyString(), anyString(), anyString());
 
     service.retryPendingPromotions();
 
@@ -312,7 +380,7 @@ class ConfirmAndWriteBackServiceTest {
         .thenReturn(List.of(failingSince));
     doThrow(new IllegalStateException("db down"))
         .when(corpusPromotionPort)
-        .promote(anyString(), anyString(), anyString());
+        .promote(anyString(), anyString(), anyString(), anyString());
 
     service.retryPendingPromotions();
 
@@ -321,13 +389,13 @@ class ConfirmAndWriteBackServiceTest {
 
   @Test
   void repeated_confirm_after_completion_neither_writes_nor_promotes() {
-    when(finalizationStatePort.find("p1"))
+    when(finalizationStatePort.find("tenant-a", "p1"))
         .thenReturn(Optional.of(INDEX_PENDING.withStatus(FinalizationStatus.COMPLETED)));
 
     service.confirm(new ConfirmationCommand("p1", "DREC", Map.of()));
 
     verify(dmsWritePort, never()).writeAttributes(any(), any(), any(), any(), any(), any());
-    verify(corpusPromotionPort, never()).promote(any(), any(), any());
+    verify(corpusPromotionPort, never()).promote(any(), any(), any(), any());
   }
 
   private void stubDmsWriteReturns(String dmsDocumentId) {

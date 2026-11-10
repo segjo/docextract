@@ -170,8 +170,7 @@ paths:
       - retrieval
   /api/v1/processes/{processId}/document-type-candidates:
     get:
-      description: "Leere Liste, solange kein Ergebnis vorliegt oder der Prozess unbekannt\
-        \ ist."
+      description: "Leere Liste, solange kein Ergebnis vorliegt."
       operationId: documentTypeCandidates
       parameters:
       - in: path
@@ -190,6 +189,12 @@ paths:
           description: OK
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Prozess unbekannt oder gehört einem anderen Tenant (NfA-4).
       summary: Dokumentart-Kandidaten des Prozesses
       tags:
       - retrieval
@@ -214,13 +219,18 @@ paths:
           description: Event-Stream (offen bis Client trennt).
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Prozess unbekannt oder gehört einem anderen Tenant (NfA-4).
       summary: Fortschritt als Server-Sent Events
       tags:
       - process
   /api/v1/processes/{processId}/extraction-result:
     get:
-      description: "Leeres Ergebnis, solange keines vorliegt oder der Prozess unbekannt\
-        \ ist."
+      description: "Leeres Ergebnis, solange keines vorliegt."
       operationId: extractionResult
       parameters:
       - in: path
@@ -237,6 +247,12 @@ paths:
           description: OK
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Prozess unbekannt oder gehört einem anderen Tenant (NfA-4).
       summary: Vorgeschlagene Dokumentart und Attributwerte des Prozesses
       tags:
       - extraction
@@ -266,13 +282,18 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Prozess unbekannt oder gehört einem anderen Tenant (NfA-4).
       summary: Extraktion mit vom Menschen gewählter Dokumentart wiederholen
       tags:
       - extraction
   /api/v1/processes/{processId}/similar-documents:
     get:
-      description: "Leere Liste, solange kein Ergebnis vorliegt oder der Prozess unbekannt\
-        \ ist."
+      description: "Leere Liste, solange kein Ergebnis vorliegt."
       operationId: similarDocuments
       parameters:
       - in: path
@@ -291,6 +312,12 @@ paths:
           description: OK
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Prozess unbekannt oder gehört einem anderen Tenant (NfA-4).
       summary: "Ähnliche, freigegebene Dokumente des Prozesses"
       tags:
       - retrieval

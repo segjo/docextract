@@ -1,6 +1,5 @@
 package ch.adeon.apps.docextract.validation.adapter.out.dms;
 
-import ch.adeon.apps.docextract.security.application.AppConfigPort;
 import ch.adeon.apps.docextract.security.application.DvelopCredential;
 import ch.adeon.apps.docextract.validation.port.DmsWriteFailedException;
 import ch.adeon.apps.docextract.validation.port.DmsWritePort;
@@ -35,11 +34,9 @@ public class DmsWriteAdapter implements DmsWritePort {
   private static final Logger LOG = LoggerFactory.getLogger(DmsWriteAdapter.class);
 
   private final RestClient restClient;
-  private final AppConfigPort appConfigPort;
 
-  public DmsWriteAdapter(AppConfigPort appConfigPort) {
+  public DmsWriteAdapter() {
     this.restClient = RestClient.create();
-    this.appConfigPort = appConfigPort;
   }
 
   @Override
@@ -54,9 +51,9 @@ public class DmsWriteAdapter implements DmsWritePort {
       ResponseEntity<Void> response =
           restClient
               .post()
-              .uri(appConfigPort.systemBaseUri() + "/dms/r/{repositoryId}/o2m/", repositoryId)
+              .uri(credential.baseUri() + "/dms/r/{repositoryId}/o2m/", repositoryId)
               // Origin is mandatory for write access (POST/PUT/DELETE/PATCH) to prevent CSRF.
-              .header(HttpHeaders.ORIGIN, appConfigPort.systemBaseUri())
+              .header(HttpHeaders.ORIGIN, credential.baseUri())
               .header(credential.headerName(), credential.headerValue())
               .headers(headers -> addAcceptLanguage(headers, credential))
               .contentType(MediaType.valueOf("application/hal+json"))

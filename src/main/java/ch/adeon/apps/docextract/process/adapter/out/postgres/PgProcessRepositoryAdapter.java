@@ -16,26 +16,29 @@ public class PgProcessRepositoryAdapter implements ProcessRepositoryPort {
   }
 
   @Override
-  public void stage(String processId, String repositoryId) {
+  public void stage(String tenantId, String processId, String repositoryId) {
     jdbcTemplate.update(
         """
         UPDATE document_blob SET repository_id = ?
-        WHERE process_id = ? AND kind = 'ORIGINAL'
+        WHERE process_id = ? AND tenant_id = ? AND kind = 'ORIGINAL'
         """,
         repositoryId,
-        processId);
+        processId,
+        tenantId);
   }
 
   @Override
-  public Optional<String> retrieve(String processId) {
+  public Optional<String> retrieve(String tenantId, String processId) {
     return jdbcTemplate
         .queryForList(
             """
             SELECT repository_id FROM document_blob
-            WHERE process_id = ? AND kind = 'ORIGINAL' AND repository_id IS NOT NULL
+            WHERE process_id = ? AND tenant_id = ? AND kind = 'ORIGINAL'
+              AND repository_id IS NOT NULL
             """,
             String.class,
-            processId)
+            processId,
+            tenantId)
         .stream()
         .findFirst();
   }

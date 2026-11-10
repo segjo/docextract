@@ -1459,3 +1459,293 @@ dokumentieren (Mandant, Agent-Identität, Modell-ID, Datenminimierung); Upgrade-
 
 **Unverändert offen:** Audit-Persistenz und Felder in `AuditEvent` (P5), zentraler Ownership-Check
 (P5), Scopes/Agent-Principals (P5), Fehlerformat ProblemDetail (P7), Modellinfo im UI (FR-5).
+
+---
+
+## 2026-11-08 — Mandant in allen Port-Aufrufen statt Guard (Block 3, P5 / Artefakt 4, Teil)
+
+**Tool/Modell:** GitHub Copilot Chat (Agent-Modus).
+
+**Auftrag (Prompt-Zusammenfassung):** P5 „Sicherheitskonzept Agent / MCP". Ein erster Entwurf mit
+`ProcessAccessGuard`, `ConsentGuard`, Kanal/Scopes und Audit-Tabelle wurde auf Rückfrage
+**vollständig zurückgenommen** (Stash `P5-attempt: ProcessAccessGuard/ConsentGuard/audit_entry`,
+nicht gelöscht) und durch einen einfacheren Ansatz ersetzt: die `tenantId` geht in **alle**
+prozessbezogenen Port-Aufrufe, die Tabellen filtern danach, keine Guards. Mandant = Wert aus
+`application.yml`, im Cloud-Betrieb ein Request-Header, im `DvelopAuthenticationFilter` in den
+Kontext gesetzt.
+
+**Kritik am verworfenen Entwurf (Grund für den Wechsel):** Der Guard holte den Mandanten aus dem
+ThreadLocal-Kontext (in asynchronen Threads falsch), war ein zweiter, vergessbarer Schritt vor dem
+Lesen, kostete eine Extra-Abfrage je Aufruf, und die Ports blieben ungefiltert. Zusätzlich lag in
+`FindSimilarService`/`StagePendingEmbeddingsService` ein bestehender Fehler: sie riefen
+`AuthContextPort.current()` im asynchronen Pipeline-Thread auf; das fiel nur nicht auf, weil der
+Mandant konstant `default-tenant` war.
+
+**Geänderte Dateien:**
+
+- Mandant: `application.yml` (`docextract.tenant.default-id`, `docextract.tenant.header`),
+  `security/domain/RequestTenant` (neu), `DvelopAuthenticationFilter` (Header lesen und prüfen),
+  `SecurityConfig`, `SessionAuthContextAdapter` (Header, sonst Default)
+- `V16__tenant_on_process_tables.sql` (neu): `tenant_id` in `process_step`, `retrieval_result`,
+  `document_type_candidate`, `extraction_result` (Bestand mit `default-tenant` aufgefüllt)
+- Ports mit `tenantId` als erstem Parameter: `ProcessEventPort`, `ProcessDocumentPort` (`StoredDocument`
+  ohne `tenantId`), `ProcessRepositoryPort`, `RetrievalResultPort`, `DocumentTypeCandidatesPort`,
+  `ExtractionResultPort`, `DocumentBlobPort` (`describe`, `readRange`, `delete`, `deleteByProcess`),
+  `FinalizationStatePort` (`find`, `discardWriteStarted`), `PendingEmbeddingCheckPort`
+  (`PendingEmbeddingCheck` ohne `tenantId`), `CorpusPromotionPort`, `PendingEmbeddingDeletePort.delete`;
+  die Postgres-Adapter filtern mit `AND tenant_id = ?`
+- Services: `FindSimilar`, `StageEmbeddings`, `ExtractAttributes`, `RetryExtraction`, `GetSimilarDocuments`,
+  `GetDocumentTypeCandidates`, `GetExtractionResult` mit `tenantId`-Parameter;
+  `FindSimilarService`/`StagePendingEmbeddingsService` ohne `AuthContextPort`;
+  `IngestDocumentService`, `PreviewGenerationService`, `ExtractTextService`, `ContentService`,
+  `ExtractAttributesService`, `PreviewStreamService`, `ConfirmAndWriteBackService`,
+  `RejectSuggestionService` (stark vereinfacht), `TtlCleanupService`, `AgentGatewayService`
+- Controller: `ProcessEventsController`, `RetrievalController`, `ExtractionController`
+  (lösen den Mandanten auf), `ValidationController` (OpenAPI: `404` bei `reject` entfällt)
+- Tests neu: `TenantResolutionTest`, `TenantScopedEndpointsTest`, `PgTenantFilterAdapterTest`;
+  erweitert/angepasst: `PgProcessEventAdapterTest`, `PgProcessRepositoryAdapterTest`,
+  `PgRetrievalResultAdapterTest`, `PgDocumentBlobAdapterTest`, `PgPendingEmbeddingDeleteAdapterTest`,
+  `ConfirmAndWriteBackServiceTest`, `RejectSuggestionServiceTest`, `FindSimilarServiceTest`,
+  `StagePendingEmbeddingsServiceTest`, `PreviewStreamServiceTest`, `AgentGatewayServiceTest`,
+  `McpToolAdapterTest`, `McpEndpointSecurityTest`, `TtlCleanupServiceTest`,
+  `ValidationControllerIdempotencyTest`, `IngestDocumentServiceTest`
+- `doc/ARCHITECTURE.md` (§ 0, § 5.2, § 6.3, § 8.2, § 8.4, neu § 8.6, ADR-015-Testnamen),
+  `doc/api/openapi.yaml` (regeneriert)
+
+**Übernommen (generiert):**
+
+- Header-Name `x-dv-tenant-id`: nur als Beispiel/Doku, nicht als Default. Die Property ist leer,
+  dann wird ein Header ignoriert (kein Mandantenwechsel durch den Client bei direktem Zugriff).
+  Der Wert wird geprüft (`[A-Za-z0-9._-]{1,128}`), sonst `401`.
+- Request-Thread: Controller/Adapter lösen den Mandanten auf und geben ihn explizit weiter;
+  Pipeline-Schritte bekommen ihn als Parameter (wie das Credential). Der Promotion-Retry nutzt
+  `Finalization.tenantId`.
+- Systemjobs bleiben mandantenübergreifend (`findExpiredProcessIds`, `deleteExpired`,
+  `findByStatus`); `TtlCleanupService` holt die geschützten `FINALIZED_INDEX_PENDING`-Prozesse einmal
+  per `findByStatus` statt je Prozess.
+- `RejectSuggestionService`: die manuelle Prüfung „fremder Mandant" entfällt, die Ports sind
+  gefiltert. Folge: ein unbekannter oder fremder Prozess ergibt `204` ohne Wirkung (vorher `404` bei
+  fremd).
+- Fremder Mandant bei Lese-Endpunkten: `200` mit leerem Ergebnis statt `404` (aus der Abfrage lässt
+  sich „fremd" nicht von „noch kein Ergebnis" unterscheiden, ohne eine zusätzliche Besitzer-Abfrage).
+  MCP behält `not_found` über `ProcessDocumentPort.find(tenantId, processId)`.
+- Live-Smoke (`dev`, Header aktiv, Port 18080): V16 migriert, Start ohne Fehler; Header `tenant-a` und
+  `tenant-b` ergeben `200 []`, ungültiger Header `401`.
+- `mvn -o clean verify` grün (156 Tests, ArchUnit grün).
+
+**Verworfen:**
+
+- `ProcessAccessGuard`, `ConsentGuard`, `Channel`/`Scope`, `audit_entry`/`PgAuditAdapter`: im Stash,
+  nicht übernommen.
+
+**Zu prüfen durch Mensch:**
+
+- OFFEN: Die P5-Punkte „minimale Rechte (Scopes)", „menschliche Freigabe für Kanal MCP
+  (`ConsentGuard`)" und „Audit je Tool-Call (Tabelle, `run_id` nullable, `channel`, `actor_ref`,
+  `tool_name`)" sind **nicht umgesetzt** (siehe ARCHITECTURE.md § 8.6, „Offen"). Ohne Kanal im Kontext
+  kann ein Agent-Key auch die REST-Endpunkte aufrufen; abgefedert nur durch den User ohne DMS-Rechte.
+  Umsetzen, und wenn ja wie (Entwurf im Stash `git stash list`)?
+- OFFEN: Header-Name und Vertrauen: `x-dv-tenant-id` ist aus `dvelop-dmsapp.yaml` abgeleitet (dort
+  als Mandanten-Header für Rate-Limits genannt), nicht gegen die d.velop-Dokumentation für Apps
+  geprüft. Muss der Proxy den Header setzen/überschreiben, oder liefert der IdP den Mandanten?
+- Entscheid nötig: fremder Mandant bei Lese-Endpunkten `200 []` statt `404` (siehe oben), `reject`
+  `204` statt `404`. Die P5-Vorgabe „fremde/unbekannte processId → 404" gilt damit nicht mehr.
+- `V16`: Backfill der Bestandszeilen mit `default-tenant`; bei einer Umgebung mit abweichendem
+  `docextract.tenant.default-id` und laufenden Prozessen müsste das angepasst werden. Die lokale
+  Dev-DB hatte die frühere V16 (`audit_entry`) aus dem verworfenen Entwurf; sie wurde manuell
+  zurückgenommen (Tabelle, Trigger, Funktion, Flyway-Eintrag).
+- Der Primärschlüssel von `extraction_result` und `document_type_candidate` ist nur `process_id`;
+  ein Schreibversuch eines anderen Mandanten auf dieselbe ID scheitert mit `DuplicateKeyException`
+  (500), überschreibt aber nichts. IDs sind serverseitig erzeugte UUIDs.
+- `DocumentBlobPort.describe` filtert nach Mandant; das zusätzliche Benutzer-Prädikat bleibt in
+  `PreviewStreamService`.
+- Guardrail-Code geändert: `DvelopAuthenticationFilter`, `SessionAuthContextAdapter`,
+  `SecurityConfig`, alle Port-Adapter oben — bitte gegenlesen.
+
+---
+
+## 2026-11-10 — Existenzprüfung, Agent-Trennung, Audit, d.velop-Header (Block 3, P5 / Artefakt 4, Rest)
+
+**Tool/Modell:** GitHub Copilot Chat (Agent-Modus).
+
+**Auftrag (Prompt-Zusammenfassung):** (1) Existenzprüfung ohne Guard über
+`ProcessEventPort.exists(tenantId, processId)`: Services lesen zuerst gefiltert, nur bei leerem
+Ergebnis wird `exists` gefragt, sonst `404` (similar-documents, document-type-candidates,
+extraction-result, retry, reject, SSE vor dem Stream). (2) Agent-Trennung in `SecurityConfig` über
+`docextract.agent.group-id`, Audit-Tabelle `audit_entry` (V17) mit insert-only-Adapter. (3) Echte
+d.velop-Mandanten-Header mit `docextract.tenant.app-secret` statt `docextract.tenant.header`.
+(4) Primärschlüssel `(tenant_id, process_id)`. (5) `SessionAuthContextAdapter` ohne Authentifizierung
+wirft `IllegalStateException`.
+
+**Geänderte Dateien (Auszug):**
+
+- Existenz: `ProcessEventPort.exists`, `PgProcessEventAdapter`, `GetSimilarDocumentsService`,
+  `GetDocumentTypeCandidatesService`, `GetExtractionResultService`, `ExtractAttributesService.retry`,
+  `RejectSuggestionService`, `ProcessEventsController`; `ProcessNotFoundException` liegt jetzt in
+  `process.application`; `RetrievalController`, `ExtractionController`, `ValidationController`
+  (OpenAPI: `404` zurück, `doc/api/openapi.yaml` regeneriert)
+- Sicherheit: `SecurityConfig` (Agent-Gruppe, Startabbruch bei MCP ohne Gruppe, `none` = keine
+  Gruppe), `DvelopAuthenticationFilter` (Einzel-/Mehrmandant, Signaturprüfung vor IdP),
+  `TenantSignature`, `RequestTenant(id, baseUri)`, `AgentGroup`, `AuthContext.agent`,
+  `SessionAuthContextAdapter`; `DvelopCredential` trägt die Basis-URI (DMS-Adapter und IdP-Aufrufe
+  gehen gegen sie)
+- Audit: `V17__audit_entry.sql`, `PgAuditAdapter` (ersetzt `NoopAuditAdapter`), `AuditEvent` mit
+  Mandant, `AuditChannel`, `ActorKind`, `actor_hash`, `args_hash`; Aufrufe in `AgentGatewayService`,
+  `ConfirmAndWriteBackService`, `RejectSuggestionService`, `IngestDocumentService`
+- `V16__tenant_on_process_tables.sql` (noch nicht committet, daher erweitert): Primärschlüssel
+  `(tenant_id, process_id)` für `extraction_result`, `document_type_candidate`,
+  `process_finalization`; `ON CONFLICT` in `PgFinalizationStateAdapter` angepasst
+- Tests neu: `TenantSignatureTest` (Testvektor der d.velop-Doku), `TenantResolutionTest`
+  (neu geschrieben), `PgAuditAdapterTest` (neu geschrieben), `McpEndpointSecurityTest` (Agent: confirm,
+  reject, extraction-result, SSE `403`; Agent/Mensch auf MCP mit Audit-`actor_kind`; Startabbruch;
+  `none`); angepasst: `TenantScopedEndpointsTest` (`404` statt leer), `RejectSuggestionServiceTest`,
+  `AgentGatewayServiceTest`, `McpToolAdapterTest`, `PgTenantFilterAdapterTest`,
+  `PgProcessEventAdapterTest` (`exists`) u. a.
+- `doc/ARCHITECTURE.md` § 5.2, § 6.3, § 8.4 (`AUDIT_ENTRY`), § 8.6
+
+**Übernommen (generiert):**
+
+- Basis-URI reist im `DvelopCredential` (kein zusätzlicher Parameter in jedem Port).
+- Audit-Fehler lässt die Anfrage scheitern (fail closed); bei `confirm` wird nach dem DMS-Write
+  protokolliert (`validation.writeback`).
+- Zusätzliche Spalte `token_count` in `audit_entry` (für LLM-Ereignisse); `tenant_id`, `actor_kind`,
+  `actor_hash` sind für Systemereignisse (LLM-Prompt-Hash, TTL-Bereinigung) `NULL`.
+- Einzelmandant: Basis-URI weiter über `AppConfigPort` (jstore zuerst, sonst
+  `docextract.dvelop.system-base-uri`). Dev-Profil setzt `docextract.agent.group-id: none`.
+- Live-Smoke (`dev`, MCP an, Secret gesetzt): V16/V17 migriert, Start ohne Fehler; Request ohne
+  Signatur `403`, mit Testvektor-Signatur weiter zum IdP (`401`, IdP nicht erreichbar).
+- `mvn -o clean verify` grün (190 Tests, ArchUnit grün).
+
+**Zu prüfen durch Mensch:**
+
+- `process_step` wird nie bereinigt (unbegrenztes Wachstum) und ist damit länger aufbewahrt als die
+  Ergebnistabellen; eine Aufbewahrungsregel fehlt.
+- `BLOB_STORED` ist vor dem `202` nicht garantiert committet (asynchrone Kette); `DMS_UPLOADED` ist es.
+  Ein sofortiges `GET` direkt nach dem `202` findet den Prozess über `DMS_UPLOADED`.
+- `actor_hash` ist ungesalzen (SHA-256 über Mandant und User-ID), bei bekannten User-IDs rückrechenbar.
+- `ValueListLookupTool` und `ExtractAttributesService.audit` schreiben `SYSTEM`-Ereignisse ohne
+  Mandant; ob der Mandant dort ergänzt werden soll, ist offen.
+- Header werden nur bei gesetztem App-Secret ausgewertet; ohne Secret im Cloud-Betrieb liefe alles
+  unter dem Default-Mandanten.
+- Lokale Dev-DB: die frühere V16 wurde manuell zurückgenommen (Spalten, Flyway-Eintrag) und neu
+  migriert. Der Stash `P5-attempt…` besteht weiter.
+- Guardrail-Code geändert: `SecurityConfig`, `DvelopAuthenticationFilter`, `TenantSignature`,
+  `SessionAuthContextAdapter`, `PgAuditAdapter` — bitte gegenlesen.
+
+---
+
+## 2026-11-10 (2) — P5-Abschluss Teil 2: Retention, Basis-URI, Audit-Schlüssel, Confirm-Reihenfolge (Block 3, P5 / Artefakt 4)
+
+**Tool/Modell:** GitHub Copilot Chat (Agent-Modus).
+
+**Auftrag (Prompt-Zusammenfassung):** Die offenen Punkte des Eintrags oben schliessen, je Punkt mit
+Test, V16/V17 (noch nicht committet) in place: (1) `process_step`-Retention als `TtlPurger` mit
+Startprüfung, (2) Test „`exists` ist nach dem `202` wahr“, (3) im Mehrmandantenbetrieb kein Fallback
+auf `AppConfigPort`, (4) `provider`/`model_id` in `audit_entry`, (5) LLM-Ereignisse mit Mandant,
+(6) `actor_hash` als HMAC mit eigenem Schlüssel, (7) Confirm-Reihenfolge mit
+`validation.writeback-started`, (8) ARCHITECTURE an den Code angleichen.
+
+**Geänderte Dateien:**
+
+- Retention: `ProcessStepRetentionService` (validation, `TtlPurger`; Startprüfung im Konstruktor),
+  `ProcessEventPort.deleteStepsOfIdleProcesses`, `PgProcessEventAdapter`, `application.yml`
+  (`docextract.process.step-retention: PT48H`). Tests: `ProcessStepRetentionServiceTest`,
+  `PgProcessEventAdapterTest` (Löschen, Ausnahme, Prozess mit jüngstem Schritt bleibt)
+- Existenz nach `202`: `IngestDocumentServiceTest.process_exists_for_its_tenant_as_soon_as_ingest_returns`
+  (Preview-Future bleibt offen, `DMS_UPLOADED` genügt)
+- Basis-URI: `DvelopCredential` verweigert fehlende/leere Basis-URI, `DvelopAuthenticationFilter` lehnt
+  einen leeren signierten `x-dv-baseuri` mit `403` ab. Tests in `TenantResolutionTest` (kein Zugriff
+  auf `AppConfigPort` im Mehrmandantenbetrieb)
+- Audit: `V17__audit_entry.sql` (`provider`, `model_id`), `AuditEvent` (`llm(...)`, `ttlCleanup()`,
+  kein öffentlicher 3-Argument-Konstruktor mehr), `PgAuditAdapter`, `ExtractAttributesService` und
+  `ValueListLookupTool` (Mandant aus der Pipeline), `TtlCleanupService`. Tests:
+  `ExtractAttributesServiceTest` (neu, auch `retry` → `404`), `ValueListLookupToolTest`,
+  `PgAuditAdapterTest`
+- Actor-Hash: `shared.hash.Hmac`, `AuthContext.actorHash` (Feld statt Methode),
+  `SessionAuthContextAdapter(agentGroupId, actorKey, appSecret)`, `application.yml`
+  (`docextract.audit.actor-key`). Tests: `SessionAuthContextAdapterTest` (neu),
+  `McpEndpointSecurityTest`, `AgentGatewayServiceTest`
+- Confirm: `ConfirmAndWriteBackService` (`validation.writeback-started` vor Marker und DMS-Write;
+  nach dem Write erst Saga-Zustand, dann `validation.writeback`, Fehler dort nur `ERROR`-Log).
+  Tests: `ConfirmAndWriteBackServiceTest` (Reihenfolge, fail closed vor dem Write, Audit-Fehler nach
+  dem Write → Zustand gespeichert, Antwort ok, kein zweiter Write)
+- `doc/ARCHITECTURE.md` § 2, § 3, § 3.1, § 5.2, § 5.4, § 5.5, § 6.1, § 6.3, § 8.2, § 8.3, § 8.4,
+  § 8.6, § 10.3
+
+**Übernommen (generiert):**
+
+- Die Startprüfung der Retention steht im Konstruktor des Purgers (liest die TTL-Properties mit den
+  gleichen Defaults wie die Adapter) statt in einer eigenen Config-Klasse. Geprüft werden Blob-,
+  Retrieval-Result-, Pending-Embedding-, Extraction-Result-TTL und `promotion-retry-limit`; die
+  in-memory Staging-TTL (`PT30M`) ist nicht dabei.
+- Der Purger löscht einen Prozess erst, wenn sein _neuester_ Schritt älter als die Retention ist (kein
+  halber SSE-Verlauf). Er überspringt Prozesse in `FINALIZED_INDEX_PENDING` nach `process_id`.
+- Der Actor-Schlüssel ist ein Klartext-String (kein Base64). Ohne App-Secret und ohne Schlüssel gilt
+  ein fester Dev-Schlüssel mit `WARN` im Log; mit Secret und ohne Schlüssel, oder mit Schlüssel
+  gleich Secret, bricht der Start ab.
+- `AuthContext` behält Konstruktoren ohne `actorHash` (nur für Tests); der Hash ist dann `null`.
+- Zusätzlich zur Vorgabe: auch ein Fehler beim Audit `validation.writeback-rejected` wird nur
+  geloggt, damit die Marker-Bereinigung (`discardWriteStarted`, jetzt vor dem Audit) und die
+  ursprüngliche Fehlerantwort erhalten bleiben.
+- Tool-Aufrufe (`extraction.tool.lookup_value_list`) tragen Mandant, aber weder Anbieter noch Modell.
+- Hinweis zum Build: ein inkrementelles `mvn test-compile` erkannte geänderte Signaturen in Tests
+  nicht; erst `mvn clean test-compile` zeigte die Fehler.
+
+**Zu prüfen durch Mensch:**
+
+- Die Retention-Abfrage gruppiert `process_step` nach `process_id` ohne Index auf `created_at`; bei
+  sehr vielen Zeilen messen.
+- Der Purger skippt nach `process_id` allein (nicht nach Mandant und Prozess); Prozess-IDs sind
+  UUIDs, die Wahrscheinlichkeit einer Kollision ist vernachlässigbar.
+- Eine Rotation von `docextract.audit.actor-key` macht alte und neue `actor_hash` nicht mehr
+  vergleichbar.
+- Dev-Profil und Smoke-Boot laufen weiter mit dem Dev-Schlüssel (`WARN`); für die Cloud
+  `DOCEXTRACT_AUDIT_ACTOR_KEY` setzen.
+- Guardrail-Code geändert: `ProcessStepRetentionService`, `ConfirmAndWriteBackService`,
+  `SessionAuthContextAdapter`, `DvelopCredential`, `DvelopAuthenticationFilter` — bitte gegenlesen.
+
+---
+
+## 2026-11-10 (3) — P5-Abschluss Teil 3: Index, Actor-Key-Pflicht, Doku-Angleichung (Block 3, P5 / Artefakt 4)
+
+**Tool/Modell:** GitHub Copilot Chat (Agent-Modus).
+
+**Auftrag (Prompt-Zusammenfassung):** (1) V16 (noch nicht committet, in place): Index auf
+`process_step (process_id, created_at)`. (2) `docextract.audit.actor-key`: Dev-Schlüssel nur im Profil
+`dev`, sonst Pflicht (Startabbruch), Mindestlänge 32, je Fall ein Test. (3) ARCHITECTURE.md angleichen
+(§ 3.1, § 5.4/§ 5.5, ADR-002, ADR-015, § 6.2, § 11, § 8.6). (4) CONTEXT.md: „grün" nur nach
+`mvn -o clean verify`.
+
+**Geänderte Dateien:**
+
+- `V16__tenant_on_process_tables.sql`: `idx_process_step_process_created`. Test:
+  `PgProcessEventAdapterTest.retention_query_is_backed_by_an_index_on_process_id_and_created_at`
+- `SessionAuthContextAdapter` (neuer Parameter `Environment`; Dev-Schlüssel nur bei Profil `dev`,
+  sonst Startabbruch; Mindestlänge 32 in jedem Profil; mit App-Secret auch im Profil `dev` Pflicht;
+  Schlüssel ≠ Secret), `application.yml`. Tests: `SessionAuthContextAdapterTest` (neu geschrieben, je
+  Fall), `McpEndpointSecurityTest` (echter Start: ohne Schlüssel Abbruch, zu kurzer Schlüssel Abbruch,
+  Profil `dev` startet), `TenantResolutionTest`
+- `doc/ARCHITECTURE.md`: § 3.1 (Zeile IdP korrigiert, Agent-Zeile: Agent-Gruppe, nur MCP, nur lesend),
+  § 5.4/§ 5.5 („Mandantenfilter + `exists`" statt „Ownership"), § 6.2 (Diagramm mit
+  `writeback-started` vor dem DMS-Write), § 6.3, § 8.6 (Actor-Key-Regeln, Purger-Skip über
+  `process_id`, Index-Punkt aus „Offen" entfernt), ADR-002 und ADR-015 (Schritt 0: signierter Header
+  bzw. Einzelmandant-Default; Audit-Schritte), § 11 (`process_step` in der Cleanup-Liste)
+- `doc/CONTEXT.md` § 8: Regel zur Meldung „grün"
+
+**Übernommen (generiert):**
+
+- Dev-Schlüssel jetzt `docextract-dev-actor-key-not-for-production` (44 Zeichen, damit er die
+  Mindestlänge erfüllt); `WARN` im Log bleibt.
+- Die Mindestlänge gilt auch im Profil `dev`, nur ein fehlender Schlüssel fällt dort zurück.
+- Die Dev-DB musste für V16 und V17 zurückgenommen werden (Spalten, Primärschlüssel, `audit_entry`,
+  Flyway-Einträge 16 und 17), da Flyway sonst die V16-Prüfsumme bemängelt.
+- Beim Durchsehen von § 3.1 fiel auf, dass meine frühere Änderung die IdP-Zeile um eine Spalte
+  verkürzt hatte; korrigiert.
+
+**Zu prüfen durch Mensch:**
+
+- Wer das Profil `dev` in einer Umgebung mit echten Daten aktiviert, bekommt den bekannten Dev-Schlüssel
+  (nur `WARN`); das Profil ist als lokale Entwicklung gedacht.
+- Bestehende Deployments ohne `DOCEXTRACT_AUDIT_ACTOR_KEY` starten nach diesem Stand nicht mehr.
+- Bei `docker-compose.yml`/README wurde der neue Pflichtparameter nicht ergänzt.
+- Guardrail-Code geändert: `SessionAuthContextAdapter` — bitte gegenlesen.

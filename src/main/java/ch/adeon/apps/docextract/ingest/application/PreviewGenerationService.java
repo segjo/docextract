@@ -47,10 +47,11 @@ public class PreviewGenerationService implements GeneratePreview {
       String processId, UUID originalBlobId, MediaType mediaType, String tenantId, String userId) {
     log.info("preview started processId={} originalBlobId={}", processId, originalBlobId);
     processEventPort.publish(
-        new ProcessEvent(processId, ProcessStep.PREVIEW, StepStatus.STARTED, null));
+        tenantId, new ProcessEvent(processId, ProcessStep.PREVIEW, StepStatus.STARTED, null));
     if (mediaType.isPdf()) {
       log.info("preview skipped (native pdf) processId={}", processId);
       processEventPort.publish(
+          tenantId,
           new ProcessEvent(
               processId, ProcessStep.PREVIEW, StepStatus.COMPLETED, originalBlobId.toString()));
       return CompletableFuture.completedFuture(Optional.empty());
@@ -59,6 +60,7 @@ public class PreviewGenerationService implements GeneratePreview {
       BlobRef previewBlob = renderAndStorePreview(originalBlobId, processId, tenantId, userId);
       log.info("preview completed processId={} previewBlobId={}", processId, previewBlob.blobId());
       processEventPort.publish(
+          tenantId,
           new ProcessEvent(
               processId,
               ProcessStep.PREVIEW,
@@ -68,16 +70,16 @@ public class PreviewGenerationService implements GeneratePreview {
     } catch (PreviewRenderingException ex) {
       log.warn("preview failed processId={}", processId, ex);
       processEventPort.publish(
-          new ProcessEvent(processId, ProcessStep.PREVIEW, StepStatus.FAILED, null));
+          tenantId, new ProcessEvent(processId, ProcessStep.PREVIEW, StepStatus.FAILED, null));
       return CompletableFuture.completedFuture(Optional.empty());
     }
   }
 
   private BlobRef renderAndStorePreview(
       UUID originalBlobId, String processId, String tenantId, String userId) {
-    BlobRef original = documentBlobPort.describe(originalBlobId);
+    BlobRef original = documentBlobPort.describe(tenantId, originalBlobId);
     byte[] originalBytes =
-        documentBlobPort.readRange(originalBlobId, PageRange.full(original.sizeBytes()));
+        documentBlobPort.readRange(tenantId, originalBlobId, PageRange.full(original.sizeBytes()));
     byte[] pdf =
         previewRenderPort.renderPreview(
             originalBlobId.toString(), original.mediaType(), originalBytes);

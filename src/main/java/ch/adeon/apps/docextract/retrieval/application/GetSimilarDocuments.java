@@ -9,5 +9,5 @@ import java.util.List;
  */
 public interface GetSimilarDocuments {
 
-  List<RetrievalResult> get(String processId);
+  List<RetrievalResult> get(String tenantId, String processId);
 }

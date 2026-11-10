@@ -7,7 +7,9 @@ import ch.adeon.apps.docextract.shared.cleanup.TtlPurger;
 import ch.adeon.apps.docextract.validation.domain.Finalization;
 import ch.adeon.apps.docextract.validation.domain.FinalizationStatus;
 import ch.adeon.apps.docextract.validation.port.PendingEmbeddingDeletePort;
+import java.util.Set;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 /**
@@ -36,32 +38,37 @@ public class TtlCleanupService implements TtlPurger {
 
   @Override
   public int purgeExpired() {
+    // System-wide job over all tenants, hence no tenant filter on these ports.
+    Set<String> indexPending =
+        finalizationStatePort.findByStatus(FinalizationStatus.FINALIZED_INDEX_PENDING).stream()
+            .map(Finalization::processId)
+            .collect(Collectors.toSet());
     int deleted =
         purge(
             pendingEmbeddingDeletePort.findExpiredProcessIds(),
+            indexPending,
             pendingEmbeddingDeletePort::deleteExpired);
-    deleted += purge(documentBlobPort.findExpiredProcessIds(), documentBlobPort::deleteExpired);
+    deleted +=
+        purge(
+            documentBlobPort.findExpiredProcessIds(),
+            indexPending,
+            documentBlobPort::deleteExpired);
     return deleted;
   }
 
-  private int purge(Iterable<String> expiredProcessIds, Consumer<String> deleteExpired) {
+  private int purge(
+      Iterable<String> expiredProcessIds,
+      Set<String> indexPending,
+      Consumer<String> deleteExpired) {
     int deleted = 0;
     for (String processId : expiredProcessIds) {
-      if (isIndexPending(processId)) {
+      if (indexPending.contains(processId)) {
         continue;
       }
       deleteExpired.accept(processId);
-      auditPort.append(new AuditEvent("validation.ttl-cleanup", "", 0));
+      auditPort.append(AuditEvent.ttlCleanup());
       deleted++;
     }
     return deleted;
-  }
-
-  private boolean isIndexPending(String processId) {
-    return finalizationStatePort
-        .find(processId)
-        .map(Finalization::status)
-        .filter(status -> status == FinalizationStatus.FINALIZED_INDEX_PENDING)
-        .isPresent();
   }
 }

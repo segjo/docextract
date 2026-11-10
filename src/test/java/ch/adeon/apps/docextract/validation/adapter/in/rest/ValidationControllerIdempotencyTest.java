@@ -69,15 +69,16 @@ class ValidationControllerIdempotencyTest {
     when(authContextPort.current()).thenReturn(new AuthContext("tenant-a", "user-1", "User"));
     OutboundCredentialPort outboundCredentialPort = mock(OutboundCredentialPort.class);
     when(outboundCredentialPort.current())
-        .thenReturn(new DvelopCredential("Authorization", "Bearer token", null));
+        .thenReturn(
+            new DvelopCredential("Authorization", "Bearer token", null, "https://dms.local"));
     ProcessDocumentPort processDocumentPort = mock(ProcessDocumentPort.class);
-    when(processDocumentPort.find("p1"))
-        .thenReturn(Optional.of(new StoredDocument("/blob/1", "a.pdf", "tenant-a")));
+    when(processDocumentPort.find("tenant-a", "p1"))
+        .thenReturn(Optional.of(new StoredDocument("/blob/1", "a.pdf")));
     PendingEmbeddingCheckPort pendingEmbeddingCheckPort = mock(PendingEmbeddingCheckPort.class);
-    when(pendingEmbeddingCheckPort.find("p1"))
-        .thenReturn(Optional.of(new PendingEmbeddingCheck("tenant-a", false)));
+    when(pendingEmbeddingCheckPort.find("tenant-a", "p1"))
+        .thenReturn(Optional.of(new PendingEmbeddingCheck(false)));
     ProcessRepositoryPort processRepositoryPort = mock(ProcessRepositoryPort.class);
-    when(processRepositoryPort.retrieve("p1")).thenReturn(Optional.of("repo-1"));
+    when(processRepositoryPort.retrieve("tenant-a", "p1")).thenReturn(Optional.of("repo-1"));
     when(dmsWritePort.writeAttributes(any(), any(), any(), any(), any(), any()))
         .thenReturn("doc-1");
 
@@ -112,7 +113,7 @@ class ValidationControllerIdempotencyTest {
 
     assertThat(second).isEqualTo(first);
     verify(dmsWritePort, times(1)).writeAttributes(any(), any(), any(), any(), any(), any());
-    verify(corpusPromotionPort, times(1)).promote("p1", "repo-1", "doc-1");
+    verify(corpusPromotionPort, times(1)).promote("tenant-a", "p1", "repo-1", "doc-1");
   }
 
   @Test
@@ -120,7 +121,7 @@ class ValidationControllerIdempotencyTest {
     doThrow(new IllegalStateException("db down"))
         .doNothing()
         .when(corpusPromotionPort)
-        .promote(anyString(), anyString(), anyString());
+        .promote(anyString(), anyString(), anyString(), anyString());
 
     mockMvc
         .perform(confirmRequest())
@@ -134,7 +135,7 @@ class ValidationControllerIdempotencyTest {
         .andExpect(jsonPath("$.indexStatus").value("COMPLETED"));
 
     verify(dmsWritePort, times(1)).writeAttributes(any(), any(), any(), any(), any(), any());
-    verify(corpusPromotionPort, times(2)).promote("p1", "repo-1", "doc-1");
+    verify(corpusPromotionPort, times(2)).promote("tenant-a", "p1", "repo-1", "doc-1");
   }
 
   private static MockHttpServletRequestBuilder confirmRequest() {
@@ -166,8 +167,8 @@ class ValidationControllerIdempotencyTest {
     }
 
     @Override
-    public Optional<Finalization> find(String processId) {
-      return Optional.ofNullable(rows.get(processId));
+    public Optional<Finalization> find(String tenantId, String processId) {
+      return Optional.ofNullable(rows.get(processId)).filter(f -> f.tenantId().equals(tenantId));
     }
 
     @Override
@@ -176,9 +177,13 @@ class ValidationControllerIdempotencyTest {
     }
 
     @Override
-    public void discardWriteStarted(String processId) {
+    public void discardWriteStarted(String tenantId, String processId) {
       rows.computeIfPresent(
-          processId, (id, f) -> f.status() == FinalizationStatus.DMS_WRITE_STARTED ? null : f);
+          processId,
+          (id, f) ->
+              f.tenantId().equals(tenantId) && f.status() == FinalizationStatus.DMS_WRITE_STARTED
+                  ? null
+                  : f);
     }
 
     @Override

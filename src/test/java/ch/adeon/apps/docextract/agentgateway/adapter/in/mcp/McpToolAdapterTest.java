@@ -15,8 +15,7 @@ import ch.adeon.apps.docextract.audit.application.AuditPort;
 import ch.adeon.apps.docextract.extraction.application.ExtractedAttribute;
 import ch.adeon.apps.docextract.extraction.application.ExtractionResult;
 import ch.adeon.apps.docextract.extraction.application.GetExtractionResult;
-import ch.adeon.apps.docextract.process.application.ProcessDocumentPort;
-import ch.adeon.apps.docextract.process.application.ProcessDocumentPort.StoredDocument;
+import ch.adeon.apps.docextract.process.application.ProcessNotFoundException;
 import ch.adeon.apps.docextract.retrieval.application.GetSimilarDocuments;
 import ch.adeon.apps.docextract.retrieval.port.RetrievalResult;
 import ch.adeon.apps.docextract.security.application.AuthContext;
@@ -28,7 +27,6 @@ import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,7 +40,6 @@ class McpToolAdapterTest {
 
   private final GetExtractionResult getExtractionResult = mock(GetExtractionResult.class);
   private final GetSimilarDocuments getSimilarDocuments = mock(GetSimilarDocuments.class);
-  private final ProcessDocumentPort processDocumentPort = mock(ProcessDocumentPort.class);
   private final AuthContextPort authContextPort = mock(AuthContextPort.class);
   private final AuditPort auditPort = mock(AuditPort.class);
 
@@ -50,14 +47,10 @@ class McpToolAdapterTest {
 
   @BeforeEach
   void setUp() {
-    when(authContextPort.current()).thenReturn(new AuthContext("tenant-a", "agent", "Agent"));
+    when(authContextPort.current()).thenReturn(new AuthContext("tenant-a", "agent", "Agent", true));
     McpTool service =
         new AgentGatewayService(
-            getExtractionResult,
-            getSimilarDocuments,
-            processDocumentPort,
-            authContextPort,
-            auditPort);
+            getExtractionResult, getSimilarDocuments, authContextPort, auditPort);
     tools =
         new McpToolAdapter(service, JsonMapper.builder().build())
             .specifications().stream()
@@ -86,8 +79,7 @@ class McpToolAdapterTest {
 
   @Test
   void returns_suggestions_of_own_process() {
-    ownedBy("tenant-a");
-    when(getExtractionResult.get(PROCESS_ID))
+    when(getExtractionResult.get("tenant-a", PROCESS_ID))
         .thenReturn(
             new ExtractionResult(
                 "DREC", List.of(new ExtractedAttribute("p1", SECRET_VALUE, null, 0.8, "x"))));
@@ -100,8 +92,7 @@ class McpToolAdapterTest {
 
   @Test
   void returns_top_similar_documents_without_metadata() {
-    ownedBy("tenant-a");
-    when(getSimilarDocuments.get(PROCESS_ID))
+    when(getSimilarDocuments.get("tenant-a", PROCESS_ID))
         .thenReturn(List.of(new RetrievalResult("repo-1", "doc-1", 0.95, "{\"secret\":1}")));
 
     CallToolResult result = call("find_similar_documents", Map.of("processId", PROCESS_ID));
@@ -115,13 +106,13 @@ class McpToolAdapterTest {
 
   @Test
   void foreign_tenant_process_yields_error_without_data() {
-    ownedBy("tenant-b");
+    when(getExtractionResult.get("tenant-a", PROCESS_ID))
+        .thenThrow(new ProcessNotFoundException(PROCESS_ID));
 
     CallToolResult result = call("get_process_suggestions", Map.of("processId", PROCESS_ID));
 
     assertThat(result.isError()).isTrue();
-    assertThat(text(result)).contains("\"code\":\"not_found\"").doesNotContain("tenant-b");
-    verifyNoInteractions(getExtractionResult);
+    assertThat(text(result)).contains("\"code\":\"not_found\"").doesNotContain("tenant");
   }
 
   @Test
@@ -138,13 +129,12 @@ class McpToolAdapterTest {
       assertThat(result.isError()).isTrue();
       assertThat(text(result)).contains("\"code\":\"invalid_argument\"");
     });
-    verifyNoInteractions(processDocumentPort, getSimilarDocuments);
+    verifyNoInteractions(getExtractionResult, getSimilarDocuments);
   }
 
   @Test
   void every_tool_call_is_audited() {
-    ownedBy("tenant-a");
-    when(getExtractionResult.get(PROCESS_ID)).thenReturn(ExtractionResult.EMPTY);
+    when(getExtractionResult.get("tenant-a", PROCESS_ID)).thenReturn(ExtractionResult.EMPTY);
 
     call("get_process_suggestions", Map.of("processId", PROCESS_ID));
     call("find_similar_documents", Map.of("processId", "bad"));
@@ -156,11 +146,6 @@ class McpToolAdapterTest {
   private CallToolResult call(String name, Map<String, Object> arguments) {
     CallToolRequest request = CallToolRequest.builder(name).arguments(arguments).build();
     return tools.get(name).callHandler().apply(null, request);
-  }
-
-  private void ownedBy(String tenantId) {
-    when(processDocumentPort.find(PROCESS_ID))
-        .thenReturn(Optional.of(new StoredDocument("/dms/r/repo/blob/chunk", "a.pdf", tenantId)));
   }
 
   @SuppressWarnings("unchecked")

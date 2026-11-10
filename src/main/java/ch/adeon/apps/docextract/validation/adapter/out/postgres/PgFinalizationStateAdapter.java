@@ -34,7 +34,7 @@ public class PgFinalizationStateAdapter implements FinalizationStatePort {
         INSERT INTO process_finalization
             (process_id, tenant_id, status, repository_id, dms_document_id, first_failed_at)
         VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT (process_id) DO UPDATE
+        ON CONFLICT (tenant_id, process_id) DO UPDATE
         SET status = EXCLUDED.status,
             repository_id = EXCLUDED.repository_id,
             dms_document_id = EXCLUDED.dms_document_id,
@@ -50,9 +50,13 @@ public class PgFinalizationStateAdapter implements FinalizationStatePort {
   }
 
   @Override
-  public Optional<Finalization> find(String processId) {
+  public Optional<Finalization> find(String tenantId, String processId) {
     return jdbcTemplate
-        .query(SELECT + " WHERE process_id = ?", PgFinalizationStateAdapter::map, processId)
+        .query(
+            SELECT + " WHERE process_id = ? AND tenant_id = ?",
+            PgFinalizationStateAdapter::map,
+            processId,
+            tenantId)
         .stream()
         .findFirst();
   }
@@ -64,10 +68,12 @@ public class PgFinalizationStateAdapter implements FinalizationStatePort {
   }
 
   @Override
-  public void discardWriteStarted(String processId) {
+  public void discardWriteStarted(String tenantId, String processId) {
     jdbcTemplate.update(
-        "DELETE FROM process_finalization WHERE process_id = ? AND status = 'DMS_WRITE_STARTED'",
-        processId);
+        "DELETE FROM process_finalization"
+            + " WHERE process_id = ? AND tenant_id = ? AND status = 'DMS_WRITE_STARTED'",
+        processId,
+        tenantId);
   }
 
   @Override

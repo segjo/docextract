@@ -71,7 +71,7 @@ class PgDocumentBlobAdapterTest {
             "tenant-a",
             "user-1");
 
-    BlobRef described = adapter.describe(stored.blobId());
+    BlobRef described = adapter.describe("tenant-a", stored.blobId());
 
     assertThat(described.kind()).isEqualTo(BlobKind.ORIGINAL);
     assertThat(described.mediaType()).isEqualTo(MediaType.PDF);
@@ -90,7 +90,8 @@ class PgDocumentBlobAdapterTest {
 
     BlobRef stored =
         adapter.store(BlobKind.ORIGINAL, MediaType.PDF, content, "p", "tenant-a", "user-1");
-    byte[] readBack = adapter.readRange(stored.blobId(), PageRange.full(content.length));
+    byte[] readBack =
+        adapter.readRange("tenant-a", stored.blobId(), PageRange.full(content.length));
 
     assertThat(readBack).isEqualTo(content);
   }
@@ -106,7 +107,7 @@ class PgDocumentBlobAdapterTest {
 
     long start = PgDocumentBlobAdapter.PAGE_SIZE_BYTES - 10;
     long end = PgDocumentBlobAdapter.PAGE_SIZE_BYTES + 20;
-    byte[] slice = adapter.readRange(stored.blobId(), new PageRange(start, end));
+    byte[] slice = adapter.readRange("tenant-a", stored.blobId(), new PageRange(start, end));
 
     assertThat(slice).hasSize((int) (end - start + 1));
     assertThat(slice[0]).isEqualTo(content[(int) start]);
@@ -119,9 +120,9 @@ class PgDocumentBlobAdapterTest {
         adapter.store(
             BlobKind.ORIGINAL, MediaType.PDF, new byte[] {9, 9}, "p", "tenant-a", "user-1");
 
-    adapter.delete(stored.blobId());
+    adapter.delete("tenant-a", stored.blobId());
 
-    assertThatThrownBy(() -> adapter.describe(stored.blobId()))
+    assertThatThrownBy(() -> adapter.describe("tenant-a", stored.blobId()))
         .isInstanceOf(BlobNotFoundException.class);
     Integer remainingPages =
         jdbcTemplate.queryForObject(
@@ -133,8 +134,22 @@ class PgDocumentBlobAdapterTest {
 
   @Test
   void describe_of_unknown_blob_throws_not_found() {
-    assertThatThrownBy(() -> adapter.describe(UUID.randomUUID()))
+    assertThatThrownBy(() -> adapter.describe("tenant-a", UUID.randomUUID()))
         .isInstanceOf(BlobNotFoundException.class);
+  }
+
+  @Test
+  void another_tenants_blob_cannot_be_described_read_or_deleted() {
+    BlobRef stored =
+        adapter.store(BlobKind.ORIGINAL, MediaType.PDF, new byte[] {1, 2}, "p", "tenant-a", "u");
+
+    assertThatThrownBy(() -> adapter.describe("tenant-b", stored.blobId()))
+        .isInstanceOf(BlobNotFoundException.class);
+    assertThatThrownBy(() -> adapter.readRange("tenant-b", stored.blobId(), PageRange.full(2)))
+        .isInstanceOf(BlobNotFoundException.class);
+    adapter.delete("tenant-b", stored.blobId());
+
+    assertThat(adapter.describe("tenant-a", stored.blobId()).sizeBytes()).isEqualTo(2);
   }
 
   @Test
@@ -158,10 +173,20 @@ class PgDocumentBlobAdapterTest {
     adapter.store(BlobKind.PREVIEW, MediaType.PDF, new byte[] {1}, "p1", "t", "u");
     adapter.store(BlobKind.ORIGINAL, MediaType.PDF, new byte[] {1}, "p2", "t", "u");
 
-    adapter.deleteByProcess("p1");
+    adapter.deleteByProcess("t", "p1");
 
     assertThat(jdbcTemplate.queryForList("SELECT process_id FROM document_blob", String.class))
         .containsExactly("p2");
+  }
+
+  @Test
+  void delete_by_process_leaves_another_tenants_blobs_untouched() {
+    adapter.store(BlobKind.ORIGINAL, MediaType.PDF, new byte[] {1}, "p1", "tenant-a", "u");
+
+    adapter.deleteByProcess("tenant-b", "p1");
+
+    assertThat(jdbcTemplate.queryForList("SELECT process_id FROM document_blob", String.class))
+        .containsExactly("p1");
   }
 
   @Test

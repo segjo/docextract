@@ -21,14 +21,15 @@ public interface DocumentBlobPort {
       String tenantId,
       String userId);
 
-  BlobRef describe(UUID blobId);
+  /** Throws {@code BlobNotFoundException} for an unknown blob and for another tenant's blob. */
+  BlobRef describe(String tenantId, UUID blobId);
 
-  byte[] readRange(UUID blobId, PageRange range);
+  byte[] readRange(String tenantId, UUID blobId, PageRange range);
 
-  void delete(UUID blobId);
+  void delete(String tenantId, UUID blobId);
 
   /** Deletes all blobs (ORIGINAL, PREVIEW) of a process, e.g. after finalization (§ 6.2). */
-  void deleteByProcess(String processId);
+  void deleteByProcess(String tenantId, String processId);
 
   /** Process ids with at least one blob past {@code expires_at}. */
   List<String> findExpiredProcessIds();

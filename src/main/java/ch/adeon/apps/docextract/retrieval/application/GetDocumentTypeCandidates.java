@@ -10,5 +10,5 @@ import java.util.List;
  */
 public interface GetDocumentTypeCandidates {
 
-  List<DmsDocumentMetadata> get(String processId);
+  List<DmsDocumentMetadata> get(String tenantId, String processId);
 }

@@ -13,12 +13,13 @@ public interface FinalizationStatePort {
 
   void save(Finalization finalization);
 
-  Optional<Finalization> find(String processId);
+  /** Empty for an unknown process and for one owned by another tenant (NfA-4). */
+  Optional<Finalization> find(String tenantId, String processId);
 
   List<Finalization> findByStatus(FinalizationStatus status);
 
   /** Removes a {@code DMS_WRITE_STARTED} marker after a clean DMS rejection; other states stay. */
-  void discardWriteStarted(String processId);
+  void discardWriteStarted(String tenantId, String processId);
 
   /**
    * No TTL: rows are only removed on an explicit deletion request per tenant (NfA-5). TODO: no

@@ -35,11 +35,12 @@ class PreviewStreamServiceTest {
   void pdf_is_streamed_directly_from_the_original_blob_without_rendering() {
     UUID originalBlobId = UUID.randomUUID();
     when(authContextPort.current()).thenReturn(OWNER);
-    when(documentBlobPort.describe(originalBlobId))
+    when(documentBlobPort.describe("tenant-a", originalBlobId))
         .thenReturn(
             new BlobRef(
                 originalBlobId, BlobKind.ORIGINAL, MediaType.PDF, 4, "p1", "tenant-a", "user-1"));
-    when(documentBlobPort.readRange(eq(originalBlobId), any())).thenReturn(new byte[] {1, 2, 3, 4});
+    when(documentBlobPort.readRange(eq("tenant-a"), eq(originalBlobId), any()))
+        .thenReturn(new byte[] {1, 2, 3, 4});
 
     PreviewChunk result = service.stream(originalBlobId, null);
 
@@ -54,17 +55,19 @@ class PreviewStreamServiceTest {
     MediaType docx =
         MediaType.of("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     when(authContextPort.current()).thenReturn(OWNER);
-    when(documentBlobPort.describe(originalBlobId))
+    when(documentBlobPort.describe("tenant-a", originalBlobId))
         .thenReturn(
             new BlobRef(originalBlobId, BlobKind.ORIGINAL, docx, 3, "p1", "tenant-a", "user-1"));
-    when(documentBlobPort.readRange(eq(originalBlobId), any())).thenReturn(new byte[] {1, 2, 3});
+    when(documentBlobPort.readRange(eq("tenant-a"), eq(originalBlobId), any()))
+        .thenReturn(new byte[] {1, 2, 3});
     when(previewRenderPort.renderPreview(anyString(), eq(docx), any())).thenReturn(new byte[] {9});
     when(documentBlobPort.store(
             eq(BlobKind.PREVIEW), eq(MediaType.PDF), any(), eq("p1"), eq("tenant-a"), eq("user-1")))
         .thenReturn(
             new BlobRef(
                 previewBlobId, BlobKind.PREVIEW, MediaType.PDF, 1, "p1", "tenant-a", "user-1"));
-    when(documentBlobPort.readRange(eq(previewBlobId), any())).thenReturn(new byte[] {9});
+    when(documentBlobPort.readRange(eq("tenant-a"), eq(previewBlobId), any()))
+        .thenReturn(new byte[] {9});
 
     PreviewChunk result = service.stream(originalBlobId, null);
 
@@ -75,12 +78,13 @@ class PreviewStreamServiceTest {
   void a_given_range_is_passed_through_to_the_blobstore() {
     UUID originalBlobId = UUID.randomUUID();
     when(authContextPort.current()).thenReturn(OWNER);
-    when(documentBlobPort.describe(originalBlobId))
+    when(documentBlobPort.describe("tenant-a", originalBlobId))
         .thenReturn(
             new BlobRef(
                 originalBlobId, BlobKind.ORIGINAL, MediaType.PDF, 10, "p1", "tenant-a", "user-1"));
     PageRange range = new PageRange(2, 4);
-    when(documentBlobPort.readRange(originalBlobId, range)).thenReturn(new byte[] {5, 6, 7});
+    when(documentBlobPort.readRange("tenant-a", originalBlobId, range))
+        .thenReturn(new byte[] {5, 6, 7});
 
     PreviewChunk result = service.stream(originalBlobId, range);
 
@@ -92,12 +96,13 @@ class PreviewStreamServiceTest {
   void an_open_ended_range_is_clamped_to_the_actual_blob_size_without_overflowing() {
     UUID originalBlobId = UUID.randomUUID();
     when(authContextPort.current()).thenReturn(OWNER);
-    when(documentBlobPort.describe(originalBlobId))
+    when(documentBlobPort.describe("tenant-a", originalBlobId))
         .thenReturn(
             new BlobRef(
                 originalBlobId, BlobKind.ORIGINAL, MediaType.PDF, 10, "p1", "tenant-a", "user-1"));
     PageRange openEnded = new PageRange(7, Long.MAX_VALUE);
-    when(documentBlobPort.readRange(originalBlobId, openEnded)).thenReturn(new byte[] {8, 9, 10});
+    when(documentBlobPort.readRange("tenant-a", originalBlobId, openEnded))
+        .thenReturn(new byte[] {8, 9, 10});
 
     PreviewChunk result = service.stream(originalBlobId, openEnded);
 
@@ -109,10 +114,9 @@ class PreviewStreamServiceTest {
   void a_different_tenant_is_denied_as_if_the_blob_did_not_exist() {
     UUID originalBlobId = UUID.randomUUID();
     when(authContextPort.current()).thenReturn(new AuthContext("tenant-b", "user-1", "User One"));
-    when(documentBlobPort.describe(originalBlobId))
-        .thenReturn(
-            new BlobRef(
-                originalBlobId, BlobKind.ORIGINAL, MediaType.PDF, 4, "p1", "tenant-a", "user-1"));
+    // the port filters by tenant: another tenant's blob does not exist for tenant-b
+    when(documentBlobPort.describe("tenant-b", originalBlobId))
+        .thenThrow(new BlobNotFoundException(originalBlobId));
 
     assertThatThrownBy(() -> service.stream(originalBlobId, null))
         .isInstanceOf(BlobNotFoundException.class);
@@ -122,7 +126,7 @@ class PreviewStreamServiceTest {
   void a_different_user_of_the_same_tenant_is_denied_as_if_the_blob_did_not_exist() {
     UUID originalBlobId = UUID.randomUUID();
     when(authContextPort.current()).thenReturn(new AuthContext("tenant-a", "user-2", "User Two"));
-    when(documentBlobPort.describe(originalBlobId))
+    when(documentBlobPort.describe("tenant-a", originalBlobId))
         .thenReturn(
             new BlobRef(
                 originalBlobId, BlobKind.ORIGINAL, MediaType.PDF, 4, "p1", "tenant-a", "user-1"));

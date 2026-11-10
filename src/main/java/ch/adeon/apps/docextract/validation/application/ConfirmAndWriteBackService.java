@@ -1,11 +1,14 @@
 package ch.adeon.apps.docextract.validation.application;
 
+import ch.adeon.apps.docextract.audit.application.AuditChannel;
 import ch.adeon.apps.docextract.audit.application.AuditEvent;
 import ch.adeon.apps.docextract.audit.application.AuditPort;
 import ch.adeon.apps.docextract.ingest.port.DocumentBlobPort;
-import ch.adeon.apps.docextract.process.application.ProcessDocumentPort.StoredDocument;
 import ch.adeon.apps.docextract.process.application.ProcessDocumentPort;
+import ch.adeon.apps.docextract.process.application.ProcessDocumentPort.StoredDocument;
+import ch.adeon.apps.docextract.process.application.ProcessNotFoundException;
 import ch.adeon.apps.docextract.process.application.ProcessRepositoryPort;
+import ch.adeon.apps.docextract.security.application.AuthContext;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
 import ch.adeon.apps.docextract.security.application.OutboundCredentialPort;
 import ch.adeon.apps.docextract.validation.domain.Finalization;
@@ -84,13 +87,12 @@ public class ConfirmAndWriteBackService implements ConfirmAndWriteBack, RetryCor
   @Override
   public ConfirmationResult confirm(ConfirmationCommand command) {
     String processId = command.processId();
-    String tenantId = authContextPort.current().tenantId();
+    AuthContext caller = authContextPort.current();
+    String tenantId = caller.tenantId();
 
     // Re-entry (client retry, other instance): the DMS write already happened, never repeat it.
-    Optional<Finalization> existing = finalizationStatePort.find(processId);
-    if (existing.isPresent() && !tenantId.equals(existing.get().tenantId())) {
-      throw new ProcessNotFoundException(processId);
-    }
+    // The ports only see the caller's tenant: another tenant's process is simply not found.
+    Optional<Finalization> existing = finalizationStatePort.find(tenantId, processId);
     boolean earlierWriteOutcomeUnknown =
         existing.map(f -> f.status() == FinalizationStatus.DMS_WRITE_STARTED).orElse(false);
     if (existing.isPresent() && !earlierWriteOutcomeUnknown) {
@@ -103,21 +105,20 @@ public class ConfirmAndWriteBackService implements ConfirmAndWriteBack, RetryCor
           finalization.repositoryId(), finalization.dmsDocumentId(), true, status);
     }
 
-    // § 6.2 pre-check: process exists, belongs to the caller's tenant, quarantine still valid.
+    // § 6.2 pre-check: process exists for the caller's tenant, quarantine still valid.
     StoredDocument staged =
         processDocumentPort
-            .find(processId)
-            .filter(document -> tenantId.equals(document.tenantId()))
+            .find(tenantId, processId)
             .orElseThrow(() -> new ProcessNotFoundException(processId));
-    Optional<PendingEmbeddingCheck> pending = pendingEmbeddingCheckPort.find(processId);
-    if (pending.isPresent() && !tenantId.equals(pending.get().tenantId())) {
-      throw new ProcessNotFoundException(processId);
-    }
+    Optional<PendingEmbeddingCheck> pending = pendingEmbeddingCheckPort.find(tenantId, processId);
     if (pending.isPresent() && pending.get().expired()) {
       throw new ProcessExpiredException(processId);
     }
-    String repositoryId = processRepositoryPort.retrieve(processId).orElse(defaultRepositoryId);
+    String repositoryId =
+        processRepositoryPort.retrieve(tenantId, processId).orElse(defaultRepositoryId);
 
+    // Fail closed: without this audit entry nothing is written and no marker is set.
+    auditPort.append(userEvent(caller, "validation.writeback-started"));
     // Saga step 0 (ADR-015): marker before the non-idempotent DMS write, so a later DMS 400 after
     // an unknown outcome (crash, timeout) is reported as "possibly finalized", not as invalid
     // input.
@@ -135,16 +136,15 @@ public class ConfirmAndWriteBackService implements ConfirmAndWriteBack, RetryCor
               command.dmsSourceCategory(),
               outboundCredentialPort.current());
     } catch (DmsWriteRejectedException ex) {
-      throw rejected(processId, earlierWriteOutcomeUnknown, ex.getMessage());
+      throw rejected(caller, processId, earlierWriteOutcomeUnknown, ex.getMessage());
     }
     if (dmsDocumentId == null) {
       // A null dmsDocumentId means the DMS rejected the write-back due to invalid attributes.
       // Abort the saga before any audit/promotion so the client can repeat the validation step
       // with corrected attributes instead of silently landing in an inconsistent state.
-      throw rejected(processId, earlierWriteOutcomeUnknown, null);
+      throw rejected(caller, processId, earlierWriteOutcomeUnknown, null);
     }
 
-    auditPort.append(new AuditEvent("validation.writeback", "", 0));
     // Saga step 2 (ADR-015): persist FINALIZED_INDEX_PENDING before promoting, so a crash or a
     // promotion failure leaves a state from which only the idempotent promotion is retried.
     Finalization finalization =
@@ -155,9 +155,18 @@ public class ConfirmAndWriteBackService implements ConfirmAndWriteBack, RetryCor
             repositoryId,
             dmsDocumentId);
     finalizationStatePort.save(finalization);
+    // The write is done and recorded: a failing audit must not turn it into an error response.
+    try {
+      auditPort.append(userEvent(caller, "validation.writeback"));
+    } catch (RuntimeException ex) {
+      log.error(
+          "Audit entry validation.writeback of process {} could not be written: {}",
+          processId,
+          ex.getClass().getSimpleName());
+    }
     FinalizationStatus status = promote(finalization);
     // The bytes now live in the DMS; the retry only needs the ids from the saga state.
-    deleteBlobs(processId);
+    deleteBlobs(tenantId, processId);
     return new ConfirmationResult(repositoryId, dmsDocumentId, true, status);
   }
 
@@ -169,7 +178,7 @@ public class ConfirmAndWriteBackService implements ConfirmAndWriteBack, RetryCor
     for (Finalization finalization :
         finalizationStatePort.findByStatus(FinalizationStatus.FINALIZED_INDEX_PENDING)) {
       if (promote(finalization) == FinalizationStatus.COMPLETED) {
-        deleteBlobs(finalization.processId());
+        deleteBlobs(finalization.tenantId(), finalization.processId());
         promoted++;
         continue;
       }
@@ -194,7 +203,7 @@ public class ConfirmAndWriteBackService implements ConfirmAndWriteBack, RetryCor
   /** Final failure (C-7): TTL cleanup may now delete embedding and blobs; the DMS keeps the doc. */
   private void giveUp(Finalization finalization) {
     finalizationStatePort.save(finalization.withStatus(FinalizationStatus.INDEX_FAILED));
-    auditPort.append(new AuditEvent("validation.promotion-abandoned", "", 0));
+    auditPort.append(AuditEvent.system(finalization.tenantId(), "validation.promotion-abandoned"));
     log.error(
         "Corpus promotion for process {} abandoned after {}, now INDEX_FAILED",
         finalization.processId(),
@@ -205,20 +214,23 @@ public class ConfirmAndWriteBackService implements ConfirmAndWriteBack, RetryCor
   private FinalizationStatus promote(Finalization finalization) {
     try {
       corpusPromotionPort.promote(
-          finalization.processId(), finalization.repositoryId(), finalization.dmsDocumentId());
+          finalization.tenantId(),
+          finalization.processId(),
+          finalization.repositoryId(),
+          finalization.dmsDocumentId());
     } catch (RuntimeException ex) {
       log.warn(
           "Corpus promotion failed for process {}, stays FINALIZED_INDEX_PENDING: {}",
           finalization.processId(),
           ex.getClass().getSimpleName());
-      auditPort.append(new AuditEvent("validation.promotion-failed", "", 0));
+      auditPort.append(AuditEvent.system(finalization.tenantId(), "validation.promotion-failed"));
       if (finalization.firstFailedAt() == null) {
         finalizationStatePort.save(finalization.withFirstFailedAt(clock.instant()));
       }
       return FinalizationStatus.FINALIZED_INDEX_PENDING;
     }
     finalizationStatePort.save(finalization.withStatus(FinalizationStatus.COMPLETED));
-    auditPort.append(new AuditEvent("validation.promotion", "", 0));
+    auditPort.append(AuditEvent.system(finalization.tenantId(), "validation.promotion"));
     return FinalizationStatus.COMPLETED;
   }
 
@@ -227,20 +239,37 @@ public class ConfirmAndWriteBackService implements ConfirmAndWriteBack, RetryCor
    * is already stored (the DMS refuses a second write with 400) — keep the marker in that case.
    */
   private RuntimeException rejected(
-      String processId, boolean earlierWriteOutcomeUnknown, String reason) {
-    auditPort.append(new AuditEvent("validation.writeback-rejected", "", 0));
+      AuthContext caller, String processId, boolean earlierWriteOutcomeUnknown, String reason) {
     if (earlierWriteOutcomeUnknown) {
+      auditRejection(caller, processId);
       return new PossiblyAlreadyFinalizedException(processId);
     }
-    finalizationStatePort.discardWriteStarted(processId);
+    finalizationStatePort.discardWriteStarted(caller.tenantId(), processId);
+    auditRejection(caller, processId);
     return reason == null
         ? new InvalidAttributesException(processId)
         : new InvalidAttributesException(processId, reason);
   }
 
-  private void deleteBlobs(String processId) {
+  private void auditRejection(AuthContext caller, String processId) {
     try {
-      documentBlobPort.deleteByProcess(processId);
+      auditPort.append(userEvent(caller, "validation.writeback-rejected"));
+    } catch (RuntimeException ex) {
+      log.error(
+          "Audit entry validation.writeback-rejected of process {} could not be written: {}",
+          processId,
+          ex.getClass().getSimpleName());
+    }
+  }
+
+  private static AuditEvent userEvent(AuthContext caller, String eventType) {
+    return AuditEvent.byUser(
+        caller.tenantId(), AuditChannel.UI, caller.agent(), caller.actorHash(), eventType, null);
+  }
+
+  private void deleteBlobs(String tenantId, String processId) {
+    try {
+      documentBlobPort.deleteByProcess(tenantId, processId);
     } catch (RuntimeException ex) {
       // Best effort: the TTL cleanup removes them later.
       log.warn("Deleting blobs of process {} failed: {}", processId, ex.getClass().getSimpleName());

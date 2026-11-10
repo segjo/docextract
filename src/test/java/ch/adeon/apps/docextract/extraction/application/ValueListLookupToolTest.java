@@ -27,7 +27,7 @@ import tools.jackson.databind.ObjectMapper;
 class ValueListLookupToolTest {
 
   private static final DvelopCredential CREDENTIAL =
-      new DvelopCredential("Authorization", "Bearer t", "de-CH");
+      new DvelopCredential("Authorization", "Bearer t", "de-CH", "https://dms.local");
 
   private final ValueListPort valueListPort = mock(ValueListPort.class);
   private final AuditPort auditPort = mock(AuditPort.class);
@@ -37,6 +37,7 @@ class ValueListLookupToolTest {
         valueListPort,
         auditPort,
         new ObjectMapper(),
+        "tenant-a",
         "repo-1",
         "type-1",
         CREDENTIAL,
@@ -104,7 +105,9 @@ class ValueListLookupToolTest {
     ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
     verify(auditPort, times(2)).append(audit.capture());
     assertThat(audit.getAllValues())
-        .allSatisfy(event -> assertThat(event.promptHash()).doesNotContain("Muster").hasSize(64));
+        .allSatisfy(event -> assertThat(event.argsHash()).doesNotContain("Muster").hasSize(64));
+    assertThat(audit.getAllValues())
+        .allSatisfy(event -> assertThat(event.tenantId()).isEqualTo("tenant-a"));
   }
 
   @Test
@@ -114,6 +117,7 @@ class ValueListLookupToolTest {
             valueListPort,
             auditPort,
             new ObjectMapper(),
+            "tenant-a",
             "repo-1",
             "type-1",
             CREDENTIAL,

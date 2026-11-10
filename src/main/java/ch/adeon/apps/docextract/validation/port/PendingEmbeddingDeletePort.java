@@ -8,7 +8,7 @@ import java.util.List;
  */
 public interface PendingEmbeddingDeletePort {
 
-  void delete(String processId);
+  void delete(String tenantId, String processId);
 
   /** Process ids whose {@code PENDING} embedding has passed {@code expires_at}. */
   List<String> findExpiredProcessIds();
