@@ -7,3 +7,9 @@
 699c29ec2a8a70c874423f19166e078771ef76fe:README.md:curl-auth-header:119
 39e1c5f39808365b6fda731bea7102de287823f8:doc/dvelop-dmsapp.yaml:generic-api-key:728
 39e1c5f39808365b6fda731bea7102de287823f8:doc/dvelop-dmsapp.yaml:generic-api-key:736
+
+# test fixtures (non-secret dummy keys in unit tests)
+50b25f9817c7f4e920f5d1d88bcce9e4a00338ba:src/test/java/ch/adeon/apps/docextract/agentgateway/adapter/in/mcp/McpEndpointSecurityTest.java:generic-api-key:62
+50b25f9817c7f4e920f5d1d88bcce9e4a00338ba:src/test/java/ch/adeon/apps/docextract/security/adapter/out/session/SessionAuthContextAdapterTest.java:generic-api-key:22
+/repo/src/test/java/ch/adeon/apps/docextract/agentgateway/adapter/in/mcp/McpEndpointSecurityTest.java:generic-api-key:61
+/repo/src/test/java/ch/adeon/apps/docextract/security/adapter/out/session/SessionAuthContextAdapterTest.java:generic-api-key:22
