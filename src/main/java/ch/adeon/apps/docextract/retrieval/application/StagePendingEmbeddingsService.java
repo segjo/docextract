@@ -1,13 +1,18 @@
 package ch.adeon.apps.docextract.retrieval.application;
 
+import ch.adeon.apps.docextract.audit.application.AuditEvent;
+import ch.adeon.apps.docextract.audit.application.AuditPort;
 import ch.adeon.apps.docextract.content.application.TextStagingPort;
 import ch.adeon.apps.docextract.content.port.ExtractedText;
 import ch.adeon.apps.docextract.ingest.application.DocumentHashStagingPort;
+import ch.adeon.apps.docextract.retrieval.domain.EmbeddingBatchResult;
 import ch.adeon.apps.docextract.retrieval.domain.EmbeddingVector;
 import ch.adeon.apps.docextract.retrieval.domain.PendingEmbedding;
 import ch.adeon.apps.docextract.retrieval.domain.RetrievalException;
 import ch.adeon.apps.docextract.retrieval.port.EmbeddingPort;
 import ch.adeon.apps.docextract.retrieval.port.PendingEmbeddingPort;
+import ch.adeon.apps.docextract.shared.hash.Sha256;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 import org.slf4j.Logger;
@@ -32,6 +37,7 @@ public class StagePendingEmbeddingsService implements StageEmbeddings {
   private final EmbeddingPort embeddingPort;
   private final PendingEmbeddingPort pendingEmbeddingPort;
   private final DocumentHashStagingPort documentHashStagingPort;
+  private final AuditPort auditPort;
   private final String embeddingModel;
   private final String extractionSource;
 
@@ -40,12 +46,14 @@ public class StagePendingEmbeddingsService implements StageEmbeddings {
       EmbeddingPort embeddingPort,
       PendingEmbeddingPort pendingEmbeddingPort,
       DocumentHashStagingPort documentHashStagingPort,
+      AuditPort auditPort,
       @Value("${docextract.retrieval.embedding-model}") String embeddingModel,
       @Value("${docextract.adapters.text-extraction}") String extractionSource) {
     this.textStagingPort = textStagingPort;
     this.embeddingPort = embeddingPort;
     this.pendingEmbeddingPort = pendingEmbeddingPort;
     this.documentHashStagingPort = documentHashStagingPort;
+    this.auditPort = auditPort;
     this.embeddingModel = embeddingModel;
     this.extractionSource = extractionSource;
   }
@@ -77,17 +85,19 @@ public class StagePendingEmbeddingsService implements StageEmbeddings {
           processId,
           documentHash);
     } else {
-      List<EmbeddingVector> vectors;
+      EmbeddingBatchResult result;
       try {
-        vectors = embeddingPort.embed(List.of(extractedText.text()));
+        result = embeddingPort.embed(List.of(extractedText.text()));
       } catch (RuntimeException ex) {
         throw new RetrievalException("embedding text failed for process " + processId, ex);
       }
+      List<EmbeddingVector> vectors = result.vectors();
       if (vectors.size() != 1) {
         throw new RetrievalException(
             "embedding model returned %d vectors for 1 input text".formatted(vectors.size()));
       }
       vector = vectors.get(0);
+      audit(tenantId, extractedText.text(), result);
     }
 
     pendingEmbeddingPort.stage(
@@ -96,5 +106,17 @@ public class StagePendingEmbeddingsService implements StageEmbeddings {
                 processId, vector, tenantId, extractionSource, embeddingModel, documentHash)));
     log.info("staged PENDING embedding for processId={}", processId);
     return Optional.of(vector);
+  }
+
+  /** Audits the embedded text's hash, never the raw text itself (C-4: no roh-PII in the trail). */
+  private void audit(String tenantId, String text, EmbeddingBatchResult result) {
+    auditPort.append(
+        AuditEvent.llm(
+            tenantId,
+            "retrieval.embed",
+            Sha256.hex(text.getBytes(StandardCharsets.UTF_8)),
+            result.tokenCount(),
+            result.provider(),
+            result.modelId()));
   }
 }

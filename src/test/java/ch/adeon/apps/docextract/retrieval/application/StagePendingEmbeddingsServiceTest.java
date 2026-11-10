@@ -6,16 +6,22 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import ch.adeon.apps.docextract.audit.application.AuditEvent;
+import ch.adeon.apps.docextract.audit.application.AuditPort;
 import ch.adeon.apps.docextract.content.application.TextStagingPort;
 import ch.adeon.apps.docextract.content.port.ExtractedText;
 import ch.adeon.apps.docextract.ingest.application.DocumentHashStagingPort;
+import ch.adeon.apps.docextract.retrieval.domain.EmbeddingBatchResult;
 import ch.adeon.apps.docextract.retrieval.domain.EmbeddingVector;
 import ch.adeon.apps.docextract.retrieval.domain.PendingEmbedding;
 import ch.adeon.apps.docextract.retrieval.domain.RetrievalException;
 import ch.adeon.apps.docextract.retrieval.port.EmbeddingPort;
 import ch.adeon.apps.docextract.retrieval.port.PendingEmbeddingPort;
+import ch.adeon.apps.docextract.shared.hash.Sha256;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -27,12 +33,14 @@ class StagePendingEmbeddingsServiceTest {
   private final PendingEmbeddingPort pendingEmbeddingPort = mock(PendingEmbeddingPort.class);
   private final DocumentHashStagingPort documentHashStagingPort =
       mock(DocumentHashStagingPort.class);
+  private final AuditPort auditPort = mock(AuditPort.class);
   private final StagePendingEmbeddingsService service =
       new StagePendingEmbeddingsService(
           textStagingPort,
           embeddingPort,
           pendingEmbeddingPort,
           documentHashStagingPort,
+          auditPort,
           "qwen3-embedding:0.6b",
           "pdfbox");
 
@@ -42,7 +50,8 @@ class StagePendingEmbeddingsServiceTest {
     when(textStagingPort.retrieve("p1")).thenReturn(Optional.of(text));
     when(documentHashStagingPort.retrieve("p1")).thenReturn(Optional.of("hash-1"));
     EmbeddingVector v0 = new EmbeddingVector(new float[] {1f, 0f});
-    when(embeddingPort.embed(List.of("first second"))).thenReturn(List.of(v0));
+    when(embeddingPort.embed(List.of("first second")))
+        .thenReturn(new EmbeddingBatchResult(List.of(v0), 7, "openai-compatible", "qwen3-embedding:0.6b"));
     when(pendingEmbeddingPort.findApprovedByHash(
             "tenant-a", "hash-1", "qwen3-embedding:0.6b", "pdfbox"))
         .thenReturn(Optional.empty());
@@ -55,6 +64,15 @@ class StagePendingEmbeddingsServiceTest {
             List.of(
                 new PendingEmbedding(
                     "p1", v0, "tenant-a", "pdfbox", "qwen3-embedding:0.6b", "hash-1")));
+    verify(auditPort)
+        .append(
+            AuditEvent.llm(
+                "tenant-a",
+                "retrieval.embed",
+                Sha256.hex("first second".getBytes(StandardCharsets.UTF_8)),
+                7,
+                "openai-compatible",
+                "qwen3-embedding:0.6b"));
   }
 
   @Test
@@ -76,6 +94,8 @@ class StagePendingEmbeddingsServiceTest {
             List.of(
                 new PendingEmbedding(
                     "p1", existing, "tenant-a", "pdfbox", "qwen3-embedding:0.6b", "hash-1")));
+    // A reused, already-audited embedding is not re-embedded, so no new audit entry is needed.
+    verifyNoInteractions(auditPort);
   }
 
   @Test
