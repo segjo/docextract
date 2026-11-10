@@ -6,7 +6,6 @@ import ch.adeon.apps.docextract.process.application.ProcessRepositoryPort;
 import ch.adeon.apps.docextract.process.application.ProcessStep;
 import ch.adeon.apps.docextract.process.application.StepStatus;
 import ch.adeon.apps.docextract.retrieval.domain.EmbeddingVector;
-import ch.adeon.apps.docextract.retrieval.domain.RetrievalException;
 import ch.adeon.apps.docextract.retrieval.port.DmsDocumentMetadata;
 import ch.adeon.apps.docextract.retrieval.port.DmsDocumentType;
 import ch.adeon.apps.docextract.retrieval.port.DmsObjectDefinitionPort;
@@ -17,6 +16,7 @@ import ch.adeon.apps.docextract.retrieval.port.RetrievalResult;
 import ch.adeon.apps.docextract.retrieval.port.ValueListPort;
 import ch.adeon.apps.docextract.retrieval.port.VectorSearchPort;
 import ch.adeon.apps.docextract.security.application.DvelopCredential;
+import ch.adeon.apps.docextract.shared.error.RetrievalException;
 import jakarta.annotation.PreDestroy;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -32,7 +32,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
-
 /**
  * Embeds+stages a process's chunks (in the same run, avoiding a second embedding call — §6.1/8.5)
  * and searches the {@code APPROVED} corpus with a mandatory {@code tenant_id}/{@code

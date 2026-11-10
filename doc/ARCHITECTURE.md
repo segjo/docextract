@@ -299,7 +299,7 @@ ch.adeon.apps.docextract
 ├─ process          # Fortschritt (ProcessEvent, ProcessStep, StepStatus), SSE, PgNotify, StaleJobRecovery; ProcessEventPort, ProcessDocumentPort, ProcessRepositoryPort (Import-Repository je Prozess)
 ├─ audit            # AuditPort, AuditEvent; append-only, ohne Roh-PII
 ├─ security         # AuthContext, DvelopCredential, AuthContextPort (application); RequestTenant, AgentGroup (domain); DvelopAuthenticationFilter, TenantSignature, SecurityConfig (adapter.in.web); SessionAuthContextAdapter (adapter.out.session)
-└─ shared           # Fehler, Config, Observability, media (MediaType), cleanup (TtlCleanupJob + TtlPurger: jedes Modul löscht nur eigene abgelaufene Zeilen)
+└─ shared           # Fehler (`shared.error`: Exception-Basisklassen + `ProblemCode`; `shared.adapter.web`: `GlobalExceptionHandler`), Config, Observability, media (MediaType), cleanup (TtlCleanupJob + TtlPurger: jedes Modul löscht nur eigene abgelaufene Zeilen)
 ```
 
 **Verantwortlichkeitsprinzip:** `domain`, `application` und `port` enthalten **keine Produkt- oder Framework-Typen**. Produktspezifischer Code liegt ausschliesslich in `adapter.*`. Security und Audit werden per DI/Aspekten eingezogen, damit REST und MCP dieselben Guardrails durchlaufen. Erzwungen per ArchUnit (§ 10.1).
@@ -367,15 +367,9 @@ flowchart LR
 
 - `adapters_are_not_reachable_from_other_modules` — kein Zugriff auf `adapter` eines anderen Moduls (keine Verletzung).
 - `spring_ai_and_mcp_types_stay_in_adapters` — Typen aus `org.springframework.ai..` und `io.modelcontextprotocol..` nur in `adapter` (ADR-009). Grün.
-- `other_modules_access_only_application_port_or_published_domain_types` — Zugriff auf `domain` eines anderen Moduls nur für explizit gelistete Typen (`PUBLISHED_DOMAIN_TYPES`). Grün. Die 23 früher modulübergreifend genutzten Domain-Typen liegen seit 2026-11-05 im `port`- bzw. `application`-Paket des Besitzermoduls, in dessen Signatur sie stehen; `MediaType` liegt in `shared.media`. Liste alt → neu: ENTWICKLUNGSTAGEBUCH.md, Eintrag 2026-11-05 „Domain-Typen verschoben".
+- `other_modules_access_only_application_or_port` — Zugriff auf `domain` eines anderen Moduls ist nicht erlaubt. Grün. Die 23 früher modulübergreifend genutzten Domain-Typen liegen seit 2026-11-05 im `port`- bzw. `application`-Paket des Besitzermoduls, in dessen Signatur sie stehen; `MediaType` liegt in `shared.media`. Liste alt → neu: ENTWICKLUNGSTAGEBUCH.md, Eintrag 2026-11-05 „Domain-Typen verschoben".
 
-| Zielmodul    | verbleibende Ausnahme | genutzt von | bis                            |
-| ------------ | --------------------- | ----------- | ------------------------------ |
-| `content`    | `ContentException`    | ingest      | P7 (Fehlerklassen in `shared`) |
-| `retrieval`  | `RetrievalException`  | ingest      | P7                             |
-| `extraction` | `ExtractionException` | ingest      | P7                             |
-
-Die drei Exceptions werden nur per `catch` referenziert; ArchUnit erkennt das nicht als Abhängigkeit, sie stehen der Vollständigkeit halber in der Liste.
+Die bis P7 verbliebenen Ausnahmen `ContentException`, `RetrievalException` und `ExtractionException` liegen seit P7 in `shared.error` (Basis `ProcessingFailedException`); damit gibt es keine veröffentlichten Domain-Typen mehr.
 
 ---
 
@@ -487,7 +481,7 @@ Das MCP-Tool ruft dieselben Services (`FindSimilar`, `ExtractAttributes`) mit de
 - **AuthN/Agent-Identität:** Der Agent erhält einen **technischen d.velop-User** und sendet dessen API-Key als `Authorization: Bearer <API-Key>`. Der Endpunkt liegt unter `/api/**` und durchläuft wie REST den `DvelopAuthenticationFilter` (Validierung beim d.velop IdP); es gibt keinen eigenen DocExtract-Token. `tenant_id` und Basis-URI liefert `AuthContextPort` bzw. der `RequestTenant` (§ 8.6). Der Agent-Kanal ist auf den MCP-Endpunkt beschränkt (§ 8.6).
 - **Weggelassene Daten:** An den Agenten gehen weder `sourceExcerpt` noch die Eigenschaftswerte der ähnlichen Dokumente (`RetrievalResult.properties`). Von ähnlichen Dokumenten erhält er nur `documentId`, `repositoryId` und `score`. Die Attributvorschläge (`value`/`values`, `confidence`) des eigenen Dokuments gehen an ihn und können Personendaten enthalten. _Begründung:_ Die Eigenschaftswerte wurden mit der Session des Benutzers geladen; gäbe DocExtract sie weiter, sähe der Agent Werte, für die er im DMS keine Rechte hat. Über die `documentId` kann er sie selbst im DMS abfragen, dann gelten seine eigenen Rechte. _Restrisiko:_ Das LLM sieht die Werte der Top-5 als Kontext; ein Vorschlag kann deshalb einen Wert aus einem ähnlichen Dokument übernehmen. Modell-ID und lokal/extern gibt das Tool nicht aus (nicht je Ergebnis gespeichert; Nachweis über das Audit, C-4/NfA-7).
 - **Guardrails im Service** (`AgentGatewayService`, nicht im Adapter): Format der `processId`; Mandantenfilter und Existenz (`processId` gehört zum Mandanten des Aufrufers, sonst wie bei unbekannter ID `not_found`, keine Daten; über die Lese-Services und `ProcessEventPort.exists`, § 8.6); ein Audit-Eintrag je Aufruf (`mcp.tool.<name>.<ok|invalid_argument|not_found|error>`, nur SHA-256 der Argumente, C-4). Die Schema-Validierung des MCP-SDK ist abgeschaltet, damit auch ungültige Aufrufe den Service erreichen und auditiert werden; die Prüfung ist dort gleich streng. Umgesetzt mit einem `@Primary`-Customizer in `McpServerConfig`, der den Servlet-Customizer von Spring AI ersetzt (`immediateExecution(true)`, `validateToolInputs(false)`); **bei Spring-AI-Upgrades prüfen**, ob der ersetzte Customizer weitere Einstellungen setzt.
-- **Fehler:** `isError: true` mit `{ "code": "invalid_argument" | "not_found" | "internal_error", "message" }`, ohne PII. Einheitliche Fehlerform mit REST folgt in P7.
+- **Fehler:** `isError: true` mit `{ "code", "type", "title", "detail", "processId"? }` mit denselben `code`/`type`/`title` wie das REST-ProblemDetail (§ 8.1), ohne PII. Unerwartete Fehler: `internal-error` mit festem `detail`.
 - **Tests:** `AgentGatewayServiceTest`, `McpToolAdapterTest`, `McpServerWiringTest`, `McpEndpointSecurityTest` (echter HTTP-Stack: ohne Token `401` auf `/api/v1/mcp` und `/api/v1/processes/{id}/events`; schema-ungültiger Tool-Call erreicht den Service und wird auditiert).
 
 ### 6.4 Fortschritt im Cluster (ADR-004)
@@ -498,7 +492,7 @@ Die SSE-Verbindung kann auf einer beliebigen Instanz landen. Jede Stufe schreibt
 
 | Fehler                                                   | Verhalten                                                                                              | Endzustand                              |
 | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------- |
-| Limit überschritten                                      | Abweisung vor Verarbeitung                                                                             | `413`/`422` ProblemDetail               |
+| Limit überschritten                                      | Abweisung vor Verarbeitung: Dateigrösse (Limits und Multipart-Limit) `413`, Seitenzahl `422`, gleicher `type` `limit-exceeded` | `413`/`422` ProblemDetail               |
 | Leerer/zu kurzer Text (z. B. Scan ohne Textlayer)        | Retrieval übersprungen, Hinweis im UI; FR-4 nur, wenn Repräsentation dies erlaubt (z. B. Seitenbilder) | `failed` oder Vorschlag ohne Referenzen |
 | Adapter-Absturz/Timeout (Vorschau, Text, LLM, Embedding) | Timeout je Adapter, begrenzter Retry                                                                   | `failed` + Audit                        |
 | Ungültiges LLM-JSON                                      | Retry gemäss Konfiguration, dann Abbruch                                                               | `failed` + Audit                        |
@@ -542,7 +536,24 @@ flowchart TB
 - **DI:** Ports als Interfaces, Adapter als bedingte Beans (`@ConditionalOnProperty`). Security und Audit werden per Aspekt eingezogen.
 - **REST:** OpenAPI-spezifiziert, Fehler als ProblemDetail (RFC 9457). Vertrag: [`doc/api/openapi.yaml`](api/openapi.yaml) (OpenAPI 3.1, von springdoc aus den Controller-Annotationen generiert; gemeinsames Fehlerschema `Problem`; `confirm` mit `x-idempotency`, `x-data-classification`, `x-slo`). `OpenApiContractTest` prüft die Datei gegen die generierte Spec (Drift-Check) und validiert sie; neu erzeugen mit `mvn test -Dtest=OpenApiContractTest -Dopenapi.write=true`.
 - **Konfiguration:** `application.yml` + Profile (`local`, `local-ai`, `ci`, `cluster`), typisierte `@ConfigurationProperties` mit Validierung beim Start.
-- **Fehlerbehandlung:** zentraler `@ControllerAdvice`; Timeout und definierter Abbruch je Stufe und Adapter.
+- **Fehlerbehandlung:** zentraler `@ControllerAdvice` (`GlobalExceptionHandler`, `shared.adapter.web`, erbt von `ResponseEntityExceptionHandler`); Timeout und definierter Abbruch je Stufe und Adapter. Die Fehlerklassen liegen frameworkfrei in `shared.error` (Basis `DocextractException` mit `ProblemCode`, PII-freiem `detail` und optionaler `processId`); Controller fangen keine Fehler lokal ab.
+  - **Fehlerform:** `application/problem+json` mit `type` = `urn:docextract:problem:<code>`, `title`, `status`, `detail` (nie Attributwerte, Dateinamen oder Upstream-Inhalte, C-4) und optional `processId`. Das MCP-Tool nutzt dieselben `code`s (§ 6.3).
+
+    | `code` (`type`-Suffix) | Status | Auslöser |
+    | --- | --- | --- |
+    | `invalid-request` | 400 | `UploadRejectedException` (leer, Medientyp), fehlende/ungültige Parameter, nicht lesbarer Body, übrige Framework-4xx |
+    | `unauthorized` / `forbidden` | 401 / 403 | `SecurityConfig`, `DvelopAuthenticationFilter` |
+    | `not-found` | 404 | `ProcessNotFoundException`, `BlobNotFoundException`; unbekannt und fremder Mandant/Nutzer sind nicht unterscheidbar (NfA-4), daher keine eigene Tenant-Mismatch-Klasse |
+    | `conflict-state` | 409 | `AlreadyFinalizedException`, `PossiblyAlreadyFinalizedException` |
+    | `process-expired` | 410 | `ProcessExpiredException` |
+    | `limit-exceeded` | 413 / 422 | `LimitExceededException`: Dateigrösse und Multipart-Limit → 413, Seitenzahl → 422 |
+    | `invalid-attributes` | 422 | `InvalidAttributesException` (DMS lehnt Attribute ab; `detail` fest, DMS-Grund nur im Log) |
+    | `range-not-satisfiable` | 416 | `RangeNotSatisfiableException`, Header `Content-Range: bytes */<Länge>` |
+    | `adapter-unavailable` | 502 | `AdapterUnavailableException` (`DmsRepository-`, `DmsChunkUpload-`, `PreviewRendering-`, `DmsWriteFailed-`, `DmsObjectDefinition-`, `DmsObjectMetadata-`, `ValueListWebhookException`), `detail` fest |
+    | `internal-error` | 500 | `ProcessingFailedException` (`ExtractionException`, `RetrievalException`, `ContentException`) und jeder unerwartete Fehler, `detail` fest |
+
+  - **Preview-Range:** Eine einzelne Range `bytes=start[-end]` liefert `206`. Syntaktisch ungültige, mehrfache und Suffix-Ranges (`bytes=-N`) werden ignoriert (`200`, voller Inhalt); beginnt die Range hinter dem Dokumentende → `416`.
+  - **Ausnahme SPA:** `NoResourceFoundException` unter `/ui/` wird nicht in ein ProblemDetail gewandelt, sondern per `sendError(404)` an `SpaFallbackErrorController` übergeben.
 
 ### 8.2 Sicherheit & Datenschutz
 

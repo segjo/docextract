@@ -14,14 +14,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import ch.adeon.apps.docextract.audit.application.AuditPort;
 import ch.adeon.apps.docextract.ingest.port.DocumentBlobPort;
-import ch.adeon.apps.docextract.process.application.ProcessDocumentPort;
 import ch.adeon.apps.docextract.process.application.ProcessDocumentPort.StoredDocument;
+import ch.adeon.apps.docextract.process.application.ProcessDocumentPort;
 import ch.adeon.apps.docextract.process.application.ProcessRepositoryPort;
 import ch.adeon.apps.docextract.security.application.AuthContext;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
 import ch.adeon.apps.docextract.security.application.DvelopCredential;
 import ch.adeon.apps.docextract.security.application.OutboundCredentialPort;
-import ch.adeon.apps.docextract.shared.web.GlobalExceptionHandler;
+import ch.adeon.apps.docextract.shared.adapter.web.GlobalExceptionHandler;
 import ch.adeon.apps.docextract.validation.application.ConfirmAndWriteBackService;
 import ch.adeon.apps.docextract.validation.application.FinalizationStatePort;
 import ch.adeon.apps.docextract.validation.application.RejectSuggestion;
@@ -45,7 +45,6 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-
 /**
  * x-idempotency of POST /api/v1/validation/confirm (doc/api/openapi.yaml, ADR-015): HTTP layer plus
  * the real saga service; only the outbound ports are replaced, the saga state is kept in memory.

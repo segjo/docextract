@@ -47,7 +47,6 @@ import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-
 /**
  * Real HTTP stack (Tomcat, SecurityConfig, Spring AI MCP server) without database: the agent group
  * ({@code agents}) may only use the MCP endpoint, every other member may use REST and MCP, and the
@@ -214,7 +213,7 @@ class McpEndpointSecurityTest {
     HttpResponse<String> call = callGetProcessSuggestions(AGENT_TOKEN, sessionId, "x");
 
     assertThat(call.statusCode()).isEqualTo(200);
-    assertThat(call.body()).contains("invalid_argument").contains("\"isError\":true");
+    assertThat(call.body()).contains("invalid-request").contains("\"isError\":true");
     verify(context.getBean(AuditPort.class))
         .append(
             argThat(event ->

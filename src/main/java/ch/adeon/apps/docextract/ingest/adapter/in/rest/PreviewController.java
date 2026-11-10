@@ -16,6 +16,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -25,7 +27,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
 /**
  * {@code GET .../{blobId}/preview} — Range-fähiges Streaming aus dem transienten
  * Postgres-Blobstore: native PDFs kommen direkt aus dem ORIGINAL-Blob, Nicht-PDFs aus dem lazily
@@ -35,6 +36,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/ingest/documents")
 @Tag(name = "ingest")
 public class PreviewController {
+
+  private static final Pattern SINGLE_RANGE = Pattern.compile("(?i)bytes=(\\d{1,18})-(\\d{0,18})");
 
   private final StreamPreview streamPreview;
 
@@ -71,6 +74,17 @@ public class PreviewController {
   @ApiResponse(responseCode = "400", ref = BAD_REQUEST_REF)
   @ApiResponse(responseCode = "401", ref = UNAUTHORIZED_REF)
   @ApiResponse(
+      responseCode = "416",
+      description =
+          "Range beginnt hinter dem Dokumentende. Header `Content-Range: bytes */<Länge>`."
+              + " Syntaktisch ungültige Ranges werden ignoriert (200, ganzer Inhalt).",
+      headers =
+          @Header(
+              name = HttpHeaders.CONTENT_RANGE,
+              description = "bytes */total",
+              schema = @Schema(type = "string")),
+      content = @Content(mediaType = PROBLEM_JSON, schema = @Schema(ref = PROBLEM_SCHEMA_REF)))
+  @ApiResponse(
       responseCode = "404",
       description = "Blob unbekannt, abgelaufen oder gehört einem anderen Tenant (NfA-4).",
       content = @Content(mediaType = PROBLEM_JSON, schema = @Schema(ref = PROBLEM_SCHEMA_REF)))
@@ -83,7 +97,7 @@ public class PreviewController {
       @Parameter(description = "Einzelne Byte-Range, z. B. `bytes=0-1048575`.")
           @RequestHeader(value = HttpHeaders.RANGE, required = false)
           String range) {
-    PageRange requestedRange = range == null ? null : parseRange(range);
+    PageRange requestedRange = parseRange(range);
     PreviewChunk chunk = streamPreview.stream(blobId, requestedRange);
 
     ResponseEntity.BodyBuilder response;
@@ -101,13 +115,21 @@ public class PreviewController {
     return response.contentType(MediaType.APPLICATION_PDF).body(chunk.content());
   }
 
-  /** Parses the standard single-range {@code bytes=start-end} form of the HTTP Range header. */
-  private static PageRange parseRange(String header) {
-    String spec = header.replaceFirst("(?i)^bytes=", "");
-    String[] bounds = spec.split("-", 2);
-    long start = bounds[0].isBlank() ? 0 : Long.parseLong(bounds[0]);
-    long end =
-        (bounds.length > 1 && !bounds[1].isBlank()) ? Long.parseLong(bounds[1]) : Long.MAX_VALUE;
-    return new PageRange(start, end);
+  /**
+   * Parses the single-range form {@code bytes=start[-end]}. Everything else (garbage, {@code
+   * end < start}, suffix ranges, several ranges) yields {@code null}, i.e. the header is ignored and
+   * the full content is served (RFC 9110 § 14.2: a server may ignore Range).
+   */
+  static PageRange parseRange(String header) {
+    if (header == null) {
+      return null;
+    }
+    Matcher matcher = SINGLE_RANGE.matcher(header.strip());
+    if (!matcher.matches()) {
+      return null;
+    }
+    long start = Long.parseLong(matcher.group(1));
+    long end = matcher.group(2).isEmpty() ? Long.MAX_VALUE : Long.parseLong(matcher.group(2));
+    return end < start ? null : new PageRange(start, end);
   }
 }

@@ -1921,3 +1921,68 @@ neuen Dependencies hinzu** (Awaitility und `junit-jupiter-params` sind transitiv
   Treffer aus dem `APPROVED`-Korpus werden damit nicht geprüft (nur der Pfad ohne ähnliche Dokumente).
 - Der Test nutzt `docextract.dvelop.system-base-uri` mit absichtlich 404 liefernder jstore-URI statt
   des echten jstore-Mocks (dessen `systembaseuri` zeigt auf `localhost:6380`).
+
+---
+
+## 2026-11-10 (6) — Einheitliche Fehlerform ProblemDetail für REST und MCP (Block 3, P7)
+
+**Tool/Modell:** GitHub Copilot Chat (Agent-Modus).
+
+**Auftrag (Prompt-Zusammenfassung):** Fehler aller REST-Controller und des MCP-Tools als RFC 9457
+ProblemDetail bzw. gleichwertiges Tool-Fehlerformat mit gleichem `code`; Fehlerklassen in `shared`;
+ein `@ControllerAdvice`; `openapi.yaml` nachziehen; Tests je Fehlerklasse und PII-Freiheit;
+Abbildungen aus den P3-Befunden (502/500, Framework-Fehler, 413/422, Range 200/416);
+`doc/block3/repo-wide-change.md` mit leeren Entscheid-/Grund-Spalten; separater Commit.
+
+**Umgesetzt:**
+
+- `shared.error` (frameworkfrei): `ProblemCode` (slug, title, `urn:docextract:problem:<slug>`),
+  Basis `DocextractException` (`code`, PII-freies `detail`, `processId`), `InvalidRequestException`,
+  `NotFoundException`, `ConflictStateException`, `LimitExceededException` (`FILE_SIZE` → 413,
+  `PAGE_COUNT` → 422), `AdapterUnavailableException` (502), `ProcessingFailedException` (500),
+  `RangeNotSatisfiableException` (416).
+- Bestehende Exceptions auf diese Basis gestellt (`ProcessNotFound`, `BlobNotFound`, `AlreadyFinalized`,
+  `PossiblyAlreadyFinalized`, `ProcessExpired`, `InvalidAttributes`, `UploadRejected`, alle DMS-/Preview-
+  Exceptions). `ContentException`, `RetrievalException`, `ExtractionException` nach `shared.error`
+  verschoben (die „bis P7“-Ausnahmen aus § 5.6 entfallen, ArchUnit-Regel ohne Ausnahmeliste).
+- `GlobalExceptionHandler` (neu in `shared.adapter.web`, erbt von `ResponseEntityExceptionHandler`):
+  alle Abbildungen, feste `detail` für 5xx/502/`invalid-attributes`, Fallback 500, Framework-Fehler mit
+  `type`, Multipart-Limit → 413 `limit-exceeded`, Typfehler ohne Echo des Werts, Sicherheits-Exceptions
+  werden an die Filterkette durchgereicht. `SecurityConfig`/`DvelopAuthenticationFilter` nutzen dieselben
+  Typen für 401/403.
+- MCP: `{code, type, title, detail, processId?}` mit denselben `code`/`type`/`title` wie REST;
+  `AgentToolException` entfernt (Audit-Outcomes `not_found`/`invalid_argument` unverändert).
+- Preview: ungültige, mehrfache und Suffix-Ranges werden ignoriert (200), Range hinter dem Ende → 416
+  mit `Content-Range: bytes */<Länge>`.
+- Dateigrösse (`Limits`) → 413 statt 400.
+- `openapi.yaml` neu generiert (416, 422, 502, `processId`, P7-Hinweise entfernt); ARCHITECTURE.md § 8.1
+  (Tabelle), § 6.5, § 5.5, § 5.6, § 6.3 ergänzt.
+- Tests: `GlobalExceptionHandlerTest` (Status + `type` je Fehlerklasse, `detail` ohne Attributwerte/
+  Dateinamen, Framework-Fehler, 413, 416-Header), `PreviewControllerRangeTest`, Ergänzungen in
+  `PreviewStreamServiceTest`, `McpToolAdapterTest`, `LimitsTest`.
+- Lokale Fehlerantworten in Controllern: es gab keine `try/catch`-Antworten (nur der SSE-`IOException`-Pfad,
+  der kein Fehlerbody ist); entfernt wurde stattdessen der handgeschriebene 403-Body im Filter.
+
+**Geänderte Dateien:** siehe `doc/block3/repo-wide-change.md`.
+
+**Build:** `mvn -o verify` grün (282 Tests).
+
+**Zu prüfen durch Mensch:**
+
+- OFFEN: Seitenzahl-Limit (SPEC FR-1) ist im Code nicht implementiert; `LimitExceededException(PAGE_COUNT)`
+  → 422 ist nur gemappt und im OpenAPI dokumentiert. Grenzwert und Ermittlung der Seitenzahl festlegen.
+- OFFEN: `invalid-attributes` zeigt nur noch einen festen `detail`; der DMS-Grund (kann Attributwerte
+  enthalten) steht nur noch im Log/in der Exception-Meldung. Das Frontend (`process-page.ts`) zeigt
+  `detail` an, also jetzt den festen englischen Text. Entscheid, ob ein gefilterter Grund gewünscht ist.
+- OFFEN: Keine eigene `TenantMismatch`-Klasse: fremder Mandant/Nutzer und unbekannt müssen nach NfA-4
+  gleich aussehen (`not-found`). Bei anderer Absicht bitte melden.
+- OFFEN: Suffix-Ranges (`bytes=-N`) werden ignoriert (200) statt bedient; vorher wurden sie falsch als
+  `0-N` gelesen.
+- OFFEN: Typ-Schema `urn:docextract:problem:<code>` und die Slugs sind meine Festlegung; Seitenzahl und
+  Dateigrösse teilen sich den `type` `limit-exceeded`.
+- OFFEN: `LlmException` und `EmbeddingException` sind nicht gemappt (laufen im Fallback 500); sie treten
+  nur in der asynchronen Pipeline auf und werden dort abgefangen.
+- OFFEN: SPA-Deep-Links unter `/ui/` laufen weiter über `sendError(404)` → `SpaFallbackErrorController`;
+  nicht per Browser getestet, nur per Code-Review begründet.
+- Hinweis: `doc/Block-3-Aufgaben.md` und `doc/Block-3-Prompts.md` (ungetrackte Dateien von dir)
+  sind nicht Teil des Commits.

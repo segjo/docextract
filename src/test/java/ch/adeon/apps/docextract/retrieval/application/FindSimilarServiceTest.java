@@ -17,7 +17,6 @@ import ch.adeon.apps.docextract.process.application.ProcessRepositoryPort;
 import ch.adeon.apps.docextract.process.application.ProcessStep;
 import ch.adeon.apps.docextract.process.application.StepStatus;
 import ch.adeon.apps.docextract.retrieval.domain.EmbeddingVector;
-import ch.adeon.apps.docextract.retrieval.domain.RetrievalException;
 import ch.adeon.apps.docextract.retrieval.port.DmsDocumentMetadata;
 import ch.adeon.apps.docextract.retrieval.port.DmsDocumentType;
 import ch.adeon.apps.docextract.retrieval.port.DmsObjectDefinitionPort;
@@ -29,11 +28,11 @@ import ch.adeon.apps.docextract.retrieval.port.RetrievalResult;
 import ch.adeon.apps.docextract.retrieval.port.ValueListPort;
 import ch.adeon.apps.docextract.retrieval.port.VectorSearchPort;
 import ch.adeon.apps.docextract.security.application.DvelopCredential;
+import ch.adeon.apps.docextract.shared.error.RetrievalException;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
-
 class FindSimilarServiceTest {
 
   private static final String TENANT = "tenant-a";

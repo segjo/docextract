@@ -33,6 +33,7 @@ import ch.adeon.apps.docextract.security.application.AuthContext;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
 import ch.adeon.apps.docextract.security.application.DvelopCredential;
 import ch.adeon.apps.docextract.security.application.OutboundCredentialPort;
+import ch.adeon.apps.docextract.shared.adapter.web.GlobalExceptionHandler;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,7 +41,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-
 /**
  * NfA-4: every process-scoped REST endpoint hands the caller's tenant to the port. The ports hold
  * data per tenant, so a caller of another tenant gets what an unknown process gets: nothing.

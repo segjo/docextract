@@ -1,6 +1,5 @@
 package ch.adeon.apps.docextract.agentgateway.application;
 
-import ch.adeon.apps.docextract.agentgateway.application.AgentToolException.Code;
 import ch.adeon.apps.docextract.audit.application.AuditChannel;
 import ch.adeon.apps.docextract.audit.application.AuditEvent;
 import ch.adeon.apps.docextract.audit.application.AuditPort;
@@ -10,14 +9,13 @@ import ch.adeon.apps.docextract.process.application.ProcessNotFoundException;
 import ch.adeon.apps.docextract.retrieval.application.GetSimilarDocuments;
 import ch.adeon.apps.docextract.security.application.AuthContext;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
+import ch.adeon.apps.docextract.shared.error.InvalidRequestException;
 import ch.adeon.apps.docextract.shared.hash.Sha256;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.Locale;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
-
 /**
  * Agent path (FR-6) on the same read services as REST ({@link GetExtractionResult}, {@link
  * GetSimilarDocuments}). Guardrails enforced here, not in the MCP adapter: argument validation,
@@ -72,9 +70,9 @@ public class AgentGatewayService implements McpTool {
       return result;
     } catch (ProcessNotFoundException ex) {
       outcome = "not_found";
-      throw new AgentToolException(Code.NOT_FOUND, "process not found");
-    } catch (AgentToolException ex) {
-      outcome = ex.code().name().toLowerCase(Locale.ROOT);
+      throw ex;
+    } catch (InvalidRequestException ex) {
+      outcome = "invalid_argument";
       throw ex;
     } finally {
       String argument = processId == null ? "" : processId;
@@ -91,7 +89,7 @@ public class AgentGatewayService implements McpTool {
 
   private static void requireValidProcessId(String processId) {
     if (processId == null || !PROCESS_ID.matcher(processId).matches()) {
-      throw new AgentToolException(Code.INVALID_ARGUMENT, "processId must be a lowercase UUID");
+      throw new InvalidRequestException("processId must be a lowercase UUID");
     }
   }
 

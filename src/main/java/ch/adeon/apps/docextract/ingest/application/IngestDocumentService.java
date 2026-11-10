@@ -6,9 +6,7 @@ import ch.adeon.apps.docextract.audit.application.AuditPort;
 import ch.adeon.apps.docextract.content.application.ContentCommand;
 import ch.adeon.apps.docextract.content.application.ExtractText;
 import ch.adeon.apps.docextract.content.application.ProvideContent;
-import ch.adeon.apps.docextract.content.domain.ContentException;
 import ch.adeon.apps.docextract.extraction.application.ExtractAttributes;
-import ch.adeon.apps.docextract.extraction.domain.ExtractionException;
 import ch.adeon.apps.docextract.ingest.domain.BlobKind;
 import ch.adeon.apps.docextract.ingest.domain.DmsLocation;
 import ch.adeon.apps.docextract.ingest.domain.DocumentUpload;
@@ -24,11 +22,15 @@ import ch.adeon.apps.docextract.process.application.ProcessRepositoryPort;
 import ch.adeon.apps.docextract.process.application.ProcessStep;
 import ch.adeon.apps.docextract.process.application.StepStatus;
 import ch.adeon.apps.docextract.retrieval.application.FindSimilar;
-import ch.adeon.apps.docextract.retrieval.domain.RetrievalException;
 import ch.adeon.apps.docextract.security.application.AuthContext;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
 import ch.adeon.apps.docextract.security.application.DvelopCredential;
 import ch.adeon.apps.docextract.security.application.OutboundCredentialPort;
+import ch.adeon.apps.docextract.shared.error.ContentException;
+import ch.adeon.apps.docextract.shared.error.ExtractionException;
+import ch.adeon.apps.docextract.shared.error.LimitExceededException.Limit;
+import ch.adeon.apps.docextract.shared.error.LimitExceededException;
+import ch.adeon.apps.docextract.shared.error.RetrievalException;
 import ch.adeon.apps.docextract.shared.hash.Sha256;
 import ch.adeon.apps.docextract.shared.media.MediaType;
 import jakarta.annotation.PreDestroy;
@@ -43,7 +45,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-
 /**
  * Synchronous handover point before the caller receives {@code 202 Accepted + processId} (FR-1):
  * the raw bytes are written to the transient Postgres blobstore as the ORIGINAL blob, and
@@ -124,6 +125,9 @@ public class IngestDocumentService implements IngestDocument {
 
     ValidationResult validationResult = limits.validate(upload);
     if (!validationResult.valid()) {
+      if (validationResult.sizeExceeded()) {
+        throw new LimitExceededException(Limit.FILE_SIZE, validationResult.reason());
+      }
       throw new UploadRejectedException(validationResult.reason());
     }
     // Media-type acceptance isn't a fixed domain list: it's whatever the configured preview

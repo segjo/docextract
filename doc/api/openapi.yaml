@@ -1,7 +1,8 @@
 openapi: 3.1.0
 info:
   description: "Eigener REST-Vertrag von DocExtract. Fehler werden als application/problem+json\
-    \ (RFC 9457, Schema `Problem`) beschrieben; siehe ARCHITECTURE.md § 8.1."
+    \ (RFC 9457, Schema `Problem`, `type` = urn:docextract:problem:<code>) beschrieben;\
+    \ siehe ARCHITECTURE.md § 8.1."
   title: DocExtract API
   version: v1
 servers:
@@ -55,9 +56,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
-          description: "Upload abgewiesen (leere Datei, Grössen-Limit, nicht unterstü\
-            tzter Medientyp; T-4) oder Parameter file/repositoryId fehlt (dann heute\
-            \ ohne Body, ProblemDetail ab P7)."
+          description: "Upload abgewiesen (leere Datei, nicht unterstützter Medientyp;\
+            \ T-4) oder Parameter file/repositoryId fehlt."
         "401":
           $ref: "#/components/responses/Unauthorized"
         "413":
@@ -65,8 +65,16 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
-          description: "Request grösser als spring.servlet.multipart.max-request-size\
-            \ (50 MB). Heute ohne Body, ProblemDetail ab P7."
+          description: Datei grösser als das Limit (docextract.ingest.max-file-size-bytes)
+            oder Request grösser als spring.servlet.multipart.max-request-size (50
+            MB); gleicher type `limit-exceeded`.
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Seitenzahl-Limit überschritten (type `limit-exceeded`; noch
+            nicht erzwungen).
         "502":
           content:
             application/problem+json:
@@ -126,6 +134,20 @@ paths:
                 $ref: "#/components/schemas/Problem"
           description: "Blob unbekannt, abgelaufen oder gehört einem anderen Tenant\
             \ (NfA-4)."
+        "416":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "Range beginnt hinter dem Dokumentende. Header `Content-Range:\
+            \ bytes */<Länge>`. Syntaktisch ungültige Ranges werden ignoriert (200,\
+            \ ganzer Inhalt)."
+          headers:
+            Content-Range:
+              description: bytes */total
+              schema:
+                type: string
+              style: simple
         "502":
           content:
             application/problem+json:
@@ -147,6 +169,8 @@ paths:
           description: OK
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "502":
+          $ref: "#/components/responses/BadGateway"
       summary: "Importmaske: erlaubte Endungen, Upload-Limit, Repositories der Session"
       tags:
       - ingest
@@ -164,6 +188,8 @@ paths:
           description: OK
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "502":
+          $ref: "#/components/responses/BadGateway"
       summary: Alle Dokumentarten und Eigenschaften des Repositories (live aus dem
         DMS)
       tags:
@@ -480,6 +506,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "502":
+          $ref: "#/components/responses/BadGateway"
       summary: "Gültige Werte einer Eigenschaft (live aus dem DMS, filterbar per searchTerm)"
       tags:
       - retrieval
@@ -499,14 +527,21 @@ paths:
       - operations
 components:
   responses:
+    BadGateway:
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+      description: "Ein angebundenes System (z. B. d.velop DMS) ist nicht erreichbar\
+        \ oder antwortet fehlerhaft (type `urn:docextract:problem:adapter-unavailable`,\
+        \ detail ohne Upstream-Inhalt)."
     BadRequest:
       content:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/Problem"
       description: "Ungültige Anfrage: fehlender/ungültiger Parameter oder nicht lesbarer\
-        \ Body. Die Framework-Fehlerbehandlung liefert heute nur den Status ohne Body;\
-        \ ProblemDetail-Body ab P7 (einheitliche Fehlerform)."
+        \ Body (type `urn:docextract:problem:invalid-request`)."
     Unauthorized:
       content:
         application/problem+json:
@@ -725,6 +760,9 @@ components:
           type: string
           format: uri
           description: URI dieses Vorkommens.
+        processId:
+          type: string
+          description: "Erweiterung: betroffener Prozess, falls vorhanden."
         status:
           type: integer
           format: int32
@@ -735,8 +773,10 @@ components:
         type:
           type: string
           format: uri
-          default: about:blank
-          description: URI-Referenz auf den Problemtyp (RFC 9457 § 3.1.1).
+          description: "URI-Referenz auf den Problemtyp (RFC 9457 § 3.1.1): urn:docextract:problem:<code>\
+            \ mit code = invalid-request, invalid-attributes, unauthorized, forbidden,\
+            \ not-found, process-expired, conflict-state, limit-exceeded, range-not-satisfiable,\
+            \ adapter-unavailable, internal-error."
       required:
       - status
     ProcessEvent:

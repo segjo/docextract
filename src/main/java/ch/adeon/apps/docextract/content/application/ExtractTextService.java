@@ -1,6 +1,5 @@
 package ch.adeon.apps.docextract.content.application;
 
-import ch.adeon.apps.docextract.content.domain.ContentException;
 import ch.adeon.apps.docextract.content.port.ExtractedText;
 import ch.adeon.apps.docextract.content.port.TextExtractionPort;
 import ch.adeon.apps.docextract.ingest.port.BlobRef;
@@ -10,12 +9,12 @@ import ch.adeon.apps.docextract.process.application.ProcessEvent;
 import ch.adeon.apps.docextract.process.application.ProcessEventPort;
 import ch.adeon.apps.docextract.process.application.ProcessStep;
 import ch.adeon.apps.docextract.process.application.StepStatus;
+import ch.adeon.apps.docextract.shared.error.ContentException;
 import ch.adeon.apps.docextract.shared.media.MediaType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-
 /**
  * Reads the ORIGINAL blob (ADR-008) and extracts the first-N-words plain text via the configured
  * {@link TextExtractionPort} (ADR-012: no chunking, no structure/table reconstruction) for FR-3.

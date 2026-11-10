@@ -8,7 +8,7 @@ public record Limits(long maxFileSizeBytes) {
       return ValidationResult.rejected("File must not be empty");
     }
     if (upload.sizeInBytes() > maxFileSizeBytes) {
-      return ValidationResult.rejected(
+      return ValidationResult.tooLarge(
           "File size %d bytes exceeds the maximum allowed size of %d bytes"
               .formatted(upload.sizeInBytes(), maxFileSizeBytes));
     }

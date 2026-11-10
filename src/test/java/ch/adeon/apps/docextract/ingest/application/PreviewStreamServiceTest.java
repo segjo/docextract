@@ -17,10 +17,10 @@ import ch.adeon.apps.docextract.ingest.port.PageRange;
 import ch.adeon.apps.docextract.ingest.port.PreviewRenderPort;
 import ch.adeon.apps.docextract.security.application.AuthContext;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
+import ch.adeon.apps.docextract.shared.error.RangeNotSatisfiableException;
 import ch.adeon.apps.docextract.shared.media.MediaType;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
-
 class PreviewStreamServiceTest {
 
   private static final AuthContext OWNER = new AuthContext("tenant-a", "user-1", "User One");
@@ -133,5 +133,20 @@ class PreviewStreamServiceTest {
 
     assertThatThrownBy(() -> service.stream(originalBlobId, null))
         .isInstanceOf(BlobNotFoundException.class);
+  }
+
+  @Test
+  void a_range_starting_behind_the_end_is_not_satisfiable() {
+    UUID originalBlobId = UUID.randomUUID();
+    when(authContextPort.current()).thenReturn(OWNER);
+    when(documentBlobPort.describe("tenant-a", originalBlobId))
+        .thenReturn(
+            new BlobRef(
+                originalBlobId, BlobKind.ORIGINAL, MediaType.PDF, 4, "p1", "tenant-a", "user-1"));
+
+    assertThatThrownBy(() -> service.stream(originalBlobId, new PageRange(4, 10)))
+        .isInstanceOfSatisfying(
+            RangeNotSatisfiableException.class, ex -> assertThat(ex.totalSize()).isEqualTo(4));
+    verify(documentBlobPort, never()).readRange(any(), any(), any());
   }
 }

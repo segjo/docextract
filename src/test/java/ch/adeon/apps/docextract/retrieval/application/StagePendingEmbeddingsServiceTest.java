@@ -17,15 +17,14 @@ import ch.adeon.apps.docextract.ingest.application.DocumentHashStagingPort;
 import ch.adeon.apps.docextract.retrieval.domain.EmbeddingBatchResult;
 import ch.adeon.apps.docextract.retrieval.domain.EmbeddingVector;
 import ch.adeon.apps.docextract.retrieval.domain.PendingEmbedding;
-import ch.adeon.apps.docextract.retrieval.domain.RetrievalException;
 import ch.adeon.apps.docextract.retrieval.port.EmbeddingPort;
 import ch.adeon.apps.docextract.retrieval.port.PendingEmbeddingPort;
+import ch.adeon.apps.docextract.shared.error.RetrievalException;
 import ch.adeon.apps.docextract.shared.hash.Sha256;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
-
 class StagePendingEmbeddingsServiceTest {
 
   private final TextStagingPort textStagingPort = mock(TextStagingPort.class);

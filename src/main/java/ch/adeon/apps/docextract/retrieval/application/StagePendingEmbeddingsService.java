@@ -8,9 +8,9 @@ import ch.adeon.apps.docextract.ingest.application.DocumentHashStagingPort;
 import ch.adeon.apps.docextract.retrieval.domain.EmbeddingBatchResult;
 import ch.adeon.apps.docextract.retrieval.domain.EmbeddingVector;
 import ch.adeon.apps.docextract.retrieval.domain.PendingEmbedding;
-import ch.adeon.apps.docextract.retrieval.domain.RetrievalException;
 import ch.adeon.apps.docextract.retrieval.port.EmbeddingPort;
 import ch.adeon.apps.docextract.retrieval.port.PendingEmbeddingPort;
+import ch.adeon.apps.docextract.shared.error.RetrievalException;
 import ch.adeon.apps.docextract.shared.hash.Sha256;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -19,7 +19,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-
 /**
  * Embeds the text staged by the content module for a process into a single vector and quarantines
  * it as a non-retrievalfähige {@code PENDING} entry with a TTL (ADR-006, ADR-012, C-7, T-2). The

@@ -4,7 +4,6 @@ import ch.adeon.apps.docextract.audit.application.AuditEvent;
 import ch.adeon.apps.docextract.audit.application.AuditPort;
 import ch.adeon.apps.docextract.content.application.ContentStagingPort;
 import ch.adeon.apps.docextract.content.port.DocumentContent;
-import ch.adeon.apps.docextract.extraction.domain.ExtractionException;
 import ch.adeon.apps.docextract.extraction.domain.LlmResponse;
 import ch.adeon.apps.docextract.extraction.domain.LlmTool;
 import ch.adeon.apps.docextract.extraction.domain.ModelInfo;
@@ -25,6 +24,7 @@ import ch.adeon.apps.docextract.retrieval.port.DmsValueList;
 import ch.adeon.apps.docextract.retrieval.port.RetrievalResult;
 import ch.adeon.apps.docextract.retrieval.port.ValueListPort;
 import ch.adeon.apps.docextract.security.application.DvelopCredential;
+import ch.adeon.apps.docextract.shared.error.ExtractionException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -45,7 +45,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
-
 /**
  * Picks the process's staged document type candidate (see {@link DocumentTypeCandidatesPort}) with
  * the highest similarity score; only if none has one (no similar document found) the extraction LLM

@@ -17,7 +17,6 @@ import ch.adeon.apps.docextract.audit.application.AuditPort;
 import ch.adeon.apps.docextract.content.application.ContentStagingPort;
 import ch.adeon.apps.docextract.content.domain.Representation;
 import ch.adeon.apps.docextract.content.port.DocumentContent;
-import ch.adeon.apps.docextract.extraction.domain.ExtractionException;
 import ch.adeon.apps.docextract.extraction.domain.LlmResponse;
 import ch.adeon.apps.docextract.extraction.domain.ModelInfo;
 import ch.adeon.apps.docextract.extraction.port.LlmPort;
@@ -35,12 +34,12 @@ import ch.adeon.apps.docextract.retrieval.port.DmsPropertyDataType;
 import ch.adeon.apps.docextract.retrieval.port.DmsPropertyDefinition;
 import ch.adeon.apps.docextract.retrieval.port.ValueListPort;
 import ch.adeon.apps.docextract.security.application.DvelopCredential;
+import ch.adeon.apps.docextract.shared.error.ExtractionException;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import tools.jackson.databind.json.JsonMapper;
-
 class ExtractAttributesServiceTest {
 
   private static final DvelopCredential CREDENTIAL =

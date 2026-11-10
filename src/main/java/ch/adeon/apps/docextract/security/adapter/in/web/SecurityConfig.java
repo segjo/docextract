@@ -3,6 +3,8 @@ package ch.adeon.apps.docextract.security.adapter.in.web;
 import ch.adeon.apps.docextract.security.application.AppConfigPort;
 import ch.adeon.apps.docextract.security.application.IdentityProviderPort;
 import ch.adeon.apps.docextract.security.domain.AgentGroup;
+import ch.adeon.apps.docextract.shared.adapter.web.ProblemDetails;
+import ch.adeon.apps.docextract.shared.error.ProblemCode;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -27,7 +29,6 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import tools.jackson.databind.ObjectMapper;
-
 /**
  * Requires every /api/** request to carry a valid d.velop session, validated per-request via {@link
  * IdentityProviderPort}. The MCP endpoint is open to every authenticated user (person and agent);
@@ -93,11 +94,16 @@ public class SecurityConfig {
                     writeProblemDetail(
                         response,
                         objectMapper,
+                        ProblemCode.UNAUTHORIZED,
                         HttpStatus.UNAUTHORIZED,
                         "Session validation failed"))
                 .accessDeniedHandler((request, response, accessDeniedException) ->
                     writeProblemDetail(
-                        response, objectMapper, HttpStatus.FORBIDDEN, "Access denied")))
+                        response,
+                        objectMapper,
+                        ProblemCode.FORBIDDEN,
+                        HttpStatus.FORBIDDEN,
+                        "Access denied")))
         .addFilterBefore(
             new DvelopAuthenticationFilter(
                 identityProviderPort, appConfigPort, defaultTenantId, secret),
@@ -134,9 +140,13 @@ public class SecurityConfig {
   }
 
   private void writeProblemDetail(
-      HttpServletResponse response, ObjectMapper objectMapper, HttpStatus status, String detail)
+      HttpServletResponse response,
+      ObjectMapper objectMapper,
+      ProblemCode code,
+      HttpStatus status,
+      String detail)
       throws IOException {
-    ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
+    ProblemDetail problem = ProblemDetails.of(code, status, detail);
     response.setStatus(status.value());
     response.setContentType("application/problem+json");
     objectMapper.writeValue(response.getWriter(), problem);

@@ -7,7 +7,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import ch.adeon.apps.docextract.agentgateway.application.AgentToolException.Code;
 import ch.adeon.apps.docextract.audit.application.ActorKind;
 import ch.adeon.apps.docextract.audit.application.AuditChannel;
 import ch.adeon.apps.docextract.audit.application.AuditEvent;
@@ -20,6 +19,8 @@ import ch.adeon.apps.docextract.retrieval.application.GetSimilarDocuments;
 import ch.adeon.apps.docextract.retrieval.port.RetrievalResult;
 import ch.adeon.apps.docextract.security.application.AuthContext;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
+import ch.adeon.apps.docextract.shared.error.InvalidRequestException;
+import ch.adeon.apps.docextract.shared.error.ProblemCode;
 import ch.adeon.apps.docextract.shared.hash.Sha256;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -29,7 +30,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
-
 class AgentGatewayServiceTest {
 
   private static final String PROCESS_ID = "3f2b8c1e-4a5d-4e6f-8a9b-0c1d2e3f4a5b";
@@ -86,11 +86,9 @@ class AgentGatewayServiceTest {
         .thenThrow(new ProcessNotFoundException(PROCESS_ID));
 
     assertThatThrownBy(() -> service.getProcessSuggestions(PROCESS_ID))
-        .isInstanceOfSatisfying(
-            AgentToolException.class, ex -> assertThat(ex.code()).isEqualTo(Code.NOT_FOUND));
+        .isInstanceOf(ProcessNotFoundException.class);
     assertThatThrownBy(() -> service.findSimilarDocuments(PROCESS_ID))
-        .isInstanceOfSatisfying(
-            AgentToolException.class, ex -> assertThat(ex.code()).isEqualTo(Code.NOT_FOUND));
+        .isInstanceOf(ProcessNotFoundException.class);
   }
 
   @ParameterizedTest
@@ -100,7 +98,8 @@ class AgentGatewayServiceTest {
   void invalid_process_id_is_rejected_before_any_lookup(String processId) {
     assertThatThrownBy(() -> service.getProcessSuggestions(processId))
         .isInstanceOfSatisfying(
-            AgentToolException.class, ex -> assertThat(ex.code()).isEqualTo(Code.INVALID_ARGUMENT));
+            InvalidRequestException.class,
+            ex -> assertThat(ex.code()).isEqualTo(ProblemCode.INVALID_REQUEST));
 
     verifyNoInteractions(getExtractionResult, getSimilarDocuments);
     assertThat(auditedEvent().eventType())

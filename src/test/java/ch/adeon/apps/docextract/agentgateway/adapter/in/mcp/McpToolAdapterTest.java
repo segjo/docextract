@@ -20,6 +20,8 @@ import ch.adeon.apps.docextract.retrieval.application.GetSimilarDocuments;
 import ch.adeon.apps.docextract.retrieval.port.RetrievalResult;
 import ch.adeon.apps.docextract.security.application.AuthContext;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
+import ch.adeon.apps.docextract.shared.error.AdapterUnavailableException;
+import ch.adeon.apps.docextract.shared.error.ProblemCode;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
@@ -31,7 +33,6 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
-
 /** MCP tool surface against the real {@link AgentGatewayService} with mocked ports. */
 class McpToolAdapterTest {
 
@@ -112,7 +113,7 @@ class McpToolAdapterTest {
     CallToolResult result = call("get_process_suggestions", Map.of("processId", PROCESS_ID));
 
     assertThat(result.isError()).isTrue();
-    assertThat(text(result)).contains("\"code\":\"not_found\"").doesNotContain("tenant");
+    assertThat(text(result)).contains("\"code\":\"not-found\"").doesNotContain("tenant");
   }
 
   @Test
@@ -127,7 +128,7 @@ class McpToolAdapterTest {
     invalid.forEach(arguments -> {
       CallToolResult result = call("find_similar_documents", arguments);
       assertThat(result.isError()).isTrue();
-      assertThat(text(result)).contains("\"code\":\"invalid_argument\"");
+      assertThat(text(result)).contains("\"code\":\"invalid-request\"");
     });
     verifyNoInteractions(getExtractionResult, getSimilarDocuments);
   }
@@ -156,5 +157,33 @@ class McpToolAdapterTest {
 
   private static String text(CallToolResult result) {
     return ((TextContent) result.content().get(0)).text();
+  }
+
+  @Test
+  void errors_carry_the_same_code_type_and_title_as_the_rest_problem() {
+    when(getExtractionResult.get("tenant-a", PROCESS_ID))
+        .thenThrow(new ProcessNotFoundException(PROCESS_ID));
+
+    String body = text(call("get_process_suggestions", Map.of("processId", PROCESS_ID)));
+
+    assertThat(body)
+        .contains("\"code\":\"" + ProblemCode.NOT_FOUND.slug() + "\"")
+        .contains("\"type\":\"" + ProblemCode.NOT_FOUND.typeUri() + "\"")
+        .contains("\"title\":\"" + ProblemCode.NOT_FOUND.title() + "\"")
+        .contains("\"processId\":\"" + PROCESS_ID + "\"");
+  }
+
+  @Test
+  void adapter_failures_and_unexpected_errors_never_leak_their_message() {
+    when(getExtractionResult.get("tenant-a", PROCESS_ID))
+        .thenThrow(new AdapterUnavailableException("upstream said: " + SECRET_VALUE));
+    when(getSimilarDocuments.get("tenant-a", PROCESS_ID))
+        .thenThrow(new IllegalStateException("boom " + SECRET_VALUE));
+
+    String adapter = text(call("get_process_suggestions", Map.of("processId", PROCESS_ID)));
+    String unexpected = text(call("find_similar_documents", Map.of("processId", PROCESS_ID)));
+
+    assertThat(adapter).contains("\"code\":\"adapter-unavailable\"").doesNotContain(SECRET_VALUE);
+    assertThat(unexpected).contains("\"code\":\"internal-error\"").doesNotContain(SECRET_VALUE);
   }
 }

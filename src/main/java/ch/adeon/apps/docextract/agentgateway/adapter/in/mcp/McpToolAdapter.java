@@ -1,19 +1,19 @@
 package ch.adeon.apps.docextract.agentgateway.adapter.in.mcp;
 
-import ch.adeon.apps.docextract.agentgateway.application.AgentToolException;
 import ch.adeon.apps.docextract.agentgateway.application.McpTool;
+import ch.adeon.apps.docextract.shared.error.DocextractException;
+import ch.adeon.apps.docextract.shared.error.ProblemCode;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
 import io.modelcontextprotocol.spec.McpSchema.ToolAnnotations;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import tools.jackson.databind.ObjectMapper;
-
 /**
  * Maps the read-only {@link McpTool} port onto MCP tool specifications (Spring AI MCP server,
  * ADR-009). No guardrail logic here: validation, tenant ownership and audit live in the service.
@@ -95,11 +95,14 @@ public class McpToolAdapter {
           .addTextContent(objectMapper.writeValueAsString(result))
           .isError(false)
           .build();
-    } catch (AgentToolException ex) {
-      return error(ex.code().name().toLowerCase(Locale.ROOT), ex.getMessage());
+    } catch (DocextractException ex) {
+      if (ex.code() == ProblemCode.INTERNAL_ERROR || ex.code() == ProblemCode.ADAPTER_UNAVAILABLE) {
+        log.warn("MCP tool {} failed: {}", name, ex.getClass().getSimpleName());
+      }
+      return error(ex.code(), ex.detail(), ex.processId());
     } catch (RuntimeException ex) {
       log.warn("MCP tool {} failed: {}", name, ex.getClass().getSimpleName());
-      return error("internal_error", "tool call failed");
+      return error(ProblemCode.INTERNAL_ERROR, "An unexpected error occurred", null);
     }
   }
 
@@ -116,9 +119,18 @@ public class McpToolAdapter {
     return processId;
   }
 
-  private CallToolResult error(String code, String message) {
+  /** Same {@code code}/{@code type}/{@code title}/{@code detail} as the REST ProblemDetail. */
+  private CallToolResult error(ProblemCode code, String detail, String processId) {
+    Map<String, Object> body = new LinkedHashMap<>();
+    body.put("code", code.slug());
+    body.put("type", code.typeUri());
+    body.put("title", code.title());
+    body.put("detail", detail);
+    if (processId != null) {
+      body.put(PROCESS_ID, processId);
+    }
     return CallToolResult.builder()
-        .addTextContent(objectMapper.writeValueAsString(Map.of("code", code, "message", message)))
+        .addTextContent(objectMapper.writeValueAsString(body))
         .isError(true)
         .build();
   }

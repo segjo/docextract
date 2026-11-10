@@ -30,6 +30,7 @@ import ch.adeon.apps.docextract.retrieval.application.FindSimilar;
 import ch.adeon.apps.docextract.security.application.AuthContext;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
 import ch.adeon.apps.docextract.security.application.OutboundCredentialPort;
+import ch.adeon.apps.docextract.shared.error.LimitExceededException;
 import ch.adeon.apps.docextract.shared.media.MediaType;
 import java.util.Optional;
 import java.util.Set;
@@ -37,7 +38,6 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.jupiter.api.Test;
-
 class IngestDocumentServiceTest {
 
   private final DocumentBlobPort documentBlobPort = mock(DocumentBlobPort.class);
@@ -144,7 +144,7 @@ class IngestDocumentServiceTest {
   void upload_exceeding_the_limit_is_rejected_before_any_side_effect() {
     IngestCommand command = IngestCommand.of("big.pdf", "application/pdf", new byte[2048]);
 
-    assertThatThrownBy(() -> service.ingest(command)).isInstanceOf(UploadRejectedException.class);
+    assertThatThrownBy(() -> service.ingest(command)).isInstanceOf(LimitExceededException.class);
 
     verify(documentBlobPort, never()).store(any(), any(), any(), any(), any(), any());
     verify(dmsChunkUploadPort, never()).upload(any(), any(), any(), any());

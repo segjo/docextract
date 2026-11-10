@@ -6,6 +6,7 @@ import ch.adeon.apps.docextract.security.application.IdentityProviderPort;
 import ch.adeon.apps.docextract.security.domain.AgentGroup;
 import ch.adeon.apps.docextract.security.domain.DvelopUser;
 import ch.adeon.apps.docextract.security.domain.RequestTenant;
+import ch.adeon.apps.docextract.shared.error.ProblemCode;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
@@ -22,7 +23,6 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
-
 /**
  * Resolves the tenant of every request, then validates it against the identityprovider (Bearer
  * header or AuthSessionId cookie) of that tenant (NfA-4).
@@ -42,7 +42,9 @@ public class DvelopAuthenticationFilter extends OncePerRequestFilter {
   private static final String BEARER_PREFIX = "Bearer ";
   private static final Pattern TENANT_ID = Pattern.compile("[A-Za-z0-9._-]{1,128}");
   private static final String FORBIDDEN_BODY =
-      "{\"type\":\"about:blank\",\"title\":\"Forbidden\",\"status\":403,"
+      "{\"type\":\""
+          + ProblemCode.FORBIDDEN.typeUri()
+          + "\",\"title\":\"Forbidden\",\"status\":403,"
           + "\"detail\":\"Invalid or missing tenant headers\"}";
 
   private final IdentityProviderPort identityProviderPort;

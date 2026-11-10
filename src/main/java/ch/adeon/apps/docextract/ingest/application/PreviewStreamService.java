@@ -7,11 +7,11 @@ import ch.adeon.apps.docextract.ingest.port.PageRange;
 import ch.adeon.apps.docextract.ingest.port.PreviewRenderPort;
 import ch.adeon.apps.docextract.security.application.AuthContext;
 import ch.adeon.apps.docextract.security.application.AuthContextPort;
+import ch.adeon.apps.docextract.shared.error.RangeNotSatisfiableException;
 import ch.adeon.apps.docextract.shared.media.MediaType;
 import java.util.Objects;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
-
 /**
  * Preview-Branch (ADR-008): native PDFs are streamed directly from the ORIGINAL blob; non-PDFs are
  * rendered once via Gotenberg into a PREVIEW blob and streamed from there. No DMS read-back is
@@ -46,6 +46,9 @@ public class PreviewStreamService implements StreamPreview {
 
     BlobRef source = original.mediaType().isPdf() ? original : renderPreview(original);
 
+    if (range != null && range.start() >= source.sizeBytes()) {
+      throw new RangeNotSatisfiableException(source.sizeBytes());
+    }
     PageRange effectiveRange = range != null ? range : PageRange.full(source.sizeBytes());
     byte[] content = documentBlobPort.readRange(auth.tenantId(), source.blobId(), effectiveRange);
     return new PreviewChunk(content, source.sizeBytes());

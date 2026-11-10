@@ -19,7 +19,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
-
 /**
  * {@code POST /documents} — synchronous blob-store write + original-chunk-upload, then {@code 202
  * Accepted + processId} (FR-1, ADR-008). The actual DMS object is only finalized later, after human
@@ -53,16 +52,20 @@ public class UploadController {
   @ApiResponse(
       responseCode = "400",
       description =
-          "Upload abgewiesen (leere Datei, Grössen-Limit, nicht unterstützter Medientyp; T-4)"
-              + " oder Parameter file/repositoryId fehlt (dann heute ohne Body, ProblemDetail ab"
-              + " P7).",
+          "Upload abgewiesen (leere Datei, nicht unterstützter Medientyp; T-4) oder Parameter"
+              + " file/repositoryId fehlt.",
       content = @Content(mediaType = PROBLEM_JSON, schema = @Schema(ref = PROBLEM_SCHEMA_REF)))
   @ApiResponse(responseCode = "401", ref = UNAUTHORIZED_REF)
   @ApiResponse(
       responseCode = "413",
       description =
-          "Request grösser als spring.servlet.multipart.max-request-size (50 MB). Heute ohne"
-              + " Body, ProblemDetail ab P7.",
+          "Datei grösser als das Limit (docextract.ingest.max-file-size-bytes) oder Request"
+              + " grösser als spring.servlet.multipart.max-request-size (50 MB); gleicher type"
+              + " `limit-exceeded`.",
+      content = @Content(mediaType = PROBLEM_JSON, schema = @Schema(ref = PROBLEM_SCHEMA_REF)))
+  @ApiResponse(
+      responseCode = "422",
+      description = "Seitenzahl-Limit überschritten (type `limit-exceeded`; noch nicht erzwungen).",
       content = @Content(mediaType = PROBLEM_JSON, schema = @Schema(ref = PROBLEM_SCHEMA_REF)))
   @ApiResponse(
       responseCode = "502",
