@@ -73,3 +73,8 @@ Prüfliste für den Diff-Review (Block 3). Spalten **Entscheid** und **Grund** f
 | `src/test/java/ch/adeon/apps/docextract/shared/adapter/web/GlobalExceptionHandlerTest.java` | Neu: Status + type je Fehlerklasse, PII-Freiheit von `detail`, Framework-Fehler, 413/416. |  |  | GlobalExceptionHandlerTest |
 | `src/test/java/ch/adeon/apps/docextract/shared/web/TenantScopedEndpointsTest.java` | Import des verschobenen Handlers. |  |  | TenantScopedEndpointsTest |
 | `src/test/java/ch/adeon/apps/docextract/validation/adapter/in/rest/ValidationControllerIdempotencyTest.java` | Import des verschobenen Handlers. |  |  | ValidationControllerIdempotencyTest |
+| `doc/block3/repo-wide-change.md` | Neu: diese Prüfliste. |  |  | – |
+| `src/main/java/ch/adeon/apps/docextract/content/domain/ContentException.java` | Alter Pfad: nach `shared/error` verschoben (Rename). |  |  | HexagonalArchitectureTest |
+| `src/main/java/ch/adeon/apps/docextract/extraction/domain/ExtractionException.java` | Alter Pfad: nach `shared/error` verschoben (Rename). |  |  | HexagonalArchitectureTest |
+| `src/main/java/ch/adeon/apps/docextract/retrieval/domain/RetrievalException.java` | Alter Pfad: nach `shared/error` verschoben (Rename). |  |  | HexagonalArchitectureTest |
+| `src/main/java/ch/adeon/apps/docextract/shared/web/GlobalExceptionHandler.java` | Alter Pfad gelöscht; Ersatz in `shared/adapter/web`. |  |  | GlobalExceptionHandlerTest |

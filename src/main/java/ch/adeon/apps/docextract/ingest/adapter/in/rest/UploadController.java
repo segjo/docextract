@@ -64,10 +64,6 @@ public class UploadController {
               + " `limit-exceeded`.",
       content = @Content(mediaType = PROBLEM_JSON, schema = @Schema(ref = PROBLEM_SCHEMA_REF)))
   @ApiResponse(
-      responseCode = "422",
-      description = "Seitenzahl-Limit überschritten (type `limit-exceeded`; noch nicht erzwungen).",
-      content = @Content(mediaType = PROBLEM_JSON, schema = @Schema(ref = PROBLEM_SCHEMA_REF)))
-  @ApiResponse(
       responseCode = "502",
       description = "DMS-Chunk-Upload fehlgeschlagen.",
       content = @Content(mediaType = PROBLEM_JSON, schema = @Schema(ref = PROBLEM_SCHEMA_REF)))

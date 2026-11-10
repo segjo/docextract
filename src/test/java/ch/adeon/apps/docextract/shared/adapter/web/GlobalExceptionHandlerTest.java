@@ -162,7 +162,7 @@ class GlobalExceptionHandlerTest {
     return Stream.of(
         () -> new InvalidAttributesException(PROCESS_ID, "IBAN " + ATTRIBUTE_VALUE + " is invalid"),
         () -> new DmsChunkUploadException("rejected " + FILE_NAME),
-        () -> new PreviewRenderingException("Gotenberg conversion failed for " + FILE_NAME),
+        () -> new PreviewRenderingException("file conversion failed for " + FILE_NAME),
         () -> new DmsWriteFailedException(ATTRIBUTE_VALUE, new RuntimeException(FILE_NAME)),
         () -> new ExtractionException("model said " + ATTRIBUTE_VALUE),
         () -> new ContentException("cannot read " + FILE_NAME),

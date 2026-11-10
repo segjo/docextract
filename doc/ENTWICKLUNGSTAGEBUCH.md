@@ -1986,3 +1986,20 @@ Abbildungen aus den P3-Befunden (502/500, Framework-Fehler, 413/422, Range 200/4
   nicht per Browser getestet, nur per Code-Review begründet.
 - Hinweis: `doc/Block-3-Aufgaben.md` und `doc/Block-3-Prompts.md` (ungetrackte Dateien von dir)
   sind nicht Teil des Commits.
+- OFFEN (nur gemeldet, nichts geändert): `POST /api/v1/processes/{id}/extraction-result/retry` ruft
+  `LlmPort` synchron im Request-Thread auf (`ExtractionController.retry` → `ExtractAttributesService.retry` →
+  `doExtract` → `llmPort.generate`). Antwortzeit = LLM-Laufzeit inkl. Retries; ein Fehler kommt als 500/502
+  statt als `failed`-Event. Entscheid nötig: synchron lassen (Timeout/SLO festlegen) oder asynchron wie der Upload.
+- Frontend, Auswertung von Fehlerantworten (nur aufgelistet, nicht geändert):
+  - `process-page.ts:228-231` (confirm): `err.status === 422` → `err.error?.detail`. Status und Feld `detail`
+    bleiben gleich, aber `detail` ist jetzt der feste englische Text; `type`/`code` werden nicht ausgewertet.
+    Andere Status (409 `conflict-state`, 410 `process-expired`, 502) bekommen nur den generischen Text.
+  - `process-page.ts:116, 142, 186, 200` und `import.ts:49, 127`: `error: () => …`, nur feste Meldungen,
+    weder Status noch Body gelesen. Unberührt von der neuen Form (413 beim Upload bleibt „Import fehlgeschlagen“).
+  - `mock-api.interceptor.ts:85-86`: wechselt bei `status === 0 || >= 500` auf Mock-Daten. Neu liefert der
+    Server für unerwartete Fehler 500 und für DMS-Fehler 502 jeweils als ProblemDetail; Verhalten bleibt gleich,
+    aber ein echter 500/502 wird im Dev-Modus weiterhin durch Mock-Daten überdeckt.
+  - `process-events-api.ts:37`: `EventSource.onerror` liest keinen Body; ein 404 beim SSE-Connect ist
+    ebenfalls nicht auswertbar.
+  - Kein Code liest `type`, `code`, `title` oder `processId`. Keine Frontend-Specs mit Fehlerbody gefunden.
+

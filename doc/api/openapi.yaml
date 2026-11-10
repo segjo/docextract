@@ -68,13 +68,6 @@ paths:
           description: Datei grösser als das Limit (docextract.ingest.max-file-size-bytes)
             oder Request grösser als spring.servlet.multipart.max-request-size (50
             MB); gleicher type `limit-exceeded`.
-        "422":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: Seitenzahl-Limit überschritten (type `limit-exceeded`; noch
-            nicht erzwungen).
         "502":
           content:
             application/problem+json:
