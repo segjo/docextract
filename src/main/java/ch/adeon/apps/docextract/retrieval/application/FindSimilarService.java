@@ -17,12 +17,16 @@ import ch.adeon.apps.docextract.retrieval.port.RetrievalResult;
 import ch.adeon.apps.docextract.retrieval.port.ValueListPort;
 import ch.adeon.apps.docextract.retrieval.port.VectorSearchPort;
 import ch.adeon.apps.docextract.security.application.DvelopCredential;
+import jakarta.annotation.PreDestroy;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -60,6 +64,7 @@ public class FindSimilarService implements FindSimilar {
   private final double minScore;
   private final List<String> documentTypeFilter;
   private final String defaultRepositoryId;
+  private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
   public FindSimilarService(
       StageEmbeddings stageEmbeddings,
@@ -92,6 +97,11 @@ public class FindSimilarService implements FindSimilar {
     this.defaultRepositoryId = defaultRepositoryId;
   }
 
+  @PreDestroy
+  void shutdown() {
+    executor.shutdown();
+  }
+
   @Override
   public List<RetrievalResult> find(
       String tenantId, String processId, int topK, DvelopCredential credential) {
@@ -112,10 +122,11 @@ public class FindSimilarService implements FindSimilar {
 
       EmbeddingVector queryEmbedding = queryEmbeddingOpt.get();
       List<RetrievalResult> results =
-          vectorSearchPort.search(tenantId, queryEmbedding, topK).stream()
-              .filter(result -> result.score() >= minScore)
-              .map(result -> withDmsProperties(result, credential))
-              .toList();
+          enrichWithDmsProperties(
+              vectorSearchPort.search(tenantId, queryEmbedding, topK).stream()
+                  .filter(result -> result.score() >= minScore)
+                  .toList(),
+              credential);
       List<RetrievalResult> bestTypeResults = filterToBestDocumentType(results);
       log.info(
           "retrieval completed processId={} resultCount={} bestTypeResultCount={}",
@@ -136,6 +147,24 @@ public class FindSimilarService implements FindSimilar {
       }
       throw new RetrievalException("retrieval failed for process " + processId, ex);
     }
+  }
+
+  /**
+   * Fans the per-hit DMS property lookups out onto virtual threads and joins them back in the
+   * original order, instead of fetching each hit's properties sequentially — each lookup is an
+   * independent live HTTP round-trip (see {@link #withDmsProperties}), so doing them concurrently
+   * bounds this step's latency by the slowest single call rather than their sum.
+   */
+  private List<RetrievalResult> enrichWithDmsProperties(
+      List<RetrievalResult> results, DvelopCredential credential) {
+    List<CompletableFuture<RetrievalResult>> futures =
+        results.stream()
+            .map(
+                result ->
+                    CompletableFuture.supplyAsync(
+                        () -> withDmsProperties(result, credential), executor))
+            .toList();
+    return futures.stream().map(CompletableFuture::join).toList();
   }
 
   /**
