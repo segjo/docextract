@@ -60,26 +60,25 @@ Begleitdokument zu [SPEC.md](SPEC.md) · Stand: 10/2026
 | 2.3 | Generierte Unit-Tests + Diff-Notiz (KI korrigiert/verworfen)    |   7 | ✅ Unit-Tests ergänzt (11 Spec-Dateien, 51 Tests: `process-progress`/`attribute-review` pure Funktionen, `status-bar`/`protocol-panel`/`similar-panel`/`properties-panel`/`document-viewer`/`process-page` Komponenten); Diff-Notiz als laufendes [`ENTWICKLUNGSTAGEBUCH.md`](ENTWICKLUNGSTAGEBUCH.md) (1. Eintrag erfasst) | Valid. (13) · KI (15) |
 | 2.4 | A11y-/Security-/Performance-Budget-Prüfung                      |   4 | ✅ NfA-F1 (`vitest-axe`), NfA-F2 (Sanitizer-Scan), NfA-F3 (`angular.json` Bundle-Budget 250/300 kB) — s. FRONTEND-SPEC.md                                                                                                                                                                                                   | Valid. (12)           |
 | 2.5 | **ADR** Präsentationsschicht (CSR-Entscheid)                    |   2 | ✅ ADR-013 (ARCHITECTURE.md § 9)                                                                                                                                                                                                                                                                                            | Entwurf (4)           |
-| 2.6 | Projekt-Kontext-Dokument v0.2                                   |   2 | ⚠️ ARCHITECTURE.md laufend aktualisiert (Stand 09/2026, inkl. ADR-013), aber ohne explizite v0.1→v0.2-Versionsmarkierung                                                                                                                                                                                                    | KI/Arch (17)          |
+| 2.6 | Projekt-Kontext-Dokument v0.2                                   |   2 | ✅ ARCHITECTURE.md Änderungshistorie (am Ende des Dokuments): v0.2 = Stand mit ADR-013 (`44cccb8`, 2026-10-24), rückwirkend aus dem Git-Log belegt | KI/Arch (17)          |
 
 **Exit-Kriterium:** Bedienbares Frontend gegen Mock-Daten; zweites ADR; dokumentierte KI-Korrekturen (Diffs).
-**Status:** 5 von 6 Positionen vollständig erfüllt (2.1–2.5). Offene Lücke: **2.6** — kein
-formaler Versionsstand des Projekt-Kontext-Dokuments dokumentiert. Exit-Kriterium bis auf diesen
-Punkt erreicht.
+**Status:** 6 von 6 Positionen erfüllt (2.1–2.6). 2.6 rückwirkend belegt: Die Versionsmarkierung v0.2
+wurde erst mit v0.3 (Block 3) nachgetragen (ARCHITECTURE.md, Änderungshistorie).
 
 ---
 
 ## 5. Block 3 — Services · ~42 h _(bis PVA 4)_ — **schwerster Block**
 
-| #   | Aufgabe                                                               |   h | Raster-Bezug          |
-| --- | --------------------------------------------------------------------- | --: | --------------------- |
-| 3.1 | Zerlegung in ≥ 2 Module mit expliziten Verträgen                      |   6 | KI/Arch (17)          |
-| 3.2 | **OpenAPI**-Specs inkl. Fehlerfälle (+ Idempotenz/PII für 1 Endpoint) |   6 | Prog. (8)             |
-| 3.3 | **MCP-Tool** (Service agent-konsumierbar, → SPEC FR-6)                |   8 | KI/Arch (16)          |
-| 3.4 | Sicherheitskonzept Agent/MCP (AuthZ, min. Scopes, Consent, Audit)     |   6 | Valid. (12) · KI (16) |
-| 3.5 | Kommunikationsentscheid (sync/async begründen)                        |   3 | Entwurf (4)           |
-| 3.6 | **Erste KI-Integration** (FR-4 Extraktion / FR-3 Retrieval)           |   9 | KI/Arch (16)          |
-| 3.7 | Modulübergreifende, kontextgetriebene KI-Änderung + Review-Diff       |   4 | KI/Arch (15)(18)      |
+| #   | Aufgabe | h | Status | Raster-Bezug |
+| --- | ------- | -: | ------ | ------------ |
+| 3.1 | Zerlegung in ≥ 2 Module mit expliziten Verträgen | 6 | ✅ ARCHITECTURE § 5.6 (Modulschnitt, Verträge), § 5.2 (Port-Tabelle); ArchUnit `HexagonalArchitectureTest` | KI/Arch (17) |
+| 3.2 | **OpenAPI**-Specs inkl. Fehlerfälle (+ Idempotenz/PII für 1 Endpoint) | 6 | ✅ `doc/api/openapi.yaml` (OpenAPI 3.1, Fehlerfälle als ProblemDetail), `x-idempotency` und `x-slo` am Confirm-Endpunkt; `OpenApiContractTest` | Prog. (8) |
+| 3.3 | **MCP-Tool** (Service agent-konsumierbar, → SPEC FR-6) | 8 | ✅ MCP-Tools `get_process_suggestions`, `find_similar_documents` (nur lesend), ARCHITECTURE § 6.3; `McpToolAdapterTest`, `McpServerWiringTest`, `McpEndpointSecurityTest` | KI/Arch (16) |
+| 3.4 | Sicherheitskonzept Agent/MCP (AuthZ, min. Scopes, Consent, Audit) | 6 | ⚠️ ARCHITECTURE § 8.6 umgesetzt (Agent-Gruppe nur `/api/v1/mcp/**`, Mandant über Ports, Audit insert-only V17). Offen: Scope-Liste und Vorlagen-Consent nicht umgesetzt | Valid. (12) · KI (16) |
+| 3.5 | Kommunikationsentscheid (sync/async begründen) | 3 | ✅ ADR-015 (Freigabe-Saga synchron orchestriert, Retry-Obergrenze), ADR-004 (asynchrone Pipeline) | Entwurf (4) |
+| 3.6 | **Erste KI-Integration** (FR-4 Extraktion / FR-3 Retrieval) | 9 | ✅ siehe Status 3.6 unten | KI/Arch (16) |
+| 3.7 | Modulübergreifende, kontextgetriebene KI-Änderung + Review-Diff | 4 | ⚠️ Fehlerform ProblemDetail für REST und MCP umgesetzt (`d2bb60b`); Review-Entscheide je Datei in `doc/block3/repo-wide-change.md` noch nicht eingetragen | KI/Arch (15)(18) |
 
 **Exit-Kriterium:** Zwei Module mit Verträgen; MCP-Tool lauffähig; erste KI-Funktion integriert und abgesichert.
 **Status 3.6** (Befund-Tabelle: [`ENTWICKLUNGSTAGEBUCH.md`](ENTWICKLUNGSTAGEBUCH.md), Eintrag

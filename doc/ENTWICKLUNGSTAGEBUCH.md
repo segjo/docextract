@@ -2003,3 +2003,37 @@ Abbildungen aus den P3-Befunden (502/500, Framework-Fehler, 413/422, Range 200/4
     ebenfalls nicht auswertbar.
   - Kein Code liest `type`, `code`, `title` oder `processId`. Keine Frontend-Specs mit Fehlerbody gefunden.
 
+
+## 2026-11-10 (7) — ARCHITECTURE.md auf v0.3, Leitplanken für Agenten (Block 3, Artefakt 8 / 2.6)
+
+**Tool/Modell:** GitHub Copilot (Copilot SDK in VS Code)
+**Auftrag (Prompt-Zusammenfassung):** `doc/ARCHITECTURE.md` auf v0.3 heben (Kopfzeile, Änderungshistorie aus
+`git log`), neuen Abschnitt „Leitplanken für Agenten“, `.github/copilot-instructions.md` darauf verweisen,
+PROJEKTPLAN 2.6 auf ✅ und Status-Spalte für 3.1–3.7 (nur Fakten). Keine neuen Anforderungen.
+
+**Geänderte Dateien:** `doc/ARCHITECTURE.md`, `doc/PROJEKTPLAN.md`, `.github/copilot-instructions.md`,
+`doc/ENTWICKLUNGSTAGEBUCH.md`. Kein Code, kein Build nötig (nur Doku).
+
+**Generiert:**
+
+- ARCHITECTURE: Kopfzeile „Version 0.3 · Stand: 2026-11-10“; neuer § 8.7 (Berechtigungen, Freigaben,
+  Service-Verträge; ergänzt, keine Nummern verschoben); Änderungshistorie am Ende (v0.1–v0.3 mit Commits).
+- PROJEKTPLAN: 2.6 ✅, Block-2-Status 6/6, Status-Spalte Block 3 mit Belegen (Dateien/Tests/Commits).
+- `.github/copilot-instructions.md`: ein Verweis auf § 8.7, keine Duplikation.
+
+**Korrigiert / Hinweise:**
+
+- Beleg v0.2: ADR-013 steht laut Git-Log erst seit `44cccb8` (2026-10-24) im Dokument, obwohl das Tagebuch
+  die Arbeit auf 2026-10-07…11 datiert. Die Historie nennt das Commit-Datum.
+- 3.4 und 3.7 bewusst mit ⚠️ statt ✅: Scopes/Vorlagen-Consent nicht umgesetzt (§ 8.6); Review-Entscheide in
+  `doc/block3/repo-wide-change.md` sind leer.
+
+**Zu prüfen durch Mensch:**
+
+- OFFEN: Technische Begrenzung der Coding-Agent-Rechte (Terminal-/Netzwerk-Zugriff, Pfadsperren, CODEOWNERS);
+  in SPEC/ARCHITECTURE nicht festgelegt, kein `CODEOWNERS` vorhanden.
+- OFFEN: Durchsetzung der Freigabe für Migrationen und Guardrail-Code (Branch Protection, Pflicht-Review).
+  Die Liste der „Guardrail-Klassen“ in § 8.7 habe ich aus § 8.6 abgeleitet; bitte bestätigen.
+- OFFEN: Regel „bestehende Migrationen nicht ändern“ ist aus Flyway-Praxis abgeleitet, nicht aus SPEC.
+- OFFEN: Freigabe-Entscheide je Datei in `doc/block3/repo-wide-change.md` (3.7).
+- OFFEN: Scope-Liste und Vorlagen-Consent (3.4) weiterhin nicht umgesetzt.

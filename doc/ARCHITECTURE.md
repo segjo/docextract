@@ -3,7 +3,7 @@
 **KI-gestützte Dokumenterfassung & -verschlagwortung für d.velop documents**
 Architektur-Dokument · Gliederung nach **arc42** · Diagramme in **C4 (Mermaid)**
 Bezug: [SPEC.md](SPEC.md) · Blockplanung: [PROJEKTPLAN.md](PROJEKTPLAN.md) · Entscheidungen: § 9 (ADRs)
-**Stand:** 09/2026 · **Status:** lebendes Dokument, versioniert pro Block
+**Version 0.3 · Stand: 2026-11-10** · **Status:** lebendes Dokument, versioniert pro Block (Änderungshistorie am Ende)
 
 ---
 
@@ -727,6 +727,39 @@ Der Filter setzt `RequestTenant(id, baseUri)` in den Security-Kontext; `SessionA
 - **Vorlagen-Consent.** Existiert noch nicht; die Sperre für den Agent-Kanal gilt bereits für alle Nicht-MCP-Endpunkte.
 - **Audit-Schlüssel.** `docextract.audit.actor-key` wird nicht rotiert; ein Wechsel ändert alle künftigen `actor_hash` (alte Einträge bleiben, sind aber nicht mehr zuordenbar).
 
+### 8.7 Leitplanken für Agenten
+
+Gilt für **Coding-Agents** (Copilot im Repo) und den **MCP-Agenten** (Laufzeit). Die Regeln selbst stehen in SPEC § 6 (C-1…C-8, T-1…T-6), [`CONTEXT.md`](CONTEXT.md) § 3/§ 10 und § 8.6; hier nur die Einordnung und Verweise. [`.github/copilot-instructions.md`](../.github/copilot-instructions.md) verweist auf diesen Abschnitt.
+
+**Berechtigungen**
+
+| Agent        | Darf                                                                                                                                                                                      | Darf nie                                                                                                                                                                                                                                                                      |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| MCP-Agent    | Nur `/api/v1/mcp/**` mit den lesenden Tools `get_process_suggestions` und `find_similar_documents` (§ 6.3), nur eigener Mandant, nur Prozesse des Mandanten; jeder Call wird auditiert    | Upload, Confirm, Reject, Retry, SSE, `extraction-result` (für die Agent-Gruppe `403`); DMS-Write; `APPROVED` setzen; Quelltext-Auszug oder Eigenschaftswerte ähnlicher Dokumente erhalten; fremde Mandanten sehen (`not-found`); DMS-Rechte haben (technischer User ohne DMS-Rechte) |
+| Coding-Agent | Code, Tests und Doku im Repo ändern (Hexagonal, ArchUnit grün), `mvn -o clean verify` ausführen, Änderungen im Entwicklungstagebuch festhalten (`CONTEXT.md` § 7)                         | Guardrails C-2/C-3/C-4/NfA-4 abschwächen; Secrets (`DOCEXTRACT_TENANT_APP_SECRET`, `DOCEXTRACT_AUDIT_ACTOR_KEY`, API-Keys) oder Roh-PII in Code, Tests, Logs oder Audit schreiben; Produkt-/Framework-Typen in `domain`/`application`/`port`; Architekturentscheide ohne ADR ändern |
+
+OFFEN: Ob und wie die Rechte des Coding-Agents technisch begrenzt werden (Terminal-/Netzwerk-Zugriff, Pfadsperren, CODEOWNERS). Weder SPEC noch ARCHITECTURE legen das fest; es gibt aktuell kein `CODEOWNERS`.
+
+**Freigaben (menschliche Entscheidung nötig)**
+
+| Aktion                                   | Freigabe durch / Mechanismus                                                                                                                                  | Stand                                                                                      |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| DMS-Write (Rückschreiben)                | Explizite Benutzerbestätigung (`confirm`, UI-Kanal); kein LLM-/MCP-Pfad löst Writes aus (C-2, ADR-003, ADR-015)                                              | umgesetzt (`ConfirmAndWriteBackService`)                                                   |
+| Promotion `PENDING → APPROVED`           | Nur im Consent-geschützten Validierungspfad nach `confirm` (C-3, C-7, ADR-015)                                                                                | umgesetzt (`PgCorpusPromotionAdapter`)                                                     |
+| Vorlagen-Consent / Self-Learning         | Eigener Consent, Quarantäne, Rollback (SPEC, § 11)                                                                                                            | nicht umgesetzt (§ 8.6 „Offen“); bis dahin darf kein Agent Vorlagen aufnehmen              |
+| Modellwechsel (C-5)                      | Auditierte Konfigurationsänderung + Regressionslauf gegen das Eval-Set; Embedding-Modell zusätzlich Re-Indexierung                                           | Regel in SPEC C-5, § 8.5                                                                   |
+| Migrationen (`db/migration/V*.sql`)      | Review durch den Menschen; bestehende Migrationen nicht ändern, neue Version anlegen. `V17` (insert-only Audit) nie aufweichen                               | Vorgehen, kein technischer Mechanismus                                                     |
+| Änderungen an Guardrail-Code             | Review durch den Menschen: `SecurityConfig`, `DvelopAuthenticationFilter`, `SessionAuthContextAdapter`, `AgentGatewayService`, `ConfirmAndWriteBackService`, `RejectSuggestionService`, `PgAuditAdapter`, `PgCorpusPromotionAdapter`, `HexagonalArchitectureTest`, § 8.6-Tests | Vorgehen, kein technischer Mechanismus                                                     |
+
+OFFEN: Wie die Freigabe für Migrationen und Guardrail-Code durchgesetzt wird (Branch Protection, Pflicht-Review, CODEOWNERS); SPEC/ARCHITECTURE nennen nur das Prinzip „Mensch entscheidet“.
+
+**Service-Verträge (Quelle der Wahrheit für Agenten)**
+
+- REST: [`doc/api/openapi.yaml`](api/openapi.yaml), Fehlerform ProblemDetail (§ 8.1).
+- MCP: Toolliste und Schemas in § 6.3 (`get_process_suggestions`, `find_similar_documents`); Fehler wie REST (§ 6.3, § 8.1).
+- Ports und Adapter: Port-Tabelle § 5.2, Modulschnitt und Verträge § 5.6.
+- Externe APIs: DMS, IdP, Dashboard unter `doc/api/` (siehe `CONTEXT.md`).
+
 ---
 
 ## 9. Architekturentscheidungen (ADRs)
@@ -920,3 +953,13 @@ T-1 Prompt Injection → untrusted data + Schema-Validierung + lesende Tools nur
 ## 13. Glossar
 
 **Port** – fachliche Schnittstelle des Kerns zu einem externen Baustein · **Adapter** – austauschbare, produktspezifische Implementierung eines Ports · **Contract-Test** – Test-Suite, die jeder Adapter eines Ports bestehen muss · **Capabilities** – deklarierte Fähigkeiten eines LLM-Adapters (Structured Output, Eingabeform) · **OpenAI-kompatible API** – verbreitetes HTTP-Protokoll für Chat/Embedding, das viele lokale Runtimes und Anbieter unterstützen · **Pre-Filter** – Filterprädikat als Teil der Vektor-Query · **PENDING-/APPROVED-Embedding** – quarantänierter bzw. nach Freigabe aktiver Korpus-Vektor · **Korpus-Promotion** – Statuswechsel `PENDING → APPROVED` ohne Neuberechnung · **extraction_source** – Kennung von Textextraktor und Wortlimit, mit der ein Vektor erzeugt wurde · **Blob-Seite** – 1-MiB-BYTEA-Segment für Range-Zugriff · **HITL** – Human-in-the-Loop · **MCP** – Model Context Protocol. Weitere Begriffe → [SPEC.md](SPEC.md).
+
+---
+
+## Änderungshistorie
+
+| Version | Block | Stand      | Inhalt (Beleg: `git log -- doc/ARCHITECTURE.md`)                                                                                                                                                                                                                                                                    |
+| ------- | ----- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| v0.1    | 1     | 2026-09-02 | Erste Fassung (arc42/C4, ADR-001…003, Ports & Adapter) · `39e1c5f`, ausgebaut bis `9f66b89` (2026-09-04) und `4073571` (2026-09-10)                                                                                                                                                                                 |
+| v0.2    | 2     | 2026-10-24 | ADR-013 (CSR-Entscheid) und Frontend-Bezug · `44cccb8` (erste Version mit ADR-013, PR #9 `b1b5a19`). Eine explizite Versionsmarkierung gab es damals nicht; die Zuordnung ist rückwirkend aus dem Git-Log                                                                                                              |
+| v0.3    | 3     | 2026-11-10 | ADR-014 (`f04a67a`), ADR-015 (`9719b25`, `bdc1eba`), § 5.6 Modulschnitt (`74097d5`), § 8.6 Sicherheitskonzept Agent/MCP (`50b25f9`), OpenAPI-Vertrag (`fc48bb5`), MCP-Tools § 6.3 (`4c634dc`), einheitliche Fehlerform ProblemDetail für REST und MCP (`d2bb60b`), neu § 8.7 Leitplanken für Agenten |
