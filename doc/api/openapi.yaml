@@ -19,7 +19,7 @@ tags:
   name: process
 - description: "Ähnliche Dokumente, Dokumentarten, Wertelisten (FR-3)"
   name: retrieval
-- description: "Menschliche Freigabe/Ablehnung (FR-5, C-2, ADR-015)"
+- description: "Menschliche Freigabe/Ablehnung (FR-5, C-2, ADR-015), DMS-Prüfung (ADR-016)"
   name: validation
 paths:
   /api/v1/ingest/documents:
@@ -340,6 +340,52 @@ paths:
       summary: "Ähnliche, freigegebene Dokumente des Prozesses"
       tags:
       - retrieval
+  /api/v1/validation/check:
+    post:
+      description: |-
+        Prüft die aktuellen Werte über storevalidate gegen die Objektdefinition des DMS (ADR-016).
+        Es entsteht kein Dokument; die Freigabe (confirm) bleibt unabhängig davon möglich (C-2).
+        Keine lokale Pflichtfeldprüfung: Hooks im DMS können Pflichtfelder setzen.
+
+        200 immer mit ValidationReport. valid = true: attributes enthält die Eigenschaften, wie
+        das DMS sie speichern würde (origin, changedByDms). valid = false: error enthält den
+        einen Fehler des DMS (propertyId nur für beschreibbare Eigenschaften des Dokumenttyps).
+        Werte und DMS-Meldung gehen nur an die Aufrufer:in und werden nie geloggt oder
+        auditiert. Audit validation.check.valid|invalid|unavailable (nur Hash der Argumente).
+        Die Agent-Gruppe erhält 403.
+      operationId: checkAttributes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationReport"
+          description: Prüfergebnis (gültig oder ungültig).
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: Prozess unbekannt oder gehört einem anderen Tenant (NfA-4).
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: DMS nicht erreichbar oder antwortet ohne Prüfergebnis.
+      summary: "Attribute im DMS prüfen (lesend, ohne Schreiben)"
+      tags:
+      - validation
   /api/v1/validation/confirm:
     post:
       description: |-
@@ -543,6 +589,38 @@ components:
       description: Keine gültige d.velop-Session (Bearer-Token oder Cookie AuthSessionId);
         geliefert von SecurityConfig.
   schemas:
+    CandidateAttribute:
+      type: object
+      properties:
+        origin:
+          type: string
+          enum:
+          - LLM
+          - DMS
+        propertyId:
+          type: string
+        value:
+          type: string
+        values:
+          type: array
+          items:
+            type: string
+    CheckRequest:
+      type: object
+      properties:
+        attributes:
+          type: array
+          description: Aktuelle Werte je Eigenschaft; nicht beschreibbare Eigenschaften
+            werden ignoriert. Potenziell Personendaten (C-4).
+          items:
+            $ref: "#/components/schemas/CandidateAttribute"
+        documentTypeId:
+          type: string
+          description: "Dokumenttyp (DMS-Kategorie), muss ein Kandidat des Prozesses\
+            \ sein."
+        processId:
+          type: string
+          description: Prozess aus dem Upload.
     ComponentHealth:
       type: object
       properties:
@@ -693,9 +771,18 @@ components:
     ExtractedAttribute:
       type: object
       properties:
+        changedByDms:
+          type: boolean
         confidence:
           type: number
           format: double
+        correctedAfterValidation:
+          type: boolean
+        origin:
+          type: string
+          enum:
+          - LLM
+          - DMS
         propertyId:
           type: string
         sourceExcerpt:
@@ -715,6 +802,8 @@ components:
             $ref: "#/components/schemas/ExtractedAttribute"
         documentTypeId:
           type: string
+        validation:
+          $ref: "#/components/schemas/ValidationOutcome"
     ImportInfo:
       type: object
       properties:
@@ -816,6 +905,15 @@ components:
       properties:
         documentTypeId:
           type: string
+    StoreValidationError:
+      type: object
+      properties:
+        dmsCode:
+          type: string
+        message:
+          type: string
+        propertyId:
+          type: string
     SystemHealth:
       type: object
       properties:
@@ -828,6 +926,46 @@ components:
           enum:
           - UP
           - DOWN
+    ValidatedAttribute:
+      type: object
+      properties:
+        changedByDms:
+          type: boolean
+        origin:
+          type: string
+          enum:
+          - LLM
+          - DMS
+        propertyId:
+          type: string
+        value:
+          type: string
+        values:
+          type: array
+          items:
+            type: string
+    ValidationOutcome:
+      type: object
+      properties:
+        error:
+          $ref: "#/components/schemas/StoreValidationError"
+        status:
+          type: string
+          enum:
+          - VALID
+          - INVALID
+          - NOT_CHECKED
+    ValidationReport:
+      type: object
+      properties:
+        attributes:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidatedAttribute"
+        error:
+          $ref: "#/components/schemas/StoreValidationError"
+        valid:
+          type: boolean
     ValueListRequest:
       type: object
       properties:

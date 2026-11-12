@@ -1,0 +1,19 @@
+{
+  "objectDefinitionId": "DREC",
+  "systemProperties": {
+    "property_filename": "invoice.pdf",
+    "property_filetype": "pdf",
+    "property_state": "Be"
+  },
+  "remarks": {
+    "1": ""
+  },
+  "extendedProperties": {
+    "11": "dawd",
+    "4": "2026-11-11",
+    "13": "12.00",
+    "14": "",
+    "15": "In Prüfung"
+  },
+  "multivalueExtendedProperties": {}
+}

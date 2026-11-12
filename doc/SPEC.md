@@ -119,7 +119,7 @@ C4-Level-1/-2-Diagramme → [ARCHITECTURE.md § 1a/1b](ARCHITECTURE.md)
 ### 5.2 Constraints / Invarianten
 
 - **C-1: Kontrollierter Egress:** Dokumentdaten gehen nur an die konfigurierten Adapter-Endpunkte, nie Session-Daten, Credentials oder Daten anderer Mandanten. Übriger Egress der Verarbeitungs-Container ist per **Netzwerk-Policy** unterbunden; CI-**Egress-Test** (rein lokale Konfiguration: 0 externe Verbindungen).
-- **C-2: Kein automatischer Schreibzugriff:** Rückschreiben ins DMS nur nach **expliziter Benutzerbestätigung**. Keine LLM-Ausgabe löst selbsttätig einen schreibenden Tool-Call aus: auch nicht im MCP-Pfad. Lesende Tool-Calls (z. B. Wertelisten) sind nur über eine serverseitige Allowlist zulässig (ARCHITECTURE ADR-014).
+- **C-2: Kein automatischer Schreibzugriff:** Rückschreiben ins DMS nur nach **expliziter Benutzerbestätigung**. Keine LLM-Ausgabe löst selbsttätig einen schreibenden Tool-Call aus: auch nicht im MCP-Pfad. Lesende Tool-Calls (z. B. Wertelisten, DMS-Prüfung `storevalidate`) sind nur über eine serverseitige Allowlist zulässig (ARCHITECTURE ADR-014, ADR-016).
 - **C-3: Least Privilege:** LLM- und Embedding-Adapter haben keinen Zugriff auf Datenbank, Vektor-Store oder DMS-API. Der Retrieval-Adapter speichert Embeddings nur als `PENDING` mit Ablaufzeit; nur der Consent-geschützte Validierungspfad setzt `APPROVED`. Das MCP-Tool erhält nur minimale Scopes.
 - **C-4: Unveränderlicher Audit-Pfad:** Jeder LLM- und Tool-Call wird **append-only** ohne Roh-PII protokolliert: Anbieter, lokal/extern, Modell-ID, ein mandantenspezifischer HMAC des kanonisierten Prompts, **Token-Verbrauch**, Konfidenz und Ergebnisstatus. Schlüsselrotation und Aufbewahrungsfristen sind dokumentiert. Der Audit-Pfad ist Datenquelle für NfA-7; Löschpflicht (NfA-5) und Unveränderlichkeit koexistieren, weil keine Rohinhalte oder direkt identifizierenden Werte im Audit-Log gespeichert werden.
 - **C-5: Modell-Integrität:** Lokale Modelle per **Hash/Digest gepinnt**; externe Modelle über **explizit versionierte Modell-ID** (keine „latest"-Aliase). Modellwechsel nur per auditierter Konfigurationsänderung mit Regressionslauf gegen das Eval-Set.
@@ -144,13 +144,13 @@ C4-Level-1/-2-Diagramme → [ARCHITECTURE.md § 1a/1b](ARCHITECTURE.md)
 
 **Provisorisches Set (M2):** fünf repräsentative Dokument-Typen, je mit versioniertem **Soll-JSON**. **Belastbares Set (ab M3):** 3–4 Dokumente je Typ (gesamt **≥ 15–20**), inkl. Relevanz-Annotation für Precision@3. Eval-Läufe erfolgen **je konfiguriertem LLM-/Embedding-Adapter**; Ergebnisse je Anbieter versioniert. An externe Anbieter gehen nur **synthetische oder freigegebene** Testdokumente.
 
-| #   | Dokumenttyp                                        | Erwartete Schlüsselfelder        | Schwierigkeit                                                           |
-| --- | -------------------------------------------------- | -------------------------------- | ----------------------------------------------------------------------- |
-| E-1 | Eingangsrechnung (strukturiert, PDF/A)             | Betrag, IBAN, Datum, Lieferant   | niedrig: klares Layout                                                  |
-| E-2 | Eingangsrechnung (gescannt, schräg, OCR-Artefakte) | Betrag, Datum, Lieferant         | hoch: Qualitätsrobustheit                                               |
-| E-3 | Lieferschein mit Positionstabelle                  | Positionen, Menge, Artikel-Nr.   | mittel: Tabellen-Extraktion über den FR-4-Dokumentpfad, nicht über FR-2 |
-| E-4 | Mehrseitiger Vertrag (dt./engl. gemischt)          | Vertragspartner, Datum, Laufzeit | hoch: Mehrsprachigkeit, Länge                                           |
-| E-5 | Nicht-erkanntes Dokument (Bewerbungsschreiben)     | :                                | Negativ-Fall: „unbekannt" statt Halluzination (NfA-1)                   |
+| #   | Dokumenttyp                                        | Erwartete Schlüsselfelder        | Schwierigkeit                                                                                                                                                           |
+| --- | -------------------------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E-1 | Eingangsrechnung (strukturiert, PDF/A)             | Betrag, IBAN, Datum, Lieferant   | niedrig: klares Layout                                                                                                                                                  |
+| E-2 | Eingangsrechnung (gescannt, schräg, OCR-Artefakte) | Betrag, Datum, Lieferant         | hoch: Qualitätsrobustheit                                                                                                                                               |
+| E-3 | Lieferschein mit Positionstabelle                  | Positionen, Menge, Artikel-Nr.   | mittel: Tabellen-Extraktion über den FR-4-Dokumentpfad, nicht über FR-2                                                                                                 |
+| E-4 | Mehrseitiger Vertrag (dt./engl. gemischt)          | Vertragspartner, Datum, Laufzeit | hoch: Mehrsprachigkeit, Länge                                                                                                                                           |
+| E-5 | Nicht-erkanntes Dokument (Bewerbungsschreiben)     | :                                | Negativ-Fall: „unbekannt" statt Halluzination (NfA-1); Ausnahme: Werte, die das DMS selbst setzt (Hooks), sind gekennzeichnet (`origin = DMS`), nicht geraten (ADR-016) |
 
 ## 6. Guardrails
 

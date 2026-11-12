@@ -9,6 +9,23 @@
   margin: 10px 0 0;
 }
 
+.properties__check {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.properties__check-result {
+  font-size: 13px;
+  color: var(--color-text);
+
+  &--invalid {
+    color: var(--color-red);
+  }
+}
+
 .banner {
   margin: 0;
   padding: 10px 12px;
@@ -96,7 +113,8 @@
   gap: 8px;
 }
 
-.dialog__btn {
+.dialog__btn,
+.properties__check-btn {
   border: 1px solid var(--color-input-border);
   background: #fff;
   color: var(--color-text);
@@ -153,6 +171,40 @@
   &--empty {
     opacity: 0.75;
   }
+
+  &--dms {
+    border-left: 3px solid var(--color-blue);
+  }
+
+  &--error {
+    border-left: 3px solid var(--color-red);
+  }
+}
+
+.field__dms-badge,
+.field__corrected-badge {
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.field__dms-badge {
+  background: var(--color-banner-bg);
+  color: var(--color-text);
+}
+
+.field__corrected-badge {
+  background: var(--color-field-low-bg);
+  color: var(--color-amber);
+}
+
+.field__error {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--color-red);
 }
 
 .field__header {

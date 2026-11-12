@@ -10,6 +10,27 @@
   }
   <p class="properties__hint">Kein automatischer DMS-Write.</p>
 
+  <div class="properties__check">
+    <button
+      type="button"
+      class="properties__check-btn"
+      [disabled]="checking() || !selectedDocumentTypeId()"
+      (click)="checkRequested.emit()"
+    >
+      {{ checking() ? 'Prüfe ...' : 'Im DMS prüfen' }}
+    </button>
+    <!-- Always in the DOM so assistive technology announces the result when its text changes. -->
+    <div
+      class="properties__check-result"
+      [class.properties__check-result--invalid]="checkInvalid()"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+    >
+      {{ checkMessage() }}
+    </div>
+  </div>
+
   @if (documentTypeCandidates().length) {
     <div class="properties__type-switch">
       <label for="document-type-select">Dokumenttyp</label>
@@ -85,7 +106,14 @@
 
   <div class="properties__grid">
     @for (row of rows(); track row.attribute.propertyId) {
-      <div class="field" [class.field--low]="row.critical" [class.field--empty]="row.empty">
+      <div
+        class="field"
+        [class.field--low]="row.critical"
+        [class.field--empty]="row.empty"
+        [class.field--dms]="row.dmsMark"
+        [class.field--corrected]="row.corrected"
+        [class.field--error]="row.error"
+      >
         <div class="field__header">
           <label [for]="'field-' + row.attribute.propertyId">
             {{ row.definition?.name ?? row.attribute.propertyId }}
@@ -95,8 +123,16 @@
             @if (row.critical) {
               <span class="field__critical-badge">kritisch</span>
             }
+            @if (row.dmsMark === 'DMS_SET') {
+              <span class="field__dms-badge">vom DMS gesetzt</span>
+            } @else if (row.dmsMark === 'DMS_CHANGED') {
+              <span class="field__dms-badge">vom DMS angepasst</span>
+            }
+            @if (row.corrected) {
+              <span class="field__corrected-badge">nach DMS-Fehler korrigiert</span>
+            }
           </label>
-          @if (!row.empty) {
+          @if (!row.empty && confidencePercent(row.attribute.confidence) !== null) {
             <span class="field__confidence"
               >{{ confidencePercent(row.attribute.confidence) }} %</span
             >
@@ -107,6 +143,10 @@
           <select
             [id]="'field-' + row.attribute.propertyId"
             [value]="attributes()[row.attribute.propertyId] ?? ''"
+            [attr.aria-invalid]="row.error ? 'true' : null"
+            [attr.aria-describedby]="
+              row.error ? 'field-' + row.attribute.propertyId + '-error' : null
+            "
             (change)="updateValue(row.attribute.propertyId, $any($event.target).value)"
           >
             <option value="">(keine Auswahl)</option>
@@ -119,8 +159,18 @@
             type="text"
             [id]="'field-' + row.attribute.propertyId"
             [value]="attributes()[row.attribute.propertyId] ?? ''"
+            [attr.aria-invalid]="row.error ? 'true' : null"
+            [attr.aria-describedby]="
+              row.error ? 'field-' + row.attribute.propertyId + '-error' : null
+            "
             (input)="updateValue(row.attribute.propertyId, $any($event.target).value)"
           />
+        }
+
+        @if (row.error) {
+          <p class="field__error" [id]="'field-' + row.attribute.propertyId + '-error'">
+            {{ row.error }}
+          </p>
         }
 
         @if (row.critical) {

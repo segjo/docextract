@@ -5,7 +5,11 @@ import {
   DmsDocumentType,
   DmsPropertyDefinition,
 } from '../../../core/models/retrieval.model';
+import { ValidationReport } from '../../../core/models/validation.model';
 import { isCriticalAttribute, isReviewedAttribute } from '../../../core/attribute-review';
+
+/** What the DMS did to a value (ADR-016): `DMS_SET` = set by a hook/default, `DMS_CHANGED` = adjusted. */
+type DmsMark = 'DMS_SET' | 'DMS_CHANGED' | null;
 
 interface AttributeRow {
   attribute: ExtractedAttribute;
@@ -15,6 +19,11 @@ interface AttributeRow {
   /** True if the property has no value in the extraction result (not returned by the KI extraction). */
   empty: boolean;
   mandatory: boolean;
+  dmsMark: DmsMark;
+  /** The LLM changed the value after the DMS rejected an earlier one (confidence is capped). */
+  corrected: boolean;
+  /** The DMS message for this field from the last check, if it rejected it. */
+  error: string | null;
 }
 
 @Component({
@@ -35,6 +44,13 @@ export class PropertiesPanel {
   readonly attributes = model.required<Record<string, string>>();
   /** Critical properties the reviewer has verified without changing their value. */
   readonly acknowledgedIds = model<string[]>([]);
+  /** True while a "Im DMS prüfen" request is in flight. */
+  readonly checking = input(false);
+  /** Result of the last DMS check (or of the extraction's final check); `null` = none yet. */
+  readonly checkReport = input<ValidationReport | null>(null);
+
+  /** The reviewer asks for a read-only DMS check of the current values; never blocks the release. */
+  readonly checkRequested = output<void>();
 
   /**
    * Emitted once the reviewer confirms a document type change in the dialog: `reExtract` selects
@@ -60,12 +76,44 @@ export class PropertiesPanel {
     ),
   );
 
+  /** The error of the last check; `propertyId` only set for a field of this document type. */
+  private readonly checkError = computed(() => this.checkReport()?.error ?? null);
+
+  protected readonly checkInvalid = computed(() => this.checkReport()?.valid === false);
+
+  /** Text of the live region: announced to screen readers when it changes (NfA-F1). */
+  protected readonly checkMessage = computed(() => {
+    if (this.checking()) {
+      return 'Prüfe im DMS ...';
+    }
+    const report = this.checkReport();
+    if (!report) {
+      return '';
+    }
+    if (report.valid) {
+      return 'Im DMS geprüft: gültig.';
+    }
+    const error = report.error;
+    const definition = this.documentType()?.properties.find((d) => d.id === error?.propertyId);
+    if (definition) {
+      return `Im DMS geprüft: Fehler bei „${definition.name}“.`;
+    }
+    return `Im DMS geprüft: ${error?.message ?? 'Eingabe abgelehnt.'}`;
+  });
+
   protected readonly rows = computed<AttributeRow[]>(() => {
     const definitions = this.documentType()?.properties ?? [];
     const edited = this.attributes();
     const acknowledged = this.acknowledgedIds();
     const extractedAttributes = this.extractedAttributes();
     const extractedIds = new Set(extractedAttributes.map((attribute) => attribute.propertyId));
+    const error = this.checkError();
+    const errorPropertyId =
+      error?.propertyId && definitions.some((d) => d.id === error.propertyId)
+        ? error.propertyId
+        : null;
+    const errorFor = (propertyId: string): string | null =>
+      propertyId === errorPropertyId ? (error?.message ?? 'Vom DMS abgelehnt.') : null;
 
     const extractedRows = extractedAttributes.map((attribute) => {
       const definition = definitions.find((candidate) => candidate.id === attribute.propertyId);
@@ -80,13 +128,18 @@ export class PropertiesPanel {
         ),
         empty: false,
         mandatory: definition?.mandatory ?? false,
+        dmsMark: dmsMarkOf(attribute),
+        corrected: attribute.correctedAfterValidation === true,
+        error: errorFor(attribute.propertyId),
       };
     });
 
     const showEmpty = this.showEmptyProperties();
     const emptyRows = definitions
       .filter(
-        (definition) => !extractedIds.has(definition.id) && (definition.mandatory || showEmpty),
+        (definition) =>
+          !extractedIds.has(definition.id) &&
+          (definition.mandatory || showEmpty || definition.id === errorPropertyId),
       )
       .map((definition) => ({
         attribute: {
@@ -101,6 +154,9 @@ export class PropertiesPanel {
         reviewed: true,
         empty: true,
         mandatory: definition.mandatory,
+        dmsMark: null,
+        corrected: false,
+        error: errorFor(definition.id),
       }));
 
     return [...extractedRows, ...emptyRows];
@@ -147,7 +203,14 @@ export class PropertiesPanel {
     this.expandedSourceId.update((current) => (current === propertyId ? null : propertyId));
   }
 
-  protected confidencePercent(confidence: number): number {
-    return Math.round(confidence * 100);
+  protected confidencePercent(confidence: number | null): number | null {
+    return confidence === null ? null : Math.round(confidence * 100);
   }
+}
+
+function dmsMarkOf(attribute: ExtractedAttribute): DmsMark {
+  if (attribute.origin === 'DMS') {
+    return 'DMS_SET';
+  }
+  return attribute.changedByDms === true ? 'DMS_CHANGED' : null;
 }

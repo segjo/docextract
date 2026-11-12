@@ -1,6 +1,10 @@
 import { CRITICAL_CONFIDENCE_THRESHOLD, ExtractedAttribute } from './models/extraction.model';
 
 export function isCriticalAttribute(attribute: ExtractedAttribute): boolean {
+  // A value the DMS set itself is no suggestion to be doubted: it has no confidence (ADR-016).
+  if (attribute.origin === 'DMS' || attribute.confidence === null) {
+    return false;
+  }
   return attribute.confidence < CRITICAL_CONFIDENCE_THRESHOLD;
 }
 
@@ -13,9 +17,7 @@ export function isReviewedAttribute(
   editedValue: string | undefined,
   acknowledged = false,
 ): boolean {
-  return (
-    !isCriticalAttribute(attribute) || acknowledged || editedValue !== (attribute.value ?? '')
-  );
+  return !isCriticalAttribute(attribute) || acknowledged || editedValue !== (attribute.value ?? '');
 }
 
 export interface AttributeReviewCounts {
@@ -34,7 +36,13 @@ export function countAttributeReview(
   for (const attribute of attributes) {
     if (isCriticalAttribute(attribute)) {
       critical++;
-      if (!isReviewedAttribute(attribute, edited[attribute.propertyId], acknowledgedIds.includes(attribute.propertyId))) {
+      if (
+        !isReviewedAttribute(
+          attribute,
+          edited[attribute.propertyId],
+          acknowledgedIds.includes(attribute.propertyId),
+        )
+      ) {
         toReview++;
       }
     }

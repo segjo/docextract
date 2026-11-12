@@ -57,6 +57,9 @@
               [extractedAttributes]="result.attributes"
               [(attributes)]="editedAttributes"
               [(acknowledgedIds)]="acknowledgedIds"
+              [checking]="checking()"
+              [checkReport]="checkReport()"
+              (checkRequested)="checkInDms()"
               (documentTypeChange)="onDocumentTypeChange($event)"
             />
           }

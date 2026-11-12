@@ -1,10 +1,10 @@
 package ch.adeon.apps.docextract.validation.adapter.out.dms;
 
 import ch.adeon.apps.docextract.security.application.DvelopCredential;
+import ch.adeon.apps.docextract.validation.adapter.out.dms.DmsPropertyPayloadMapper.SourceProperty;
 import ch.adeon.apps.docextract.validation.port.DmsWriteFailedException;
 import ch.adeon.apps.docextract.validation.port.DmsWritePort;
 import ch.adeon.apps.docextract.validation.port.DmsWriteRejectedException;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -34,9 +34,11 @@ public class DmsWriteAdapter implements DmsWritePort {
   private static final Logger LOG = LoggerFactory.getLogger(DmsWriteAdapter.class);
 
   private final RestClient restClient;
+  private final DmsPropertyPayloadMapper mapper;
 
-  public DmsWriteAdapter() {
+  public DmsWriteAdapter(DmsPropertyPayloadMapper mapper) {
     this.restClient = RestClient.create();
+    this.mapper = mapper;
   }
 
   @Override
@@ -64,7 +66,7 @@ public class DmsWriteAdapter implements DmsWritePort {
                       sourceCategory,
                       "/dms/r/" + repositoryId + "/source",
                       contentLocationUri,
-                      new SourceProperties(toProperties(attributes))))
+                      new SourceProperties(mapper.toSourceProperties(attributes))))
               .retrieve()
               .toBodilessEntity();
       String documentId = extractDocumentId(response.getHeaders().getFirst(HttpHeaders.LOCATION));
@@ -91,19 +93,6 @@ public class DmsWriteAdapter implements DmsWritePort {
       // fall through to the generic message
     }
     return "DMS rejected the attributes (HTTP " + ex.getStatusCode().value() + ")";
-  }
-
-  private static List<SourceProperty> toProperties(Map<String, Object> attributes) {
-    List<SourceProperty> properties = new ArrayList<>();
-    attributes.forEach((key, value) -> properties.add(new SourceProperty(key, toValues(value))));
-    return properties;
-  }
-
-  private static List<String> toValues(Object value) {
-    if (value instanceof List<?> list) {
-      return list.stream().map(String::valueOf).toList();
-    }
-    return List.of(String.valueOf(value));
   }
 
   // The Location header is of the form
@@ -139,6 +128,4 @@ public class DmsWriteAdapter implements DmsWritePort {
       SourceProperties sourceProperties) {}
 
   private record SourceProperties(List<SourceProperty> properties) {}
-
-  private record SourceProperty(String key, List<String> values) {}
 }

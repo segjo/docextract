@@ -7,12 +7,13 @@ import { ExtractionApi } from '../../core/api/extraction-api';
 import { ProcessEventsApi } from '../../core/api/process-events-api';
 import { RetrievalApi } from '../../core/api/retrieval-api';
 import { ValidationApi } from '../../core/api/validation-api';
-import { ConfirmationResult } from '../../core/models/validation.model';
+import { ConfirmationResult, ValidationReport } from '../../core/models/validation.model';
 import { ExtractionResult } from '../../core/models/extraction.model';
 import { ProcessEvent } from '../../core/models/process.model';
 import { DmsDocumentMetadata, RetrievalResult } from '../../core/models/retrieval.model';
 import { countAttributeReview } from '../../core/attribute-review';
 import { normalizeDateAttributes } from '../../core/date-format';
+import { applyValidatedAttributes, buildCheckAttributes } from '../../core/validation-check';
 import {
   findPreviewBlobId,
   hasFailure,
@@ -54,6 +55,9 @@ export class ProcessPage {
   protected readonly activeTab = signal<Tab>('PROTOKOLL');
   protected readonly loadingResults = signal(false);
   protected readonly confirming = signal(false);
+  protected readonly checking = signal(false);
+  /** Last DMS check, or the error of the extraction's final check; never blocks the release. */
+  protected readonly checkReport = signal<ValidationReport | null>(null);
   protected readonly confirmation = signal<ConfirmationResult | null>(null);
   protected readonly actionError = signal<string | null>(null);
 
@@ -129,6 +133,7 @@ export class ProcessPage {
       next: ({ extraction, candidates }) => {
         this.extractionResult.set(extraction);
         this.documentTypeCandidates.set(candidates);
+        this.checkReport.set(initialReport(extraction));
         this.acknowledgedIds.set([]);
         this.editedAttributes.set(
           Object.fromEntries(extraction.attributes.map((a) => [a.propertyId, a.value ?? ''])),
@@ -162,6 +167,7 @@ export class ProcessPage {
   /** Switches to the new document type locally, clearing all property values (no backend call). */
   private applyDocumentTypeWithEmptyValues(documentTypeId: string): void {
     this.extractionResult.set({ documentTypeId, attributes: [] });
+    this.checkReport.set(null);
     this.acknowledgedIds.set([]);
     this.editedAttributes.set({});
     this.actionError.set(null);
@@ -176,6 +182,7 @@ export class ProcessPage {
     this.extractionApi.retryExtraction(this.processId(), documentTypeId).subscribe({
       next: (result) => {
         this.extractionResult.set(result);
+        this.checkReport.set(initialReport(result));
         this.acknowledgedIds.set([]);
         this.editedAttributes.set(
           Object.fromEntries(result.attributes.map((a) => [a.propertyId, a.value ?? ''])),
@@ -188,6 +195,55 @@ export class ProcessPage {
         this.actionError.set('Erneute Extraktion fehlgeschlagen. Bitte erneut versuchen.');
       },
     });
+  }
+
+  /**
+   * Read-only DMS check of the current form values (ADR-016). Valid: what the DMS would store
+   * replaces the form values and marks what it set or changed. Invalid: the error is shown at its
+   * field, or generally. No effect on `confirm`: the release stays possible in every state (C-2).
+   */
+  protected checkInDms(): void {
+    const extraction = this.extractionResult();
+    const documentTypeId = this.selectedDocumentTypeId();
+    if (!extraction || !documentTypeId || this.checking()) {
+      return;
+    }
+    this.checking.set(true);
+    this.actionError.set(null);
+    const edited = normalizeDateAttributes(
+      this.editedAttributes(),
+      this.documentType()?.properties ?? [],
+    );
+    this.validationApi
+      .check({
+        processId: this.processId(),
+        documentTypeId,
+        attributes: buildCheckAttributes(edited, extraction.attributes),
+      })
+      .subscribe({
+        next: (report) => {
+          this.checking.set(false);
+          this.checkReport.set(report);
+          if (report.valid && report.attributes) {
+            const applied = applyValidatedAttributes(
+              extraction,
+              this.editedAttributes(),
+              report.attributes,
+            );
+            this.extractionResult.set(applied.result);
+            this.editedAttributes.set(applied.edited);
+          }
+        },
+        error: (err: HttpErrorResponse) => {
+          this.checking.set(false);
+          this.checkReport.set(null);
+          this.actionError.set(
+            err.status === 502
+              ? 'Das DMS ist nicht erreichbar. Die Prüfung war nicht möglich.'
+              : 'Die Prüfung im DMS ist fehlgeschlagen. Bitte erneut versuchen.',
+          );
+        },
+      });
   }
 
   protected reject(): void {
@@ -236,4 +292,11 @@ export class ProcessPage {
   protected importNext(): void {
     this.router.navigate(['/']);
   }
+}
+
+/** The error of the extraction's final DMS check is shown like one of a manual check. */
+function initialReport(result: ExtractionResult): ValidationReport | null {
+  return result.validation?.status === 'INVALID'
+    ? { valid: false, attributes: null, error: result.validation.error }
+    : null;
 }

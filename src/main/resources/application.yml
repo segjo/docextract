@@ -181,9 +181,19 @@ docextract:
     # TTL for the extraction result handed to the validation UI, persisted in Postgres (not
     # per-instance memory) so any cluster node can serve it (ADR-004).
     result-ttl: PT2H
-    # Read-only LLM tool calls (lookup_value_list) per extraction (ADR-014).
+    # Read-only LLM tool calls (lookup_value_list and validate_attributes together) per extraction
+    # (ADR-014/-016).
     max-tool-calls: 10
+    # DMS checks (storevalidate) the LLM may trigger per extraction; the DMS reports one error per
+    # call (ADR-016).
+    max-validation-rounds: 5
+    # Confidence (0..1) cap for a field the LLM changed after the DMS rejected its value (ADR-016).
+    corrected-confidence-cap: 0.5
   validation:
+    # Read timeout of the read-only DMS check storevalidate (ADR-016, T-4).
+    dms-timeout: PT10S
+    # Zone assumed for extracted DATETIME values without a zone (ADR-016).
+    default-zone: Europe/Zurich
     # Interval of the promotion retry for FINALIZED_INDEX_PENDING (ADR-015).
     recovery-interval: PT5M
     # Promotion retries stop after this age of the first failure -> INDEX_FAILED (C-7 final failure).
