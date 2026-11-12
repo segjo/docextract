@@ -206,6 +206,7 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
               .filter(DmsPropertyDefinition::isModifiable)
               .filter(property -> !property.isHidden())
               .filter(property -> !property.isSystemProperty())
+              .filter(property -> !"property_remark".equals(property.id()))
               .toList();
 
       // One call limit for both tools (ADR-014/-016).

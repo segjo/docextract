@@ -153,7 +153,7 @@ describe('ProcessPage', () => {
 
     expect(fixture.componentInstance['confirming']()).toBe(false);
     expect(fixture.componentInstance['actionError']()).toBe(
-      'Bestaetigen fehlgeschlagen. Bitte erneut versuchen.',
+      'Bestätigen fehlgeschlagen. Bitte erneut versuchen.',
     );
   });
 

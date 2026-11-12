@@ -1,6 +1,6 @@
 <div class="similar">
   @if (rows().length === 0) {
-    <p class="similar__empty">Keine aehnlichen Dokumente gefunden.</p>
+    <p class="similar__empty">Keine ähnlichen Dokumente gefunden.</p>
   } @else {
     <ul class="similar__list">
       @for (row of rows(); track row.result.documentId; let i = $index) {

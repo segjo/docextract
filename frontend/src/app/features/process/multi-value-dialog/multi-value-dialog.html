@@ -1,0 +1,85 @@
+<div class="backdrop" role="presentation">
+  <div
+    #dialog
+    class="dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="multi-value-title"
+    tabindex="-1"
+    (keydown.escape)="cancelled.emit()"
+  >
+    <h2 id="multi-value-title">Mehrfachwerte bearbeiten</h2>
+    <p class="dialog__hint">
+      Werte derselben Zeile gehören zusammen; Wertelisten können von der Zeile abhängen.
+    </p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col" class="num">Nr.</th>
+            @for (definition of definitions(); track definition.id) {
+              <th scope="col">{{ definition.name }}</th>
+            }
+            <th scope="col"><span class="sr-only">Aktionen</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of rows(); track $index; let i = $index) {
+            <tr>
+              <th scope="row" class="num">{{ i + 1 }}</th>
+              @for (definition of definitions(); track definition.id) {
+                <td>
+                  @if (definition.hasValueList) {
+                    <select
+                      [attr.aria-label]="definition.name + ', Zeile ' + (i + 1)"
+                      (change)="setCell(i, definition.id, $any($event.target).value)"
+                    >
+                      <option value="" [selected]="!row[definition.id]">(keine Auswahl)</option>
+                      @for (option of options(definition, row[definition.id]); track option) {
+                        <option [value]="option" [selected]="option === row[definition.id]">
+                          {{ option }}
+                        </option>
+                      }
+                    </select>
+                  } @else {
+                    <input
+                      type="text"
+                      [attr.aria-label]="definition.name + ', Zeile ' + (i + 1)"
+                      [attr.maxlength]="definition.maxLength"
+                      [value]="row[definition.id]"
+                      (input)="setCell(i, definition.id, $any($event.target).value)"
+                    />
+                  }
+                </td>
+              }
+              <td>
+                <button
+                  type="button"
+                  class="row-remove"
+                  [attr.aria-label]="'Zeile ' + (i + 1) + ' entfernen'"
+                  (click)="removeRow(i)"
+                >
+                  &times;
+                </button>
+              </td>
+            </tr>
+          } @empty {
+            <tr>
+              <td class="empty" [attr.colspan]="definitions().length + 2">Keine Werte erfasst.</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <div class="dialog__actions">
+      <button type="button" class="btn row-add" [disabled]="!canAddRow()" (click)="addRow()">
+        Zeile hinzufügen
+      </button>
+      <span class="spacer"></span>
+      <button type="button" class="btn" (click)="cancelled.emit()">Abbrechen</button>
+      <button type="button" class="btn btn--primary" (click)="save()">Übernehmen</button>
+    </div>
+  </div>
+</div>

@@ -4,7 +4,7 @@ export type DisplayStepStatus = 'pending' | 'running' | 'done' | 'error';
 
 export const DISPLAY_STEP_STATUS_LABELS: Record<DisplayStepStatus, string> = {
   pending: 'wartet',
-  running: 'laeuft ...',
+  running: 'läuft ...',
   done: 'fertig',
   error: 'fehler',
 };

@@ -29,8 +29,8 @@ describe('buildCheckAttributes', () => {
     expect(attributes[0].origin).toBe('DMS');
   });
 
-  it('sends the extracted multi-values of a field the text form cannot edit', () => {
-    const attributes = buildCheckAttributes({ p2: '' }, [
+  it('sends a list form value as multi-value and leaves out an empty list', () => {
+    const attributes = buildCheckAttributes({ p2: ['a', 'b'], p3: [] }, [
       attribute({ propertyId: 'p2', value: null, values: ['a', 'b'] }),
     ]);
 
@@ -130,12 +130,12 @@ describe('applyValidatedAttributes', () => {
     expect(applied.edited).not.toBe(edited);
   });
 
-  it('takes multi-values only into the result, not into the text form', () => {
+  it('takes multi-values into the result and the form', () => {
     const applied = applyValidatedAttributes(result, { p2: 'v' }, [
       { propertyId: 'p2', value: null, values: ['a', 'b'], origin: 'LLM', changedByDms: false },
     ]);
 
     expect(applied.result.attributes[1].values).toEqual(['a', 'b']);
-    expect(applied.edited).toEqual({ p2: 'v' });
+    expect(applied.edited).toEqual({ p2: ['a', 'b'] });
   });
 });

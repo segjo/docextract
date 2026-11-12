@@ -33,18 +33,16 @@ describe('StatusBar', () => {
     expect(spy).toHaveBeenCalledOnce();
   });
 
-  it('disables "Bestaetigen" while attributes still need review', async () => {
+  it('keeps "Bestätigen" enabled even if attributes are still listed as to review', async () => {
     const fixture = await createComponent();
     const confirmButton = (fixture.nativeElement as HTMLElement).querySelector(
       '.btn--primary',
     ) as HTMLButtonElement;
-    expect(confirmButton.disabled).toBe(true);
+    expect(confirmButton.disabled).toBe(false);
   });
 
-  it('enables "Bestaetigen" once nothing needs review, and emits confirmRequested', async () => {
+  it('emits confirmRequested when "Bestätigen" is clicked', async () => {
     const fixture = await createComponent();
-    fixture.componentRef.setInput('toReviewCount', 0);
-    fixture.detectChanges();
     const spy = vi.fn();
     fixture.componentInstance.confirmRequested.subscribe(spy);
     const confirmButton = (fixture.nativeElement as HTMLElement).querySelector(
@@ -53,6 +51,27 @@ describe('StatusBar', () => {
     expect(confirmButton.disabled).toBe(false);
     confirmButton.click();
     expect(spy).toHaveBeenCalledOnce();
+  });
+
+  it('emits checkRequested from the "Im DMS prüfen" button next to the other actions', async () => {
+    const fixture = await createComponent();
+    const spy = vi.fn();
+    fixture.componentInstance.checkRequested.subscribe(spy);
+    const button = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('.status-bar__actions button'),
+    ).find((b) => b.textContent?.includes('Im DMS prüfen')) as HTMLButtonElement;
+
+    button.click();
+    expect(spy).toHaveBeenCalledOnce();
+
+    fixture.componentRef.setInput('checking', true);
+    fixture.detectChanges();
+    expect(button.disabled).toBe(true);
+
+    fixture.componentRef.setInput('checking', false);
+    fixture.componentRef.setInput('canCheck', false);
+    fixture.detectChanges();
+    expect(button.disabled).toBe(true);
   });
 
   it('disables both actions while busy', async () => {

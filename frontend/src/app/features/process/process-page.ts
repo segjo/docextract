@@ -11,7 +11,7 @@ import { ConfirmationResult, ValidationReport } from '../../core/models/validati
 import { ExtractionResult } from '../../core/models/extraction.model';
 import { ProcessEvent } from '../../core/models/process.model';
 import { DmsDocumentMetadata, RetrievalResult } from '../../core/models/retrieval.model';
-import { countAttributeReview } from '../../core/attribute-review';
+import { AttributeValue, countAttributeReview, editedValueOf } from '../../core/attribute-review';
 import { normalizeDateAttributes } from '../../core/date-format';
 import { applyValidatedAttributes, buildCheckAttributes } from '../../core/validation-check';
 import {
@@ -26,7 +26,7 @@ import { PropertiesPanel } from './properties-panel/properties-panel';
 import { SimilarPanel } from './similar-panel/similar-panel';
 import { StatusBar } from './status-bar/status-bar';
 
-type Tab = 'EIGENSCHAFTEN' | 'AEHNLICHE' | 'PROTOKOLL';
+type Tab = 'EIGENSCHAFTEN' | 'ÄHNLICHE' | 'PROTOKOLL';
 
 @Component({
   selector: 'app-process-page',
@@ -48,8 +48,7 @@ export class ProcessPage {
   protected readonly extractionResult = signal<ExtractionResult | null>(null);
   protected readonly similarDocuments = signal<RetrievalResult[]>([]);
   protected readonly documentTypeCandidates = signal<DmsDocumentMetadata[]>([]);
-  protected readonly editedAttributes = signal<Record<string, string>>({});
-  protected readonly acknowledgedIds = signal<string[]>([]);
+  protected readonly editedAttributes = signal<Record<string, AttributeValue>>({});
   protected readonly selectedDocumentTypeId = signal<string | null>(null);
   protected readonly retryingExtraction = signal(false);
   protected readonly activeTab = signal<Tab>('PROTOKOLL');
@@ -77,11 +76,7 @@ export class ProcessPage {
   });
 
   protected readonly reviewCounts = computed(() =>
-    countAttributeReview(
-      this.extractionResult()?.attributes ?? [],
-      this.editedAttributes(),
-      this.acknowledgedIds(),
-    ),
+    countAttributeReview(this.extractionResult()?.attributes ?? [], this.editedAttributes()),
   );
 
   constructor() {
@@ -134,9 +129,8 @@ export class ProcessPage {
         this.extractionResult.set(extraction);
         this.documentTypeCandidates.set(candidates);
         this.checkReport.set(initialReport(extraction));
-        this.acknowledgedIds.set([]);
         this.editedAttributes.set(
-          Object.fromEntries(extraction.attributes.map((a) => [a.propertyId, a.value ?? ''])),
+          Object.fromEntries(extraction.attributes.map((a) => [a.propertyId, editedValueOf(a)])),
         );
         this.selectedDocumentTypeId.set(extraction.documentTypeId);
         if (this.activeTab() === 'PROTOKOLL') {
@@ -168,7 +162,6 @@ export class ProcessPage {
   private applyDocumentTypeWithEmptyValues(documentTypeId: string): void {
     this.extractionResult.set({ documentTypeId, attributes: [] });
     this.checkReport.set(null);
-    this.acknowledgedIds.set([]);
     this.editedAttributes.set({});
     this.actionError.set(null);
   }
@@ -183,9 +176,8 @@ export class ProcessPage {
       next: (result) => {
         this.extractionResult.set(result);
         this.checkReport.set(initialReport(result));
-        this.acknowledgedIds.set([]);
         this.editedAttributes.set(
-          Object.fromEntries(result.attributes.map((a) => [a.propertyId, a.value ?? ''])),
+          Object.fromEntries(result.attributes.map((a) => [a.propertyId, editedValueOf(a)])),
         );
         this.selectedDocumentTypeId.set(result.documentTypeId);
         this.retryingExtraction.set(false);
@@ -284,7 +276,7 @@ export class ProcessPage {
         error: (err: HttpErrorResponse) => {
           this.confirming.set(false);
           const reason = err.status === 422 ? err.error?.detail : null;
-          this.actionError.set(reason || 'Bestaetigen fehlgeschlagen. Bitte erneut versuchen.');
+          this.actionError.set(reason || 'Bestätigen fehlgeschlagen. Bitte erneut versuchen.');
         },
       });
   }

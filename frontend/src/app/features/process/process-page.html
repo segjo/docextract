@@ -14,20 +14,26 @@
         [disabled]="!resultsReady()"
         (click)="selectTab('EIGENSCHAFTEN')"
       >
-        <span class="tabs__icon" aria-hidden="true">&#9831;</span>EIGENSCHAFTEN
+        <svg class="tabs__icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z" />
+          <circle cx="7.5" cy="7.5" r="1.5" />
+        </svg>
+        EIGENSCHAFTEN
       </button>
       <button
         type="button"
         role="tab"
         class="tabs__tab"
-        [class.tabs__tab--active]="activeTab() === 'AEHNLICHE'"
-        [attr.aria-selected]="activeTab() === 'AEHNLICHE'"
+        [class.tabs__tab--active]="activeTab() === 'ÄHNLICHE'"
+        [attr.aria-selected]="activeTab() === 'ÄHNLICHE'"
         [disabled]="!similarReady()"
-        (click)="selectTab('AEHNLICHE')"
+        (click)="selectTab('ÄHNLICHE')"
       >
-        <span class="tabs__icon" aria-hidden="true">&#9638;</span>AEHNLICHE ({{
-          similarDocuments().length
-        }})
+        <svg class="tabs__icon" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="8" y="8" width="12" height="13" rx="2" />
+          <path d="M16 8V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2" />
+        </svg>
+        ÄHNLICHE ({{ similarDocuments().length }})
       </button>
       <button
         type="button"
@@ -37,7 +43,11 @@
         [attr.aria-selected]="activeTab() === 'PROTOKOLL'"
         (click)="selectTab('PROTOKOLL')"
       >
-        <span class="tabs__icon" aria-hidden="true">&#8801;</span>PROTOKOLL
+        <svg class="tabs__icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+          <path d="M14 3v5h5M9 13h6M9 17h6" />
+        </svg>
+        PROTOKOLL
       </button>
     </div>
 
@@ -56,15 +66,13 @@
               [retrying]="retryingExtraction()"
               [extractedAttributes]="result.attributes"
               [(attributes)]="editedAttributes"
-              [(acknowledgedIds)]="acknowledgedIds"
               [checking]="checking()"
               [checkReport]="checkReport()"
-              (checkRequested)="checkInDms()"
               (documentTypeChange)="onDocumentTypeChange($event)"
             />
           }
         }
-        @case ('AEHNLICHE') {
+        @case ('ÄHNLICHE') {
           <app-similar-panel [results]="similarDocuments()" />
         }
         @case ('PROTOKOLL') {
@@ -85,7 +93,7 @@
             >Repository {{ result.repositoryId }} &middot; Dokument {{ result.documentId }}</a
           >
         </div>
-        <button type="button" class="btn" (click)="importNext()">Naechstes importieren</button>
+        <button type="button" class="btn" (click)="importNext()">Nächstes importieren</button>
       </div>
     } @else if (resultsReady()) {
       <app-status-bar
@@ -93,7 +101,10 @@
         [criticalCount]="reviewCounts().critical"
         [toReviewCount]="reviewCounts().toReview"
         [busy]="confirming()"
+        [checking]="checking()"
+        [canCheck]="!!selectedDocumentTypeId()"
         (rejectRequested)="reject()"
+        (checkRequested)="checkInDms()"
         (confirmRequested)="confirm()"
       />
     }

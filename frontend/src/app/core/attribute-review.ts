@@ -1,5 +1,20 @@
 import { CRITICAL_CONFIDENCE_THRESHOLD, ExtractedAttribute } from './models/extraction.model';
 
+/** Form value of a property: text for a single value, a list for a multi-value property. */
+export type AttributeValue = string | string[];
+
+/** The form value an extracted attribute starts with. */
+export function editedValueOf(attribute: ExtractedAttribute): AttributeValue {
+  return attribute.values?.length ? attribute.values : (attribute.value ?? '');
+}
+
+function sameValue(a: AttributeValue | undefined, b: AttributeValue): boolean {
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((value, index) => value === b[index]);
+  }
+  return a === b;
+}
+
 export function isCriticalAttribute(attribute: ExtractedAttribute): boolean {
   // A value the DMS set itself is no suggestion to be doubted: it has no confidence (ADR-016).
   if (attribute.origin === 'DMS' || attribute.confidence === null) {
@@ -10,14 +25,13 @@ export function isCriticalAttribute(attribute: ExtractedAttribute): boolean {
 
 /**
  * Assumption (FRONTEND-SPEC leaves "zu pruefen" undefined): a critical field counts as reviewed
- * once the user has changed it away from the original KI-Vorschlag, or explicitly acknowledged it.
+ * once the user has changed it away from the original KI-Vorschlag.
  */
 export function isReviewedAttribute(
   attribute: ExtractedAttribute,
-  editedValue: string | undefined,
-  acknowledged = false,
+  editedValue: AttributeValue | undefined,
 ): boolean {
-  return !isCriticalAttribute(attribute) || acknowledged || editedValue !== (attribute.value ?? '');
+  return !isCriticalAttribute(attribute) || !sameValue(editedValue, editedValueOf(attribute));
 }
 
 export interface AttributeReviewCounts {
@@ -28,21 +42,14 @@ export interface AttributeReviewCounts {
 
 export function countAttributeReview(
   attributes: ExtractedAttribute[],
-  edited: Record<string, string>,
-  acknowledgedIds: readonly string[] = [],
+  edited: Record<string, AttributeValue>,
 ): AttributeReviewCounts {
   let critical = 0;
   let toReview = 0;
   for (const attribute of attributes) {
     if (isCriticalAttribute(attribute)) {
       critical++;
-      if (
-        !isReviewedAttribute(
-          attribute,
-          edited[attribute.propertyId],
-          acknowledgedIds.includes(attribute.propertyId),
-        )
-      ) {
+      if (!isReviewedAttribute(attribute, edited[attribute.propertyId])) {
         toReview++;
       }
     }

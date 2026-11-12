@@ -1,27 +1,15 @@
-<div class="properties">
-  @if (documentType()) {
-    <div class="banner">
-      KI-Vorschlaege pruefen. Quellen und Konfidenzen dienen als Entscheidungshilfe.
-    </div>
-  } @else {
-    <div class="banner banner--warn">
-      <strong>Kein passender Dokumenttyp erkannt.</strong> Bitte Kategorie waehlen oder ablehnen.
+<div class="properties" [attr.aria-busy]="retrying()">
+  @if (retrying()) {
+    <div class="properties__loading" role="status">
+      <div class="properties__loader" aria-hidden="true"></div>
+      <span>Extrahiere Eigenschaften neu ...</span>
     </div>
   }
-  <p class="properties__hint">Kein automatischer DMS-Write.</p>
-
-  <div class="properties__check">
-    <button
-      type="button"
-      class="properties__check-btn"
-      [disabled]="checking() || !selectedDocumentTypeId()"
-      (click)="checkRequested.emit()"
-    >
-      {{ checking() ? 'Prüfe ...' : 'Im DMS prüfen' }}
-    </button>
+  @if (documentType()) {
     <!-- Always in the DOM so assistive technology announces the result when its text changes. -->
     <div
       class="properties__check-result"
+      [class.banner]="checkMessage()"
       [class.properties__check-result--invalid]="checkInvalid()"
       role="status"
       aria-live="polite"
@@ -29,23 +17,23 @@
     >
       {{ checkMessage() }}
     </div>
-  </div>
+  } @else {
+    <div class="banner banner--warn">
+      <strong>Kein passender Dokumenttyp erkannt.</strong> Bitte Kategorie wählen oder ablehnen.
+    </div>
+  }
 
   @if (documentTypeCandidates().length) {
     <div class="properties__type-switch">
       <label for="document-type-select">Dokumenttyp</label>
-      <select
-        id="document-type-select"
-        [value]="displayedDocumentTypeId() ?? ''"
-        (change)="selectDocumentType($any($event.target).value)"
-      >
+      <select id="document-type-select" (change)="selectDocumentType($any($event.target).value)">
         @for (option of documentTypeCandidates(); track option.documentType.id) {
           <option
             [value]="option.documentType.id"
+            [selected]="option.documentType.id === displayedDocumentTypeId()"
             [class.is-candidate]="(option.documentType.score ?? 0) > 0"
           >
-            {{ (option.documentType.score ?? 0) > 0 ? '\u2605 ' : ''
-            }}{{ option.documentType.name }}
+            {{ option.documentType.name }}
           </option>
         }
       </select>
@@ -139,26 +127,43 @@
           }
         </div>
 
-        @if (row.definition?.hasValueList) {
+        @if (row.multiple) {
+          <div class="field__multi" [id]="'field-' + row.attribute.propertyId">
+            <span
+              >{{ row.selected.length }} {{ row.selected.length === 1 ? 'Wert' : 'Werte' }}</span
+            >
+            <button
+              type="button"
+              class="field__multi-btn"
+              [attr.aria-describedby]="
+                row.error ? 'field-' + row.attribute.propertyId + '-error' : null
+              "
+              (click)="multiValueDialogOpen.set(true)"
+            >
+              Mehrfachwerte bearbeiten
+            </button>
+          </div>
+        } @else if (row.definition?.hasValueList) {
           <select
             [id]="'field-' + row.attribute.propertyId"
-            [value]="attributes()[row.attribute.propertyId] ?? ''"
             [attr.aria-invalid]="row.error ? 'true' : null"
             [attr.aria-describedby]="
               row.error ? 'field-' + row.attribute.propertyId + '-error' : null
             "
             (change)="updateValue(row.attribute.propertyId, $any($event.target).value)"
           >
-            <option value="">(keine Auswahl)</option>
-            @for (option of row.definition?.valueList ?? []; track option) {
-              <option [value]="option">{{ option }}</option>
+            <option value="" [selected]="row.selected.length === 0">(keine Auswahl)</option>
+            @for (option of row.options; track option) {
+              <option [value]="option" [selected]="row.selected.includes(option)">
+                {{ option }}
+              </option>
             }
           </select>
         } @else {
           <input
             type="text"
             [id]="'field-' + row.attribute.propertyId"
-            [value]="attributes()[row.attribute.propertyId] ?? ''"
+            [value]="row.selected[0] ?? ''"
             [attr.aria-invalid]="row.error ? 'true' : null"
             [attr.aria-describedby]="
               row.error ? 'field-' + row.attribute.propertyId + '-error' : null
@@ -171,17 +176,6 @@
           <p class="field__error" [id]="'field-' + row.attribute.propertyId + '-error'">
             {{ row.error }}
           </p>
-        }
-
-        @if (row.critical) {
-          <label class="field__acknowledge">
-            <input
-              type="checkbox"
-              [checked]="acknowledgedIds().includes(row.attribute.propertyId)"
-              (change)="toggleAcknowledged(row.attribute.propertyId, $any($event.target).checked)"
-            />
-            Wert geprueft
-          </label>
         }
 
         @if (row.attribute.sourceExcerpt) {
@@ -199,4 +193,13 @@
       </div>
     }
   </div>
+
+  @if (multiValueDialogOpen()) {
+    <app-multi-value-dialog
+      [definitions]="multiValueDefinitions()"
+      [values]="multiValues()"
+      (saved)="saveMultiValues($event)"
+      (cancelled)="multiValueDialogOpen.set(false)"
+    />
+  }
 </div>

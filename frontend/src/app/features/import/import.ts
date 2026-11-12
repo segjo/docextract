@@ -98,7 +98,7 @@ export class Import implements OnInit {
     if (maxSize !== null && file.size > maxSize) {
       this.selectedFile.set(null);
       this.validationError.set(
-        `Datei ueberschreitet die maximale Groesse von ${Math.round(maxSize / (1024 * 1024))} MB.`,
+        `Datei überschreitet die maximale Grösse von ${Math.round(maxSize / (1024 * 1024))} MB.`,
       );
       return;
     }

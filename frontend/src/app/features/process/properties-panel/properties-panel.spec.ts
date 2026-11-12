@@ -115,6 +115,72 @@ describe('PropertiesPanel', () => {
     expect(fixture.componentInstance.attributes()).toEqual({ p1: '99999' });
   });
 
+  it('preselects the extracted value in a value list, even if the list lacks it', async () => {
+    const fixture = await createComponent();
+    fixture.componentRef.setInput(
+      'documentType',
+      documentType([
+        propertyDefinition({ id: 'p1', hasValueList: true, valueList: ['A', 'B'] }),
+        propertyDefinition({ id: 'p2', hasValueList: true, valueList: ['A', 'B'] }),
+      ]),
+    );
+    fixture.componentRef.setInput('extractedAttributes', [
+      attribute({ propertyId: 'p1', value: 'B' }),
+      attribute({ propertyId: 'p2', value: 'C' }),
+    ]);
+    fixture.componentRef.setInput('attributes', { p1: 'B', p2: 'C' });
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect((el.querySelector('#field-p1') as HTMLSelectElement).value).toBe('B');
+    expect((el.querySelector('#field-p2') as HTMLSelectElement).value).toBe('C');
+  });
+
+  it('shows a multi-value property as a summary and edits it in the table dialog', async () => {
+    const fixture = await createComponent();
+    fixture.componentRef.setInput(
+      'documentType',
+      documentType([
+        propertyDefinition({ id: 'p1', isMultiAttribute: true }),
+        propertyDefinition({
+          id: 'p2',
+          isMultiAttribute: true,
+          hasValueList: true,
+          valueList: ['A', 'B', 'C'],
+        }),
+      ]),
+    );
+    fixture.componentRef.setInput('extractedAttributes', [
+      attribute({ propertyId: 'p1', value: null, values: ['x', 'y'] }),
+    ]);
+    fixture.componentRef.setInput('attributes', { p1: ['x', 'y'] });
+    fixture.componentRef.setInput('documentTypeCandidates', []);
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('.field__multi')?.textContent).toContain('2 Werte');
+    expect(el.querySelector('app-multi-value-dialog')).toBeNull();
+
+    (el.querySelector('.field__multi-btn') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const dialog = el.querySelector('app-multi-value-dialog') as HTMLElement;
+    expect(dialog.querySelectorAll('tbody tr').length).toBe(2);
+    expect(dialog.querySelectorAll('thead th').length).toBe(4);
+
+    const input = dialog.querySelector('input[type="text"]') as HTMLInputElement;
+    input.value = 'z';
+    input.dispatchEvent(new Event('input'));
+    const select = dialog.querySelector('select') as HTMLSelectElement;
+    select.value = 'B';
+    select.dispatchEvent(new Event('change'));
+    (dialog.querySelector('.btn--primary') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.attributes()).toEqual({ p1: ['z', 'y'], p2: ['B'] });
+    expect(el.querySelector('app-multi-value-dialog')).toBeNull();
+  });
+
   it('opens a confirmation dialog on document-type change and emits documentTypeChange on confirm', async () => {
     const candidates: DmsDocumentMetadata[] = [
       { documentType: documentType([]), contentLanguage: 'de', properties: [] },
@@ -211,36 +277,13 @@ describe('PropertiesPanel', () => {
         '.properties__check-result',
       ) as HTMLElement;
 
-    it('emits checkRequested from the "Im DMS prüfen" button', async () => {
+    it('announces the checking state in the live region', async () => {
       const fixture = await checkedComponent([attribute({})], null);
-      let requested = 0;
-      fixture.componentInstance.checkRequested.subscribe(() => requested++);
-
-      const button = (fixture.nativeElement as HTMLElement).querySelector(
-        '.properties__check-btn',
-      ) as HTMLButtonElement;
-      expect(button.textContent).toContain('Im DMS prüfen');
-      button.click();
-
-      expect(requested).toBe(1);
-    });
-
-    it('disables the button while checking or without a document type', async () => {
-      const fixture = await checkedComponent([attribute({})], null);
-      const button = (fixture.nativeElement as HTMLElement).querySelector(
-        '.properties__check-btn',
-      ) as HTMLButtonElement;
-      expect(button.disabled).toBe(false);
 
       fixture.componentRef.setInput('checking', true);
       fixture.detectChanges();
-      expect(button.disabled).toBe(true);
-      expect(live(fixture).textContent).toContain('Prüfe im DMS');
 
-      fixture.componentRef.setInput('checking', false);
-      fixture.componentRef.setInput('selectedDocumentTypeId', null);
-      fixture.detectChanges();
-      expect(button.disabled).toBe(true);
+      expect(live(fixture).textContent).toContain('Prüfe im DMS');
     });
 
     it('announces the result in a polite live region that is always in the DOM', async () => {

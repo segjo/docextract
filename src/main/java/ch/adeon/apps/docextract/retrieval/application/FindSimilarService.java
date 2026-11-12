@@ -32,23 +32,25 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.ObjectMapper;
+
 /**
  * Embeds+stages a process's chunks (in the same run, avoiding a second embedding call — §6.1/8.5)
  * and searches the {@code APPROVED} corpus with a mandatory {@code tenant_id}/{@code
  * embedding_model}/{@code extraction_source} pre-filter (ADR-002, FR-3, NfA-4/-6). Hits below the
  * configurable minimum score are dropped before the result is reported. Each remaining hit's DMS
  * object properties are then looked up live and attached (FR-3, SPEC §3), and the hits are narrowed
- * down to the best-matched document type (see {@link
- * #filterToBestDocumentType(List)}). All repository document types + properties (SPEC §3, see
- * {@link DmsObjectDefinitionPort}) are staged as candidates for the next step via {@link
- * DocumentTypeCandidatesPort}, each carrying a score derived from the similar hits. Reports {@code
- * RETRIEVED} progress via SSE (ADR-004) and stages the enriched result for the UI (see {@link
- * RetrievalResultPort}).
+ * down to the best-matched document type (see {@link #filterToBestDocumentType(List)}). All
+ * repository document types + properties (SPEC §3, see {@link DmsObjectDefinitionPort}) are staged
+ * as candidates for the next step via {@link DocumentTypeCandidatesPort}, each carrying a score
+ * derived from the similar hits. Reports {@code RETRIEVED} progress via SSE (ADR-004) and stages
+ * the enriched result for the UI (see {@link RetrievalResultPort}).
  */
 @Service
 public class FindSimilarService implements FindSimilar {
 
   private static final Logger log = LoggerFactory.getLogger(FindSimilarService.class);
+
+  private static final String REMARK_PROPERTY_ID = "property_remark";
 
   private final StageEmbeddings stageEmbeddings;
   private final VectorSearchPort vectorSearchPort;
@@ -167,10 +169,9 @@ public class FindSimilarService implements FindSimilar {
       List<RetrievalResult> results, DvelopCredential credential) {
     List<CompletableFuture<RetrievalResult>> futures =
         results.stream()
-            .map(
-                result ->
-                    CompletableFuture.supplyAsync(
-                        () -> withDmsProperties(result, credential), executor))
+            .map(result ->
+                CompletableFuture.supplyAsync(
+                    () -> withDmsProperties(result, credential), executor))
             .toList();
     return futures.stream().map(CompletableFuture::join).toList();
   }
@@ -285,9 +286,28 @@ public class FindSimilarService implements FindSimilar {
         tenantId,
         processId,
         candidates.stream()
+            .map(FindSimilarService::withEditableProperties)
             .map(c -> withValueLists(c, effectiveRepositoryId, credential))
             .map(c -> withScore(c, scores))
             .toList());
+  }
+
+  /** Drops properties a reviewer cannot edit: not modifiable, hidden, or the remark property. */
+  private static DmsDocumentMetadata withEditableProperties(DmsDocumentMetadata candidate) {
+    DmsDocumentType type = candidate.documentType();
+    if (type == null) {
+      return candidate;
+    }
+    List<DmsPropertyDefinition> editable =
+        type.properties().stream()
+            .filter(DmsPropertyDefinition::isModifiable)
+            .filter(property -> !property.isHidden())
+            .filter(property -> !REMARK_PROPERTY_ID.equals(property.id()))
+            .toList();
+    return new DmsDocumentMetadata(
+        new DmsDocumentType(type.id(), type.name(), editable, type.score()),
+        candidate.contentLanguage(),
+        candidate.properties());
   }
 
   /** objdef has no valid values; fetched without filter context, so dependent lists stay empty. */

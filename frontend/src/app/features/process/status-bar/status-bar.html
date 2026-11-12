@@ -14,11 +14,19 @@
     </button>
     <button
       type="button"
+      class="btn"
+      [disabled]="busy() || checking() || !canCheck()"
+      (click)="checkRequested.emit()"
+    >
+      {{ checking() ? 'Prüfe ...' : 'Im DMS prüfen' }}
+    </button>
+    <button
+      type="button"
       class="btn btn--primary"
-      [disabled]="busy() || toReviewCount() > 0"
+      [disabled]="busy()"
       (click)="confirmRequested.emit()"
     >
-      Bestaetigen &amp; ins DMS schreiben
+      Bestätigen &amp; ins DMS schreiben
     </button>
   </div>
 </div>

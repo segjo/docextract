@@ -6,7 +6,12 @@ import {
   DmsPropertyDefinition,
 } from '../../../core/models/retrieval.model';
 import { ValidationReport } from '../../../core/models/validation.model';
-import { isCriticalAttribute, isReviewedAttribute } from '../../../core/attribute-review';
+import {
+  AttributeValue,
+  isCriticalAttribute,
+  isReviewedAttribute,
+} from '../../../core/attribute-review';
+import { MultiValueDialog } from '../multi-value-dialog/multi-value-dialog';
 
 /** What the DMS did to a value (ADR-016): `DMS_SET` = set by a hook/default, `DMS_CHANGED` = adjusted. */
 type DmsMark = 'DMS_SET' | 'DMS_CHANGED' | null;
@@ -14,6 +19,12 @@ type DmsMark = 'DMS_SET' | 'DMS_CHANGED' | null;
 interface AttributeRow {
   attribute: ExtractedAttribute;
   definition: DmsPropertyDefinition | undefined;
+  /** Multi-value property: edited as a list. */
+  multiple: boolean;
+  /** Current form value as a list (one entry for a single value, none if empty). */
+  selected: string[];
+  /** Value list plus current values missing from it, so a suggestion is always shown. */
+  options: string[];
   critical: boolean;
   reviewed: boolean;
   /** True if the property has no value in the extraction result (not returned by the KI extraction). */
@@ -28,6 +39,7 @@ interface AttributeRow {
 
 @Component({
   selector: 'app-properties-panel',
+  imports: [MultiValueDialog],
   templateUrl: './properties-panel.html',
   styleUrl: './properties-panel.scss',
 })
@@ -41,16 +53,11 @@ export class PropertiesPanel {
   readonly retrying = input(false);
   readonly extractedAttributes = input.required<ExtractedAttribute[]>();
   /** Edited values, two-way bound with the container so Confirm/Reject see the reviewed state. */
-  readonly attributes = model.required<Record<string, string>>();
-  /** Critical properties the reviewer has verified without changing their value. */
-  readonly acknowledgedIds = model<string[]>([]);
+  readonly attributes = model.required<Record<string, AttributeValue>>();
   /** True while a "Im DMS prüfen" request is in flight. */
   readonly checking = input(false);
   /** Result of the last DMS check (or of the extraction's final check); `null` = none yet. */
   readonly checkReport = input<ValidationReport | null>(null);
-
-  /** The reviewer asks for a read-only DMS check of the current values; never blocks the release. */
-  readonly checkRequested = output<void>();
 
   /**
    * Emitted once the reviewer confirms a document type change in the dialog: `reExtract` selects
@@ -75,6 +82,29 @@ export class PropertiesPanel {
       (candidate) => candidate.documentType.id === this.pendingDocumentTypeId(),
     ),
   );
+
+  protected readonly multiValueDialogOpen = signal(false);
+
+  /** All editable multi-value properties of the type: one table column each, as they may depend on each other. */
+  protected readonly multiValueDefinitions = computed(() =>
+    (this.documentType()?.properties ?? []).filter(
+      (definition) =>
+        definition.isMultiAttribute &&
+        definition.isModifiable &&
+        !definition.isHidden &&
+        !definition.isSystemProperty,
+    ),
+  );
+
+  protected readonly multiValues = computed(() => {
+    const edited = this.attributes();
+    return Object.fromEntries(
+      this.multiValueDefinitions().map((definition) => [
+        definition.id,
+        toList(edited[definition.id]),
+      ]),
+    );
+  });
 
   /** The error of the last check; `propertyId` only set for a field of this document type. */
   private readonly checkError = computed(() => this.checkReport()?.error ?? null);
@@ -104,7 +134,6 @@ export class PropertiesPanel {
   protected readonly rows = computed<AttributeRow[]>(() => {
     const definitions = this.documentType()?.properties ?? [];
     const edited = this.attributes();
-    const acknowledged = this.acknowledgedIds();
     const extractedAttributes = this.extractedAttributes();
     const extractedIds = new Set(extractedAttributes.map((attribute) => attribute.propertyId));
     const error = this.checkError();
@@ -120,12 +149,9 @@ export class PropertiesPanel {
       return {
         attribute,
         definition,
+        ...fieldState(definition, edited[attribute.propertyId]),
         critical: isCriticalAttribute(attribute),
-        reviewed: isReviewedAttribute(
-          attribute,
-          edited[attribute.propertyId],
-          acknowledged.includes(attribute.propertyId),
-        ),
+        reviewed: isReviewedAttribute(attribute, edited[attribute.propertyId]),
         empty: false,
         mandatory: definition?.mandatory ?? false,
         dmsMark: dmsMarkOf(attribute),
@@ -139,20 +165,24 @@ export class PropertiesPanel {
       .filter(
         (definition) =>
           !extractedIds.has(definition.id) &&
-          (definition.mandatory || showEmpty || definition.id === errorPropertyId),
+          (definition.mandatory ||
+            showEmpty ||
+            definition.id === errorPropertyId ||
+            toList(edited[definition.id]).length > 0),
       )
       .map((definition) => ({
         attribute: {
           propertyId: definition.id,
           value: null,
           values: null,
-          confidence: 1,
+          confidence: null,
           sourceExcerpt: null,
         },
         definition,
+        ...fieldState(definition, edited[definition.id]),
         critical: false,
         reviewed: true,
-        empty: true,
+        empty: toList(edited[definition.id]).length === 0,
         mandatory: definition.mandatory,
         dmsMark: null,
         corrected: false,
@@ -162,16 +192,13 @@ export class PropertiesPanel {
     return [...extractedRows, ...emptyRows];
   });
 
-  protected updateValue(propertyId: string, value: string): void {
+  protected updateValue(propertyId: string, value: AttributeValue): void {
     this.attributes.update((current) => ({ ...current, [propertyId]: value }));
   }
 
-  protected toggleAcknowledged(propertyId: string, checked: boolean): void {
-    this.acknowledgedIds.update((current) =>
-      checked
-        ? [...current.filter((id) => id !== propertyId), propertyId]
-        : current.filter((id) => id !== propertyId),
-    );
+  protected saveMultiValues(values: Record<string, string[]>): void {
+    this.attributes.update((current) => ({ ...current, ...values }));
+    this.multiValueDialogOpen.set(false);
   }
 
   protected selectDocumentType(documentTypeId: string): void {
@@ -206,6 +233,23 @@ export class PropertiesPanel {
   protected confidencePercent(confidence: number | null): number | null {
     return confidence === null ? null : Math.round(confidence * 100);
   }
+}
+
+function toList(value: AttributeValue | undefined): string[] {
+  return Array.isArray(value) ? value : value ? [value] : [];
+}
+
+function fieldState(
+  definition: DmsPropertyDefinition | undefined,
+  value: AttributeValue | undefined,
+): Pick<AttributeRow, 'multiple' | 'selected' | 'options'> {
+  const selected = toList(value);
+  const valueList = definition?.valueList ?? [];
+  return {
+    multiple: definition?.isMultiAttribute ?? Array.isArray(value),
+    selected,
+    options: [...valueList, ...selected.filter((entry) => !valueList.includes(entry))],
+  };
 }
 
 function dmsMarkOf(attribute: ExtractedAttribute): DmsMark {
