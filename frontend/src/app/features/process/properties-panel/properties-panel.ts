@@ -14,7 +14,7 @@ import {
 import { MultiValueDialog } from '../multi-value-dialog/multi-value-dialog';
 
 /** What the DMS did to a value (ADR-016): `DMS_SET` = set by a hook/default, `DMS_CHANGED` = adjusted. */
-type DmsMark = 'DMS_SET' | 'DMS_CHANGED' | null;
+type DmsMark = 'DMS_SET' | 'DMS_CHANGED' | 'SIMILAR' | null;
 
 interface AttributeRow {
   attribute: ExtractedAttribute;
@@ -255,6 +255,9 @@ function fieldState(
 function dmsMarkOf(attribute: ExtractedAttribute): DmsMark {
   if (attribute.origin === 'DMS') {
     return 'DMS_SET';
+  }
+  if (attribute.origin === 'SIMILAR') {
+    return 'SIMILAR';
   }
   return attribute.changedByDms === true ? 'DMS_CHANGED' : null;
 }

@@ -115,6 +115,8 @@
               <span class="field__dms-badge">vom DMS gesetzt</span>
             } @else if (row.dmsMark === 'DMS_CHANGED') {
               <span class="field__dms-badge">vom DMS angepasst</span>
+            } @else if (row.dmsMark === 'SIMILAR') {
+              <span class="field__dms-badge">aus ähnlichen Dokumenten</span>
             }
             @if (row.corrected) {
               <span class="field__corrected-badge">nach DMS-Fehler korrigiert</span>

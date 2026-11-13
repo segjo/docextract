@@ -1,5 +1,8 @@
-/** `LLM` = nicht vom DMS gesetzt, `DMS` = von einem Hook/Default des DMS gesetzt (ADR-016). */
-export type AttributeOrigin = 'LLM' | 'DMS';
+/**
+ * `LLM` = nicht vom DMS gesetzt, `DMS` = von einem Hook/Default des DMS gesetzt (ADR-016),
+ * `SIMILAR` = aus den Werten aehnlicher Dokumente vorgeschlagen (nicht im Dokument gefunden).
+ */
+export type AttributeOrigin = 'LLM' | 'DMS' | 'SIMILAR';
 
 /**
  * `confidence` is 0-1, `null` for `origin = 'DMS'`. The ADR-016 fields are absent in results stored

@@ -31,6 +31,8 @@ import ch.adeon.apps.docextract.process.application.StepStatus;
 import ch.adeon.apps.docextract.retrieval.application.DocumentTypeCandidatesPort;
 import ch.adeon.apps.docextract.retrieval.application.RetrievalResultPort;
 import ch.adeon.apps.docextract.retrieval.port.DmsDocumentMetadata;
+import ch.adeon.apps.docextract.retrieval.port.DmsProperty;
+import ch.adeon.apps.docextract.retrieval.port.RetrievalResult;
 import ch.adeon.apps.docextract.retrieval.port.DmsDocumentType;
 import ch.adeon.apps.docextract.retrieval.port.DmsPropertyDataType;
 import ch.adeon.apps.docextract.retrieval.port.DmsPropertyDefinition;
@@ -63,6 +65,7 @@ class ExtractAttributesServiceTest {
   private final ProcessEventPort processEventPort = mock(ProcessEventPort.class);
   private final AuditPort auditPort = mock(AuditPort.class);
   private final ValidateAttributes validateAttributes = mock(ValidateAttributes.class);
+  private final RetrievalResultPort retrievalResultPort = mock(RetrievalResultPort.class);
   private final ExtractAttributesService service = service(10, 5);
 
   private ExtractAttributesService service(int maxToolCalls, int maxValidationRounds) {
@@ -72,7 +75,7 @@ class ExtractAttributesServiceTest {
         mock(ValueListPort.class),
         validateAttributes,
         extractionResultPort,
-        mock(RetrievalResultPort.class),
+        retrievalResultPort,
         llmPort,
         processEventPort,
         auditPort,
@@ -463,5 +466,55 @@ class ExtractAttributesServiceTest {
         .containsExactly(
             new ExtractedAttribute(
                 "p1", "12.00", null, 0.9, "ex", AttributeOrigin.LLM, true, false));
+  }
+
+  private String similarHit(String p1, String p2) {
+    DmsDocumentMetadata metadata =
+        new DmsDocumentMetadata(
+            new DmsDocumentType("DREC", "DREC", List.of(writable("p1"), writable("p2"))),
+            null,
+            List.of(new DmsProperty("p1", p1, null), new DmsProperty("p2", p2, null)));
+    return JsonMapper.builder().build().writeValueAsString(metadata);
+  }
+
+  @Test
+  void empty_properties_are_proposed_from_similar_documents_with_a_confidence_below_the_review_threshold() {
+    stageTwoPropertyType();
+    when(retrievalResultPort.find("tenant-a", "proc-1"))
+        .thenReturn(
+            Optional.of(
+                List.of(
+                    new RetrievalResult("r", "A1", 1.0, similarHit("In Prüfung", "Bau")),
+                    new RetrievalResult("r", "A2", 0.9, similarHit("In Prüfung", "Bau")),
+                    new RetrievalResult("r", "A3", 0.8, similarHit("Freigabe", "Bau")))));
+    when(llmPort.generate(anyString(), anyString(), anyMap(), anyList()))
+        .thenReturn(new LlmResponse("{\"attributes\":[]}", MODEL, 5));
+
+    ExtractionResult result = service.extract("tenant-a", "proc-1", CREDENTIAL);
+
+    assertThat(result.attributes())
+        .containsExactly(
+            new ExtractedAttribute(
+                "p1", "In Prüfung", null, 0.96 * 2 / 3, "2 von 3 ähnlichen Dokumenten",
+                AttributeOrigin.SIMILAR, false, false),
+            new ExtractedAttribute(
+                "p2", "Bau", null, 0.96, "3 von 3 ähnlichen Dokumenten",
+                AttributeOrigin.SIMILAR, false, false));
+  }
+
+  @Test
+  void the_maximum_confidence_of_a_similar_proposal_needs_the_maximum_number_of_documents() {
+    stageTwoPropertyType();
+    when(retrievalResultPort.find("tenant-a", "proc-1"))
+        .thenReturn(
+            Optional.of(List.of(new RetrievalResult("r", "A1", 1.0, similarHit("Freigabe", "Bau")))));
+    when(llmPort.generate(anyString(), anyString(), anyMap(), anyList()))
+        .thenReturn(new LlmResponse("{\"attributes\":[]}", MODEL, 5));
+
+    ExtractionResult result = service.extract("tenant-a", "proc-1", CREDENTIAL);
+
+    assertThat(result.attributes())
+        .extracting(ExtractedAttribute::confidence)
+        .containsExactly(0.96 / 3, 0.96 / 3);
   }
 }

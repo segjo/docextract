@@ -52,7 +52,7 @@ export function applyValidatedAttributes(
           ...attribute,
           value: answer.value,
           values: answer.values,
-          origin: 'LLM',
+          origin: attribute.origin === 'SIMILAR' ? 'SIMILAR' : 'LLM',
           changedByDms: answer.changedByDms || attribute.changedByDms === true,
         };
   });

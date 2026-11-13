@@ -95,6 +95,8 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
 
   private static final int MAX_EXAMPLE_DOCUMENTS = 3;
 
+  private static final double SIMILAR_MAX_CONFIDENCE = 0.96;
+
   private final DocumentTypeCandidatesPort documentTypeCandidatesPort;
   private final ContentStagingPort contentStagingPort;
   private final ValueListPort valueListPort;
@@ -225,6 +227,8 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
               writableProperties,
               budget,
               maxValidationRounds);
+      List<DmsDocumentMetadata> similarDocuments =
+          similarDocuments(tenantId, processId, selectedType);
       List<ExtractedAttribute> attributes =
           writableProperties.isEmpty() || documentText.isBlank()
               ? List.of()
@@ -234,13 +238,14 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
                       documentText,
                       selectedType,
                       writableProperties,
-                      similarExamples(tenantId, processId, selectedType),
+                      similarExamples(similarDocuments),
                       tools(valueListTool, validationTool)),
                   selectedType,
                   tenantId,
                   processId,
                   credential);
       attributes = markCorrected(attributes, validationTool.rejectedValues());
+      attributes = fillFromSimilarDocuments(attributes, writableProperties, similarDocuments);
       ExtractionResult result =
           finalCheck(tenantId, processId, selectedType, attributes, credential);
       extractionResultPort.store(tenantId, processId, result);
@@ -349,15 +354,14 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
   }
 
   /**
-   * Per property id, the distinct non-blank values of the best-scored similar documents of the
-   * selected type (the hits {@code FindSimilarService} stored for this process). Empty if there are
+   * The best-scored similar documents (at most {@link #MAX_EXAMPLE_DOCUMENTS}) of the selected
+   * type, from the hits {@code FindSimilarService} stored for this process. Empty if there are
    * none, e.g. after a retry with a type no similar document has.
    */
-  private Map<String, List<String>> similarExamples(
+  private List<DmsDocumentMetadata> similarDocuments(
       String tenantId, String processId, DmsDocumentMetadata selectedType) {
-    Map<String, List<String>> examples = new LinkedHashMap<>();
     List<RetrievalResult> hits = retrievalResultPort.find(tenantId, processId).orElse(List.of());
-    hits.stream()
+    return hits.stream()
         .sorted(Comparator.comparingDouble(RetrievalResult::score).reversed())
         .map(this::parseMetadata)
         .filter(Objects::nonNull)
@@ -366,19 +370,92 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
                 && Objects.equals(metadata.documentType().id(), selectedType.documentType().id())
                 && metadata.properties() != null)
         .limit(MAX_EXAMPLE_DOCUMENTS)
-        .forEach(metadata -> {
-          for (DmsProperty property : metadata.properties()) {
-            String example = exampleOf(property);
-            if (property.id() != null && example != null) {
-              List<String> forProperty =
-                  examples.computeIfAbsent(property.id(), id -> new ArrayList<>());
-              if (!forProperty.contains(example)) {
-                forProperty.add(example);
-              }
-            }
+        .toList();
+  }
+
+  /** Per property id, the distinct non-blank values of the given similar documents. */
+  private static Map<String, List<String>> similarExamples(List<DmsDocumentMetadata> documents) {
+    Map<String, List<String>> examples = new LinkedHashMap<>();
+    for (DmsDocumentMetadata metadata : documents) {
+      for (DmsProperty property : metadata.properties()) {
+        String example = exampleOf(property);
+        if (property.id() != null && example != null) {
+          List<String> forProperty =
+              examples.computeIfAbsent(property.id(), id -> new ArrayList<>());
+          if (!forProperty.contains(example)) {
+            forProperty.add(example);
           }
-        });
+        }
+      }
+    }
     return examples;
+  }
+
+  /**
+   * Proposes, for every writable property the LLM left empty, the value most similar documents
+   * agree on ({@link AttributeOrigin#SIMILAR}). Confidence is {@link #SIMILAR_MAX_CONFIDENCE} times
+   * the share of {@link #MAX_EXAMPLE_DOCUMENTS} documents carrying that value: the maximum is only
+   * reached if that many similar documents exist and all agree, and it stays below the review
+   * threshold. Ties go to the value of the better-scored document.
+   */
+  private static List<ExtractedAttribute> fillFromSimilarDocuments(
+      List<ExtractedAttribute> attributes,
+      List<DmsPropertyDefinition> writableProperties,
+      List<DmsDocumentMetadata> similarDocuments) {
+    if (similarDocuments.isEmpty()) {
+      return attributes;
+    }
+    Map<String, ExtractedAttribute> byId = new LinkedHashMap<>();
+    attributes.forEach(attribute -> byId.putIfAbsent(attribute.propertyId(), attribute));
+    List<ExtractedAttribute> result = new ArrayList<>(attributes);
+    for (DmsPropertyDefinition definition : writableProperties) {
+      ExtractedAttribute existing = byId.get(definition.id());
+      if (existing != null && !valuesOf(existing).isEmpty()) {
+        continue;
+      }
+      Map<List<String>, Integer> votes = new LinkedHashMap<>();
+      for (DmsDocumentMetadata document : similarDocuments) {
+        document.properties().stream()
+            .filter(property -> definition.id().equals(property.id()))
+            .findFirst()
+            .map(ExtractAttributesService::propertyValues)
+            .filter(values -> !values.isEmpty())
+            .ifPresent(values -> votes.merge(values, 1, Integer::sum));
+      }
+      Optional<Map.Entry<List<String>, Integer>> best =
+          votes.entrySet().stream().max(Map.Entry.comparingByValue());
+      if (best.isEmpty()) {
+        continue;
+      }
+      List<String> values = best.get().getKey();
+      int count = best.get().getValue();
+      int total = similarDocuments.size();
+      ExtractedAttribute suggestion =
+          new ExtractedAttribute(
+              definition.id(),
+              definition.isMultiAttribute() ? null : values.get(0),
+              definition.isMultiAttribute() ? values : null,
+              SIMILAR_MAX_CONFIDENCE * count / MAX_EXAMPLE_DOCUMENTS,
+              "%d von %d ähnlichen Dokumenten".formatted(count, total),
+              AttributeOrigin.SIMILAR,
+              false,
+              false);
+      if (existing == null) {
+        result.add(suggestion);
+      } else {
+        result.set(result.indexOf(existing), suggestion);
+      }
+    }
+    return result;
+  }
+
+  private static List<String> propertyValues(DmsProperty property) {
+    if (property.values() != null && !property.values().isEmpty()) {
+      return property.values().stream().filter(v -> v != null && !v.isBlank()).toList();
+    }
+    return property.value() != null && !property.value().isBlank()
+        ? List.of(property.value())
+        : List.of();
   }
 
   private DmsDocumentMetadata parseMetadata(RetrievalResult hit) {
@@ -539,7 +616,7 @@ public class ExtractAttributesService implements ExtractAttributes, RetryExtract
                 answer.values(),
                 attribute.confidence(),
                 attribute.sourceExcerpt(),
-                AttributeOrigin.LLM,
+                attribute.origin(),
                 answer.changedByDms(),
                 attribute.correctedAfterValidation()));
       }
