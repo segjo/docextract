@@ -597,6 +597,7 @@ components:
           enum:
           - LLM
           - DMS
+          - SIMILAR
         propertyId:
           type: string
         value:
@@ -783,6 +784,7 @@ components:
           enum:
           - LLM
           - DMS
+          - SIMILAR
         propertyId:
           type: string
         sourceExcerpt:
@@ -936,6 +938,7 @@ components:
           enum:
           - LLM
           - DMS
+          - SIMILAR
         propertyId:
           type: string
         value:
