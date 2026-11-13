@@ -1,6 +1,7 @@
 package ch.adeon.apps.docextract.shared.http;
 
 import java.net.http.HttpClient;
+import java.time.Duration;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
@@ -18,5 +19,17 @@ public final class Http1RestClientFactory {
   public static RestClient create() {
     HttpClient httpClient = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
     return RestClient.builder().requestFactory(new JdkClientHttpRequestFactory(httpClient)).build();
+  }
+
+  /** Same, but a response not read within {@code readTimeout} fails (T-4). */
+  public static RestClient create(Duration readTimeout) {
+    HttpClient httpClient =
+        HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
+            .connectTimeout(readTimeout)
+            .build();
+    JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+    requestFactory.setReadTimeout(readTimeout);
+    return RestClient.builder().requestFactory(requestFactory).build();
   }
 }

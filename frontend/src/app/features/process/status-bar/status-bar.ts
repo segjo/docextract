@@ -10,7 +10,12 @@ export class StatusBar {
   readonly criticalCount = input.required<number>();
   readonly toReviewCount = input.required<number>();
   readonly busy = input(false);
+  /** True while a "Im DMS prüfen" request is in flight. */
+  readonly checking = input(false);
+  /** False while no document type is selected to check against. */
+  readonly canCheck = input(true);
 
   readonly rejectRequested = output<void>();
+  readonly checkRequested = output<void>();
   readonly confirmRequested = output<void>();
 }

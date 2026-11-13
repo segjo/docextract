@@ -18,7 +18,7 @@ describe('ProcessPage', () => {
   let events$: Subject<ProcessEvent>;
   let extractionApi: Pick<ExtractionApi, 'extractionResult' | 'retryExtraction'>;
   let retrievalApi: Pick<RetrievalApi, 'similarDocuments' | 'documentTypeCandidates'>;
-  let validationApi: Pick<ValidationApi, 'confirm' | 'reject'>;
+  let validationApi: Pick<ValidationApi, 'confirm' | 'reject' | 'check'>;
   const extractionResult: ExtractionResult = {
     documentTypeId: 't1',
     attributes: [
@@ -39,6 +39,7 @@ describe('ProcessPage', () => {
     validationApi = {
       confirm: vi.fn().mockReturnValue(of({ status: 'CONFIRMED' })),
       reject: vi.fn().mockReturnValue(of(undefined)),
+      check: vi.fn().mockReturnValue(of({ valid: true, attributes: [], error: null })),
     };
 
     await TestBed.configureTestingModule({
@@ -152,7 +153,7 @@ describe('ProcessPage', () => {
 
     expect(fixture.componentInstance['confirming']()).toBe(false);
     expect(fixture.componentInstance['actionError']()).toBe(
-      'Bestaetigen fehlgeschlagen. Bitte erneut versuchen.',
+      'Bestätigen fehlgeschlagen. Bitte erneut versuchen.',
     );
   });
 
@@ -188,5 +189,123 @@ describe('ProcessPage', () => {
       attributes: [],
     });
     expect(fixture.componentInstance['editedAttributes']()).toEqual({});
+  });
+
+  describe('Im DMS prüfen (ADR-016)', () => {
+    function loadedPage() {
+      const fixture = createComponent();
+      events$.next(completedEvent('EXTRACTED'));
+      fixture.detectChanges();
+      return fixture;
+    }
+
+    it('sends the current form values and the document type to /validation/check', () => {
+      const fixture = loadedPage();
+      fixture.componentInstance['editedAttributes'].set({ p1: 'v1 edited', p2: '' });
+
+      fixture.componentInstance['checkInDms']();
+
+      expect(validationApi.check).toHaveBeenCalledWith({
+        processId: 'p-1',
+        documentTypeId: 't1',
+        attributes: [{ propertyId: 'p1', value: 'v1 edited', values: null, origin: null }],
+      });
+    });
+
+    it('takes over what the DMS would store and marks what it set or changed', () => {
+      (validationApi.check as ReturnType<typeof vi.fn>).mockReturnValue(
+        of({
+          valid: true,
+          attributes: [
+            { propertyId: 'p1', value: 'V1', values: null, origin: 'LLM', changedByDms: true },
+            { propertyId: 'p9', value: 'Hook', values: null, origin: 'DMS', changedByDms: true },
+          ],
+          error: null,
+        }),
+      );
+      const fixture = loadedPage();
+
+      fixture.componentInstance['checkInDms']();
+
+      expect(fixture.componentInstance['editedAttributes']()).toEqual({ p1: 'V1', p9: 'Hook' });
+      expect(fixture.componentInstance['extractionResult']()?.attributes).toEqual([
+        {
+          propertyId: 'p1',
+          value: 'V1',
+          values: null,
+          confidence: 1,
+          sourceExcerpt: null,
+          origin: 'LLM',
+          changedByDms: true,
+        },
+        {
+          propertyId: 'p9',
+          value: 'Hook',
+          values: null,
+          confidence: null,
+          sourceExcerpt: null,
+          origin: 'DMS',
+          changedByDms: true,
+          correctedAfterValidation: false,
+        },
+      ]);
+      expect(fixture.componentInstance['checking']()).toBe(false);
+    });
+
+    it('keeps the values on an invalid result and still allows the release', () => {
+      const error = { propertyId: 'p1', dmsCode: '0010019', message: 'Pflichtfeld fehlt' };
+      (validationApi.check as ReturnType<typeof vi.fn>).mockReturnValue(
+        of({ valid: false, attributes: null, error }),
+      );
+      const fixture = loadedPage();
+
+      fixture.componentInstance['checkInDms']();
+      fixture.componentInstance['confirm']();
+
+      expect(fixture.componentInstance['checkReport']()).toEqual({
+        valid: false,
+        attributes: null,
+        error,
+      });
+      expect(fixture.componentInstance['editedAttributes']()).toEqual({ p1: 'v1' });
+      expect(validationApi.confirm).toHaveBeenCalledOnce();
+    });
+
+    it('reports an unreachable DMS without losing the form', () => {
+      (validationApi.check as ReturnType<typeof vi.fn>).mockReturnValue(
+        throwError(() => ({ status: 502 })),
+      );
+      const fixture = loadedPage();
+
+      fixture.componentInstance['checkInDms']();
+
+      expect(fixture.componentInstance['actionError']()).toContain('nicht erreichbar');
+      expect(fixture.componentInstance['checkReport']()).toBeNull();
+      expect(fixture.componentInstance['checking']()).toBe(false);
+      expect(fixture.componentInstance['editedAttributes']()).toEqual({ p1: 'v1' });
+    });
+
+    it("shows the error of the extraction's final check like one of a manual check", () => {
+      const error = { propertyId: 'p1', dmsCode: null, message: 'Wert ungültig' };
+      (extractionApi.extractionResult as ReturnType<typeof vi.fn>).mockReturnValue(
+        of({ ...extractionResult, validation: { status: 'INVALID', error } }),
+      );
+
+      const fixture = loadedPage();
+
+      expect(fixture.componentInstance['checkReport']()).toEqual({
+        valid: false,
+        attributes: null,
+        error,
+      });
+    });
+
+    it('does not call the DMS without a document type', () => {
+      const fixture = createComponent();
+
+      fixture.componentInstance['checkInDms']();
+
+      expect(validationApi.check).not.toHaveBeenCalled();
+    });
   });
 });

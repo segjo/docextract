@@ -1764,13 +1764,13 @@ nachführen.
 
 **Befund (1): Umsetzungsstand**
 
-| Baustein | Status | Befund |
-| --- | --- | --- |
-| `LlmPort` + OpenAI-kompatibler Adapter | ✅ vorhanden | `LlmPort`, `OpenAiCompatibleLlmAdapter`; ein generischer Adapter für lokal/extern (ADR-011), kein zweiter konkreter Adaptertyp (NfA-8 "≥ 2 Adapter" bleibt über Konfiguration, nicht über Code, erfüllt) |
-| `EmbeddingPort` + Adapter | ✅ vorhanden | `EmbeddingPort`, `OpenAiCompatibleEmbeddingAdapter` |
-| Serverseitige JSON-Schema-Validierung mit Retry gemäss `max-retries` | ⚠️ war teilweise → jetzt ✅ | Jackson-Deserialisierung validierte bereits strukturell, aber ohne Retry: ein ungültiges LLM-JSON führte sofort zum Abbruch. Ergänzt: `ExtractAttributesService#generateValidated` ruft das LLM bei einer ungültigen Antwort bis zu `docextract.adapters.llm.max-retries` (neu, Default 1) weitere Male auf, auditiert jeden Versuch, und endet danach kontrolliert in `LlmException` → `ExtractionException` → `FAILED` (ARCHITECTURE § 6.5) |
-| „unbekannt"-Pfad | ✅ vorhanden | `ExtractAttributesService#resolveOne`: ein `hasValueList`-Vorschlag ohne Treffer wird mit `value=null, confidence=0.0` abgelehnt statt übernommen (E-5), bereits mit Test belegt |
-| Audit mit Modell-ID/Token | ✅ vorhanden | `ExtractAttributesService#audit`, `StagePendingEmbeddingsService#audit`: SHA-256 des Prompts/Texts, Tokenzahl, Anbieter, Modell-ID, nie der Rohtext (C-4) |
+| Baustein                                                                           | Status                      | Befund                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ---------------------------------------------------------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LlmPort` + OpenAI-kompatibler Adapter                                             | ✅ vorhanden                | `LlmPort`, `OpenAiCompatibleLlmAdapter`; ein generischer Adapter für lokal/extern (ADR-011), kein zweiter konkreter Adaptertyp (NfA-8 "≥ 2 Adapter" bleibt über Konfiguration, nicht über Code, erfüllt)                                                                                                                                                                                                                                                                                                         |
+| `EmbeddingPort` + Adapter                                                          | ✅ vorhanden                | `EmbeddingPort`, `OpenAiCompatibleEmbeddingAdapter`                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Serverseitige JSON-Schema-Validierung mit Retry gemäss `max-retries`               | ⚠️ war teilweise → jetzt ✅ | Jackson-Deserialisierung validierte bereits strukturell, aber ohne Retry: ein ungültiges LLM-JSON führte sofort zum Abbruch. Ergänzt: `ExtractAttributesService#generateValidated` ruft das LLM bei einer ungültigen Antwort bis zu `docextract.adapters.llm.max-retries` (neu, Default 1) weitere Male auf, auditiert jeden Versuch, und endet danach kontrolliert in `LlmException` → `ExtractionException` → `FAILED` (ARCHITECTURE § 6.5)                                                                    |
+| „unbekannt"-Pfad                                                                   | ✅ vorhanden                | `ExtractAttributesService#resolveOne`: ein `hasValueList`-Vorschlag ohne Treffer wird mit `value=null, confidence=0.0` abgelehnt statt übernommen (E-5), bereits mit Test belegt                                                                                                                                                                                                                                                                                                                                 |
+| Audit mit Modell-ID/Token                                                          | ✅ vorhanden                | `ExtractAttributesService#audit`, `StagePendingEmbeddingsService#audit`: SHA-256 des Prompts/Texts, Tokenzahl, Anbieter, Modell-ID, nie der Rohtext (C-4)                                                                                                                                                                                                                                                                                                                                                        |
 | Pre-Filter-Query (`tenant_id`, `APPROVED`, `embedding_model`, `extraction_source`) | ⚠️ war teilweise → jetzt ✅ | `PgVectorSearchAdapter`/`VectorSearchPort` filterten nur `tenant_id` + `status='APPROVED'`; `embedding_model`/`extraction_source` fehlten als SQL-Prädikat (nur implizit über `ReindexService`, das einen abgelösten `embedding_model` auf `STALE` setzt). Ergänzt: beide Spalten sind jetzt Pflichtparameter von `VectorSearchPort#search` und Teil der `WHERE`-Klausel; `FindSimilarService` übergibt die konfigurierten Werte (`docextract.retrieval.embedding-model`, `docextract.adapters.text-extraction`) |
 
 **Beobachtung (nicht behoben, ausserhalb des Auftrags):** Die DB-`CHECK`-Constraint `chk_model` auf
@@ -1872,10 +1872,10 @@ neuen Dependencies hinzu** (Awaitility und `junit-jupiter-params` sind transitiv
 
 **Befund Schema (1):**
 
-| Frage | Befund |
-| --- | --- |
-| Vektorspalte fest dimensioniert? | **Ja**: `embedding vector(1024)` (V3). Ein Modell mit anderer Dimension lässt sich nicht einfügen, auch ohne `chk_model` nicht. |
-| Status-Constraint, der `STALE` verhindert? | **Nein**: `status` ist `VARCHAR(16)` ohne `CHECK`; `STALE` (`ReindexService`) war schon vorher zulässig. |
+| Frage                                      | Befund                                                                                                                          |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| Vektorspalte fest dimensioniert?           | **Ja**: `embedding vector(1024)` (V3). Ein Modell mit anderer Dimension lässt sich nicht einfügen, auch ohne `chk_model` nicht. |
+| Status-Constraint, der `STALE` verhindert? | **Nein**: `status` ist `VARCHAR(16)` ohne `CHECK`; `STALE` (`ReindexService`) war schon vorher zulässig.                        |
 
 - OFFEN: Multi-Modell-Re-Indexierung (ADR-012) bleibt für andere Dimensionen blockiert; nötig wäre eine
   eigene Migration (Dimension je Modell, z. B. eigene Spalte/Tabelle). Nicht geändert, nur gemeldet.
@@ -2003,7 +2003,6 @@ Abbildungen aus den P3-Befunden (502/500, Framework-Fehler, 413/422, Range 200/4
     ebenfalls nicht auswertbar.
   - Kein Code liest `type`, `code`, `title` oder `processId`. Keine Frontend-Specs mit Fehlerbody gefunden.
 
-
 ## 2026-11-10 (7) — ARCHITECTURE.md auf v0.3, Leitplanken für Agenten (Block 3, Artefakt 8 / 2.6)
 
 **Tool/Modell:** GitHub Copilot (Copilot SDK in VS Code)
@@ -2037,3 +2036,107 @@ PROJEKTPLAN 2.6 auf ✅ und Status-Spalte für 3.1–3.7 (nur Fakten). Keine neu
 - OFFEN: Regel „bestehende Migrationen nicht ändern“ ist aus Flyway-Praxis abgeleitet, nicht aus SPEC.
 - OFFEN: Freigabe-Entscheide je Datei in `doc/block3/repo-wide-change.md` (3.7).
 - OFFEN: Scope-Liste und Vorlagen-Consent (3.4) weiterhin nicht umgesetzt.
+
+## 2026-11-11 — ADR-016 umgesetzt: DMS-Validierung über `storevalidate` (Block 3)
+
+**Tool/Modell:** GitHub Copilot Chat (Agent-Modus), Claude Sonnet 5.5.
+**Auftrag (Prompt-Zusammenfassung):** ADR-016 (Status bleibt „vorgeschlagen“) umsetzen: Vertrag und
+Fixtures (WireMock-Mappings + Testfixtures), gemeinsamer `DmsPropertyPayloadMapper` mit Gegenrichtung,
+`validation` (`DmsStoreValidationPort`/-Adapter, Parser, `ValidateAttributes`, `POST /validation/check`),
+`extraction` (Tool `validate_attributes`, Korrektur-Loop, Confidence-Abwertung, Endprüfung), Migration V19,
+Frontend „Im DMS prüfen“, Tests, Doku. Nicht tun: schreibende DMS-Aufrufe, MCP-Tool, automatischer Check im
+Confirm, lokale Pflichtfeldprüfung, Übernahme von `systemProperties`/`remarks`, neue Dependencies.
+
+**Umgesetzt:**
+
+- ADR-016 stand bereits (ungetrackt) in `ARCHITECTURE.md` § 9; nur die Überschriftenebene (`####` → `###`)
+  korrigiert und umgesetzte Details ergänzt (Audit-Namen, `dms-timeout`, `default-zone`). Status unverändert.
+- Fixtures: `src/test/resources/dms/storevalidate/{request,response-200,response-400}.json` (die Bodies aus
+  ADR-016, Entscheid 2 und 3) und WireMock-Stubs `docker/dvelop-mock/mappings/dms_storevalidate_{200,400}.json`
+  (200 bei `extendedProperties."4"`, sonst 400 „Rechnungsdatum fehlt“; beide verlangen `text/plain`).
+  `StoreValidateMockMappingTest` hält Stubs und Fixtures gleich.
+- `validation.port`: `DmsStoreValidationPort` (nur lesend, `tenantId` + `DvelopCredential`), `StoreValidationRequest`,
+  `StoreValidationResult` (`Valid(submitted, returned)` | `Invalid`), `StoreValidationError`, `PropertyValue`.
+- `validation.adapter.out.dms`: `DmsPropertyPayloadMapper` (Mapping aus `DmsWriteAdapter` unverändert
+  herausgelöst; neu `storevalidate`-Payload und Gegenrichtung), `StoreValidateResponseParser`,
+  `DmsStoreValidationAdapter` (`Http1RestClientFactory`, `Content-Type: text/plain` als Bytes, `Origin`,
+  Lese-Timeout). `Http1RestClientFactory.create(Duration)` neu. Keine Tabelle für DMS-Codes.
+- `validation.application`: `ValidateAttributes`/`ValidateAttributesService` (Allowlist, Existenz über
+  `DocumentTypeCandidatesPort` bzw. `ProcessEventPort.exists`, Herkunft `origin`/`changedByDms` nach
+  Normalisierung), `ValidationReport` u. a. `ValidationController`: `POST /api/v1/validation/check`, Audit
+  `validation.check.<valid|invalid|unavailable>` (Kanal UI, fail closed). `openapi.yaml` neu generiert.
+- `extraction.application`: `AttributeValidationTool` (`validate_attributes`), gemeinsames `ToolCallBudget`
+  für beide Tools, Properties `max-validation-rounds` (5) und `corrected-confidence-cap` (0.5; Skala der
+  `confidence` geprüft: 0–1, Frontend `CRITICAL_CONFIDENCE_THRESHOLD` 0.97, Anzeige ×100, Default passt),
+  System-Prompt ergänzt, `ExtractAttributesService`: Rejected-Paare je Tool-Aufruf, Abwertung + Flag,
+  Endprüfung, `ValidationOutcome` im `ExtractionResult`. `ExtractedAttribute.confidence` ist jetzt `Double`
+  (`null` bei `origin = DMS`), Fünf-Argument-Konstruktor bleibt.
+- `V19__extraction_result_dms_validation.sql`: Spalte `validation` (JSONB); `origin`, `changedByDms`,
+  `correctedAfterValidation` liegen im bestehenden `attributes`-JSON (keine Spalten nötig). Altbestand wird als
+  `origin = LLM` und `NOT_CHECKED` gelesen. Bestehende Migrationen unverändert.
+- Frontend: Button „Im DMS prüfen“ (`ValidationApi.check`), Übernahme der Werte, Hervorhebung „vom DMS gesetzt“
+  / „vom DMS angepasst“ / „nach DMS-Fehler korrigiert“, Fehler am Feld (`aria-invalid`, `aria-describedby`) oder
+  allgemein, `aria-live`-Region für das Ergebnis (NfA-F1), Freigabe in jedem Status möglich; Mock-Interceptor und
+  Modelle erweitert; neue Specs (`validation-check`, Panel inkl. axe, Page).
+- Doku: ARCHITECTURE § 5.2, § 5.4, § 5.5, § 5.6 (Diagramm + Naht), § 6.1, § 6.2, § 8.6, § 8.7, Änderungshistorie;
+  SPEC C-2/E-5 und CONTEXT C-2 mit Verweis auf ADR-016; Mock-README.
+
+**Korrigiert:**
+
+- Jackson 3 lehnt `null` für primitive Felder ab (`FAIL_ON_NULL_FOR_PRIMITIVES`): der `type`-Primitive im
+  `StoreValidatePayload` machte jede 200-Antwort (ohne `type`) „nicht lesbar“; wäre als „gültig ohne Übernahme“
+  durchgegangen. Jetzt `Integer`; Parser-, Mapper- und Adaptertest haben es aufgedeckt.
+- Frontend-Build: `properties-panel.scss` und Initial-Bundle (Warn-Budget, schon vor dieser Änderung bei 251.88 kB
+  über 250 kB, jetzt 252.96 kB) geprüft; SCSS-Warnung durch geteilte Button-Styles vermieden.
+
+**Verworfen / Abweichung vom Auftrag:**
+
+- „Adaptertest gegen WireMock“: keine WireMock-Dependency (Veto vom 2026-11-10, „keine neuen Dependencies“).
+  `DmsStoreValidationAdapterTest` baut stattdessen das `docker/dvelop-mock`-Image per Testcontainers
+  (`ImageFromDockerfile`) wie `IngestToExtractionResultHttpTest` und testet echtes HTTP gegen die echten Stubs.
+- Audit-Ergebnis im Ereignisnamen statt in einer Spalte (`audit_entry` hat keine; Konvention wie
+  `mcp.tool.<name>.<ergebnis>`), ein Ereignis je Aufruf nach dem Aufruf.
+
+**Build:** `mvn -o clean verify` grün (402 Tests, 0 Fehler); `ng test --watch=false` grün (79 Tests),
+`ng lint` sauber.
+
+**Guardrail-Code geändert (bitte gegenlesen):**
+
+- `ValidationController` (neuer Endpunkt, neuer Konstruktor; `confirm`/`reject` unverändert) und
+  `ValidationControllerIdempotencyTest` (nur Konstruktoraufruf).
+- `DmsWriteAdapter` (einziger Schreibpfad): nur Mapping in den Mapper verschoben, Verhalten gleich; kein Test
+  für diesen Adapter vorhanden, die Gleichheit ist nur per Code-Review begründet (`toSourceProperties` ist
+  `DmsPropertyPayloadMapperTest.write_mapping_is_the_one_moved_out_of_the_write_adapter`).
+- `ValueListLookupTool` (ADR-014-Guardrails): Aufruflimit jetzt über das gemeinsame `ToolCallBudget`;
+  Verhalten und Tests unverändert.
+- `ExtractAttributesService`, neu `AttributeValidationTool`, `ValidateAttributesService`,
+  `DmsStoreValidationAdapter`.
+- `McpEndpointSecurityTest` (§ 8.6-Test): nur zwei Tests und ein Bean ergänzt (Agent `403` auf
+  `/validation/check`, Mensch `200` + Audit `UI`). `SecurityConfig`, `ConfirmAndWriteBackService`,
+  `HexagonalArchitectureTest` unverändert.
+
+**Zu prüfen durch Mensch:**
+
+- **Übernahme von Hook-Werten:** Werte mit `origin = DMS` (Hook/Default des DMS) landen im Formular und im
+  Ergebnis, ohne Belegstelle und ohne Konfidenz. Das ist die bewusste Abweichung von E-5 aus ADR-016; ob das
+  fachlich so gewollt ist (auch für die Freigabe), bitte bestätigen. `changedByDms` ist bei `origin = DMS`
+  ebenfalls `true` (wie im ADR-Beispiel), obwohl der ADR-Text beide Fälle getrennt beschreibt.
+- **Zeitzone DATETIME:** Werte ohne Zeitzone werden als `Europe/Zurich` gelesen (`+01:00`/`+02:00`), mit Offset
+  bleibt dieser erhalten (`Z` → `+00:00`). Das Beispiel im ADR zeigt `+00:00`; bitte gegen ein echtes DMS prüfen.
+- Ich habe `type` bei der 200-Antwort als optional behandelt (die dokumentierte Antwort enthält keines).
+- Request-Body wird als Bytes mit exakt `Content-Type: text/plain` (ohne `charset`) gesendet; nicht gegen ein
+  echtes DMS getestet (nur gegen den Stub).
+- `Origin`-Header wird wie bei den anderen POSTs gesetzt; ob `storevalidate` ihn verlangt, ist offen.
+- Mehrwertige Eigenschaften: das Frontend-Formular ist reiner Text; Mehrfachwerte werden nur im Ergebnis
+  geführt und beim Check unverändert mitgeschickt, nicht im Formular bearbeitet oder übernommen.
+- DMS-`message` (kann Werte enthalten) steht in `extraction_result.validation` (JSONB, TTL wie das Ergebnis),
+  nicht im Log oder Audit; falls auch das nicht gewünscht ist, nur `dmsCode`/`propertyId` speichern.
+- Ein Fehler der DMS-Antwort ohne `propertyId` oder außerhalb der Allowlist wird allgemein gezeigt; das LLM erhält
+  ihn trotzdem und wertet nichts ab (Entscheid 7).
+- Die Endprüfung läuft auch ohne Vorschläge (leere Liste), weil Hooks Pflichtfelder setzen können: ein
+  zusätzlicher DMS-Aufruf je Extraktion.
+- `ExtractedAttribute.confidence` wird im MCP-Tool `get_process_suggestions` jetzt als `Double` (nullable)
+  geliefert; Agenten sehen `null` für DMS-gesetzte Werte.
+- Offenbar hat der Execution-Subagent beim ersten Kompilieren `ToolCallBudget` angelegt und `ValueListLookupTool`
+  angepasst; Inhalt geprüft, deckt sich mit der Absicht.
+- OFFEN: Der Initial-Bundle-Budget-Verstoß (Warnung) bestand schon vorher; Mock-Daten liegen im Initial-Chunk.

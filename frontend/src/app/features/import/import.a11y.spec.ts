@@ -12,7 +12,7 @@ describe('Import a11y', () => {
     }).compileComponents();
   });
 
-  it('hat keine axe-Verstoesse mit Impact critical/serious', async () => {
+  it('hat keine axe-Verstösse mit Impact critical/serious', async () => {
     const fixture = TestBed.createComponent(Import);
     fixture.detectChanges();
     const results = await axe(fixture.nativeElement as HTMLElement, {

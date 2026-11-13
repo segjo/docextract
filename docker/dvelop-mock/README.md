@@ -42,3 +42,12 @@ curl -X POST http://localhost:8081/__admin/recordings/start \
 Before committing recorded stubs: remove noise (`favicon.ico`, `/__admi`, duplicate
 scenario states), and scrub any real PII/secrets/tokens from the captured bodies —
 these fixtures are dev-only mocks that end up in the repo permanently.
+
+## storevalidate (ADR-016)
+
+`POST /dms/r/{repositoryId}/storevalidate` (read-only check of properties) is stubbed by
+`dms_storevalidate_200.json` (priority 1: request body contains `extendedProperties."4"`, the invoice
+date of `DREC`) and `dms_storevalidate_400.json` (every other request: one error, mandatory field
+"Rechnungsdatum" missing, `propertyFieldId` 4). Both demand `Content-Type: text/plain` like d.velop.
+The bodies are the documented ones of ADR-016; `StoreValidateMockMappingTest` keeps them equal to the
+test fixtures under `src/test/resources/dms/storevalidate/`.

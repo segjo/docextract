@@ -17,7 +17,7 @@ export const PROCESS_STEP_LABELS: Record<ProcessStep, string> = {
   DMS_UPLOADED: 'Upload & Eingangspruefung',
   PREVIEW: 'Vorschau generieren',
   TEXT_EXTRACTED: 'Dokument strukturieren',
-  RETRIEVED: 'Aehnliche Dokumente suchen',
+  RETRIEVED: 'Ähnliche Dokumente suchen',
   EXTRACTED: 'Eigenschaften extrahieren',
 };
 

@@ -18,6 +18,7 @@ import {
   mockIngestedDocument,
   mockRetryExtractionResult,
   mockSimilarDocuments,
+  mockValidationReport,
   mockValueList,
 } from './mock-data';
 
@@ -59,6 +60,11 @@ const MOCK_ROUTES: MockRoute[] = [
   },
   { method: 'POST', pattern: /^\/value-lists\/[^/]+$/, body: mockValueList },
   { method: 'POST', pattern: /^\/validation\/confirm$/, body: mockConfirmationResult },
+  {
+    method: 'POST',
+    pattern: /^\/validation\/check$/,
+    body: (req) => mockValidationReport(req.body as Parameters<typeof mockValidationReport>[0]),
+  },
   { method: 'POST', pattern: /^\/validation\/reject$/, body: () => undefined },
 ];
 

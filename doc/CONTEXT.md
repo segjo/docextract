@@ -59,7 +59,7 @@ Diese Regeln haben **immer** Vorrang. Code, der dagegen verstößt, ist nicht ak
   Nach außen fließen **ausschließlich** Metadaten-Lese/-Schreibzugriffe auf die DMS-API, IdP-Session-Validierung
   und JIT-Wertelisten-Abrufe. Original-/Preview-Bytes dürfen **nur** an die autorisierte DMS-API gehen.
 - **C-2 Kein automatischer Schreibzugriff:** Keine LLM-Ausgabe löst selbsttätig einen schreibenden Tool-Call aus.
-  Lesende Tool-Calls (z. B. Wertelisten) nur per serverseitiger Allowlist (ADR-014).
+  Lesende Tool-Calls (z. B. Wertelisten, DMS-Prüfung `storevalidate`) nur per serverseitiger Allowlist (ADR-014, ADR-016).
   DMS-Write **nur nach expliziter menschlicher Freigabe** (Consent-Gate) — UI **und** MCP identisch.
 - **C-3 Least Privilege:** Der LLM-/Inferenz-Service hat **keinen** direkten Zugriff auf PostgreSQL/pgvector oder
   die DMS-API. Der Retrieval-Adapter darf Embeddings **nur als `PENDING` mit TTL** schreiben. Nur der

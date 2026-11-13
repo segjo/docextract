@@ -19,8 +19,10 @@ import ch.adeon.apps.docextract.ingest.application.UploadRejectedException;
 import ch.adeon.apps.docextract.process.application.ProcessNotFoundException;
 import ch.adeon.apps.docextract.retrieval.adapter.out.dms.DmsObjectDefinitionException;
 import ch.adeon.apps.docextract.retrieval.adapter.out.dms.ValueListWebhookException;
+import ch.adeon.apps.docextract.shared.error.AdapterUnavailableException;
 import ch.adeon.apps.docextract.shared.error.ContentException;
 import ch.adeon.apps.docextract.shared.error.ExtractionException;
+import ch.adeon.apps.docextract.shared.error.InvalidRequestException;
 import ch.adeon.apps.docextract.shared.error.LimitExceededException;
 import ch.adeon.apps.docextract.shared.error.LimitExceededException.Limit;
 import ch.adeon.apps.docextract.shared.error.RangeNotSatisfiableException;
@@ -112,6 +114,17 @@ class GlobalExceptionHandlerTest {
             502,
             "adapter-unavailable"),
         row(() -> new ExtractionException("x"), 500, "internal-error"),
+        // ADR-016: storevalidate that cannot answer (401/403, other 4xx, 5xx, timeout) is a 502
+        row(
+            () -> new AdapterUnavailableException("storevalidate answered HTTP 403"),
+            502,
+            "adapter-unavailable"),
+        row(
+            () ->
+                new InvalidRequestException(
+                    "documentTypeId is not a document type of this process"),
+            400,
+            "invalid-request"),
         row(() -> new RetrievalException("x"), 500, "internal-error"),
         row(() -> new ContentException("x"), 500, "internal-error"),
         row(() -> new IllegalStateException("unexpected"), 500, "internal-error"));

@@ -1,0 +1,21 @@
+{
+  "type": 1,
+  "objectDefinitionId": "DKOR",
+  "systemProperties": {
+    "property_filename": "jstore-sidecar.pdf",
+    "property_filetype": "pdf"
+  },
+  "remarks": {},
+  "multivalueExtendedProperties": {
+    "28": {
+      "1": "test a",
+      "2": "test b"
+    }
+  },
+  "extendedProperties": {
+    "22": "test",
+    "23": "test",
+    "25": "2026-11-10",
+    "27": "Finanzen"
+  }
+}

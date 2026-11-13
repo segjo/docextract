@@ -3,7 +3,7 @@ import { glob } from 'glob';
 
 // NfA-F2: Angular escapes interpolation by default — any bypass/innerHTML is a potential XSS,
 // since document content/LLM excerpts rendered in the validation UI count as untrusted data (T-1).
-describe('security: keine Sanitizer-Bypaesse', () => {
+describe('security: keine Sanitizer-Bypässe', () => {
   it('verwendet nirgends bypassSecurityTrust* oder [innerHTML]', () => {
     const offenders = glob
       .sync('src/**/*.{ts,html}')

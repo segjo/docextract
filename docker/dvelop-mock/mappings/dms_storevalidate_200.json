@@ -1,0 +1,43 @@
+{
+  "id": "6d4c1b0e-5f7a-4d3e-9a52-1c0b7e8f2a11",
+  "name": "dms_storevalidate_200",
+  "priority": 1,
+  "request": {
+    "urlPathPattern": "/dms/r/[^/]+/storevalidate",
+    "method": "POST",
+    "headers": {
+      "Content-Type": { "contains": "text/plain" }
+    },
+    "bodyPatterns": [
+      { "matchesJsonPath": "$.objectDefinitionId" },
+      { "matchesJsonPath": "$.extendedProperties['4']" }
+    ]
+  },
+  "response": {
+    "status": 200,
+    "jsonBody": {
+      "objectDefinitionId": "DREC",
+      "systemProperties": {
+        "property_filename": "invoice.pdf",
+        "property_filetype": "pdf",
+        "property_state": "Be"
+      },
+      "remarks": {
+        "1": ""
+      },
+      "extendedProperties": {
+        "11": "dawd",
+        "4": "2026-11-11",
+        "13": "12.00",
+        "14": "",
+        "15": "In Prüfung"
+      },
+      "multivalueExtendedProperties": {}
+    },
+    "headers": {
+      "Content-Type": "application/json; charset=utf-8"
+    }
+  },
+  "uuid": "6d4c1b0e-5f7a-4d3e-9a52-1c0b7e8f2a11",
+  "persistent": true
+}

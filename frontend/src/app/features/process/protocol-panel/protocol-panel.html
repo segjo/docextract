@@ -9,7 +9,7 @@
         <span class="protocol__step-label">{{ labels[step] }}</span>
         <span class="protocol__step-status">
           {{ statusLabels[statuses()[step]] }}
-          @if (durations()[step] !== undefined) {
+          @if (durations()[step]) {
             <span class="protocol__step-duration">({{ formatDuration(durations()[step]!) }})</span>
           }
         </span>

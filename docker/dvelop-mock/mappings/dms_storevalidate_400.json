@@ -1,0 +1,24 @@
+{
+  "id": "0b8e2f64-93c1-4a7d-8e15-5d2f9c3a7b42",
+  "name": "dms_storevalidate_400",
+  "priority": 2,
+  "request": {
+    "urlPathPattern": "/dms/r/[^/]+/storevalidate",
+    "method": "POST",
+    "headers": {
+      "Content-Type": { "contains": "text/plain" }
+    }
+  },
+  "response": {
+    "status": 400,
+    "jsonBody": {
+      "message": "Für mindestens ein Pflichtfeld wurde kein Wert eingegeben. [0010019]  (Rechnungsdatum)",
+      "propertyFieldId": "4"
+    },
+    "headers": {
+      "Content-Type": "application/json; charset=utf-8"
+    }
+  },
+  "uuid": "0b8e2f64-93c1-4a7d-8e15-5d2f9c3a7b42",
+  "persistent": true
+}

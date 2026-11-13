@@ -5,10 +5,22 @@ import static ch.adeon.apps.docextract.shared.config.OpenApiConfig.PROBLEM_JSON;
 import static ch.adeon.apps.docextract.shared.config.OpenApiConfig.PROBLEM_SCHEMA_REF;
 import static ch.adeon.apps.docextract.shared.config.OpenApiConfig.UNAUTHORIZED_REF;
 
+import ch.adeon.apps.docextract.audit.application.AuditChannel;
+import ch.adeon.apps.docextract.audit.application.AuditEvent;
+import ch.adeon.apps.docextract.audit.application.AuditPort;
+import ch.adeon.apps.docextract.security.application.AuthContext;
+import ch.adeon.apps.docextract.security.application.AuthContextPort;
+import ch.adeon.apps.docextract.security.application.OutboundCredentialPort;
+import ch.adeon.apps.docextract.shared.error.AdapterUnavailableException;
+import ch.adeon.apps.docextract.shared.error.InvalidRequestException;
+import ch.adeon.apps.docextract.shared.hash.Sha256;
+import ch.adeon.apps.docextract.validation.application.CandidateAttribute;
 import ch.adeon.apps.docextract.validation.application.ConfirmAndWriteBack;
 import ch.adeon.apps.docextract.validation.application.ConfirmationCommand;
 import ch.adeon.apps.docextract.validation.application.ConfirmationResult;
 import ch.adeon.apps.docextract.validation.application.RejectSuggestion;
+import ch.adeon.apps.docextract.validation.application.ValidateAttributes;
+import ch.adeon.apps.docextract.validation.application.ValidationReport;
 import ch.adeon.apps.docextract.validation.domain.RejectionCommand;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.extensions.Extension;
@@ -17,25 +29,114 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import tools.jackson.databind.ObjectMapper;
 
 @RestController
 @RequestMapping("/api/v1/validation")
-@Tag(name = "validation", description = "Menschliche Freigabe/Ablehnung (FR-5, C-2, ADR-015)")
+@Tag(
+    name = "validation",
+    description = "Menschliche Freigabe/Ablehnung (FR-5, C-2, ADR-015), DMS-Prüfung (ADR-016)")
 public class ValidationController {
 
   private final ConfirmAndWriteBack confirmAndWriteBack;
   private final RejectSuggestion rejectSuggestion;
+  private final ValidateAttributes validateAttributes;
+  private final AuthContextPort authContextPort;
+  private final OutboundCredentialPort outboundCredentialPort;
+  private final AuditPort auditPort;
+  private final ObjectMapper objectMapper;
 
   public ValidationController(
-      ConfirmAndWriteBack confirmAndWriteBack, RejectSuggestion rejectSuggestion) {
+      ConfirmAndWriteBack confirmAndWriteBack,
+      RejectSuggestion rejectSuggestion,
+      ValidateAttributes validateAttributes,
+      AuthContextPort authContextPort,
+      OutboundCredentialPort outboundCredentialPort,
+      AuditPort auditPort,
+      ObjectMapper objectMapper) {
     this.confirmAndWriteBack = confirmAndWriteBack;
     this.rejectSuggestion = rejectSuggestion;
+    this.validateAttributes = validateAttributes;
+    this.authContextPort = authContextPort;
+    this.outboundCredentialPort = outboundCredentialPort;
+    this.auditPort = auditPort;
+    this.objectMapper = objectMapper;
+  }
+
+  @PostMapping("/check")
+  @Operation(
+      operationId = "checkAttributes",
+      summary = "Attribute im DMS prüfen (lesend, ohne Schreiben)",
+      description =
+          """
+          Prüft die aktuellen Werte über storevalidate gegen die Objektdefinition des DMS (ADR-016).
+          Es entsteht kein Dokument; die Freigabe (confirm) bleibt unabhängig davon möglich (C-2).
+          Keine lokale Pflichtfeldprüfung: Hooks im DMS können Pflichtfelder setzen.
+
+          200 immer mit ValidationReport. valid = true: attributes enthält die Eigenschaften, wie
+          das DMS sie speichern würde (origin, changedByDms). valid = false: error enthält den
+          einen Fehler des DMS (propertyId nur für beschreibbare Eigenschaften des Dokumenttyps).
+          Werte und DMS-Meldung gehen nur an die Aufrufer:in und werden nie geloggt oder
+          auditiert. Audit validation.check.valid|invalid|unavailable (nur Hash der Argumente).
+          Die Agent-Gruppe erhält 403.\
+          """)
+  @ApiResponse(responseCode = "200", description = "Prüfergebnis (gültig oder ungültig).")
+  @ApiResponse(responseCode = "400", ref = BAD_REQUEST_REF)
+  @ApiResponse(responseCode = "401", ref = UNAUTHORIZED_REF)
+  @ApiResponse(
+      responseCode = "404",
+      description = "Prozess unbekannt oder gehört einem anderen Tenant (NfA-4).",
+      content = @Content(mediaType = PROBLEM_JSON, schema = @Schema(ref = PROBLEM_SCHEMA_REF)))
+  @ApiResponse(
+      responseCode = "502",
+      description = "DMS nicht erreichbar oder antwortet ohne Prüfergebnis.",
+      content = @Content(mediaType = PROBLEM_JSON, schema = @Schema(ref = PROBLEM_SCHEMA_REF)))
+  public ValidationReport check(@RequestBody CheckRequest request) {
+    if (request.processId() == null
+        || request.processId().isBlank()
+        || request.documentTypeId() == null
+        || request.documentTypeId().isBlank()) {
+      throw new InvalidRequestException("processId and documentTypeId are required");
+    }
+    AuthContext caller = authContextPort.current();
+    // Only a hash goes into the audit, never values (C-4).
+    String argsHash =
+        Sha256.hex(objectMapper.writeValueAsString(request).getBytes(StandardCharsets.UTF_8));
+    ValidationReport report;
+    try {
+      report =
+          validateAttributes.validate(
+              caller.tenantId(),
+              request.processId(),
+              request.documentTypeId(),
+              request.attributes() == null ? List.of() : request.attributes(),
+              outboundCredentialPort.current());
+    } catch (AdapterUnavailableException ex) {
+      // Fail closed: without the audit entry the caller does not even get the 502.
+      auditPort.append(checkEvent(caller, "unavailable", argsHash));
+      throw ex;
+    }
+    // Fail closed: without the audit entry the caller does not get the result.
+    auditPort.append(checkEvent(caller, report.valid() ? "valid" : "invalid", argsHash));
+    return report;
+  }
+
+  private static AuditEvent checkEvent(AuthContext caller, String outcome, String argsHash) {
+    return AuditEvent.byUser(
+        caller.tenantId(),
+        AuditChannel.UI,
+        caller.agent(),
+        caller.actorHash(),
+        "validation.check." + outcome,
+        argsHash);
   }
 
   @PostMapping("/confirm")
@@ -189,6 +290,16 @@ public class ValidationController {
               description =
                   "Bestätigte Attributwerte je DMS-Property-ID. Potenziell Personendaten (C-4).")
           Map<String, Object> attributes) {}
+
+  public record CheckRequest(
+      @Schema(description = "Prozess aus dem Upload.") String processId,
+      @Schema(description = "Dokumenttyp (DMS-Kategorie), muss ein Kandidat des Prozesses sein.")
+          String documentTypeId,
+      @Schema(
+              description =
+                  "Aktuelle Werte je Eigenschaft; nicht beschreibbare Eigenschaften werden"
+                      + " ignoriert. Potenziell Personendaten (C-4).")
+          List<CandidateAttribute> attributes) {}
 
   public record RejectRequest(String processId) {}
 }

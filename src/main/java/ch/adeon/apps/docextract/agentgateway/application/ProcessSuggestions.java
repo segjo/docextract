@@ -6,6 +6,7 @@ import java.util.List;
 public record ProcessSuggestions(
     String processId, String documentTypeId, List<AttributeSuggestion> attributes) {
 
+  /** {@code confidence} is {@code null} for a value the DMS set (ADR-016). */
   public record AttributeSuggestion(
-      String propertyId, String value, List<String> values, double confidence) {}
+      String propertyId, String value, List<String> values, Double confidence) {}
 }

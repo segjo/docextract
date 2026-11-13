@@ -1,3 +1,4 @@
+import { AttributeValue } from './attribute-review';
 import { DmsPropertyDefinition } from './models/retrieval.model';
 
 const SWISS_DATE = /^\s*(\d{1,2})\.(\d{1,2})\.(\d{4})\s*$/;
@@ -14,16 +15,16 @@ export function toIsoDate(value: string): string {
 
 /** Normalizes the values of DATE properties to ISO format before they are sent to the DMS. */
 export function normalizeDateAttributes(
-  attributes: Record<string, string>,
+  attributes: Record<string, AttributeValue>,
   definitions: DmsPropertyDefinition[],
-): Record<string, string> {
+): Record<string, AttributeValue> {
   const dateIds = new Set(
     definitions.filter((definition) => definition.dataType === 'DATE').map((d) => d.id),
   );
   return Object.fromEntries(
     Object.entries(attributes).map(([id, value]) => [
       id,
-      dateIds.has(id) ? toIsoDate(value) : value,
+      dateIds.has(id) ? (Array.isArray(value) ? value.map(toIsoDate) : toIsoDate(value)) : value,
     ]),
   );
 }

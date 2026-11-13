@@ -24,7 +24,8 @@ import tools.jackson.databind.ObjectMapper;
  * {@link ValueListPort} is an HTTP POST but only reads. Guardrails enforced here, not by the model:
  * allowlist of the selected type's writable value-list properties, filters restricted to writable
  * non-system properties, repository/object definition/credential fixed server-side, a call limit
- * per extraction, and an audit entry per call with only the argument hash (C-4).
+ * per extraction (shared with the other tools, see {@link ToolCallBudget}), and an audit entry per
+ * call with only the argument hash (C-4).
  */
 final class ValueListLookupTool {
 
@@ -45,9 +46,8 @@ final class ValueListLookupTool {
   private final DvelopCredential credential;
   private final Set<String> lookupPropertyIds;
   private final Set<String> filterPropertyIds;
-  private final int maxCalls;
+  private final ToolCallBudget budget;
   private final int maxValues;
-  private int calls;
 
   ValueListLookupTool(
       ValueListPort valueListPort,
@@ -59,6 +59,30 @@ final class ValueListLookupTool {
       DvelopCredential credential,
       List<DmsPropertyDefinition> writableProperties,
       int maxCalls,
+      int maxValues) {
+    this(
+        valueListPort,
+        auditPort,
+        objectMapper,
+        tenantId,
+        repositoryId,
+        objectDefinitionId,
+        credential,
+        writableProperties,
+        new ToolCallBudget(maxCalls),
+        maxValues);
+  }
+
+  ValueListLookupTool(
+      ValueListPort valueListPort,
+      AuditPort auditPort,
+      ObjectMapper objectMapper,
+      String tenantId,
+      String repositoryId,
+      String objectDefinitionId,
+      DvelopCredential credential,
+      List<DmsPropertyDefinition> writableProperties,
+      ToolCallBudget budget,
       int maxValues) {
     this.valueListPort = valueListPort;
     this.auditPort = auditPort;
@@ -77,12 +101,12 @@ final class ValueListLookupTool {
             .filter(property -> !property.isSystemProperty())
             .map(DmsPropertyDefinition::id)
             .collect(Collectors.toUnmodifiableSet());
-    this.maxCalls = maxCalls;
+    this.budget = budget;
     this.maxValues = maxValues;
   }
 
   boolean isApplicable() {
-    return !lookupPropertyIds.isEmpty() && maxCalls > 0;
+    return !lookupPropertyIds.isEmpty() && budget.max() > 0;
   }
 
   LlmTool asLlmTool() {
@@ -94,7 +118,7 @@ final class ValueListLookupTool {
     auditPort.append(
         AuditEvent.system(
             tenantId, "extraction.tool." + NAME, Sha256.hex(raw.getBytes(StandardCharsets.UTF_8))));
-    if (++calls > maxCalls) {
+    if (!budget.tryAcquire()) {
       return error("tool call limit reached");
     }
     Arguments arguments;

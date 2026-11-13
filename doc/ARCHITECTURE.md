@@ -3,7 +3,7 @@
 **KI-gestützte Dokumenterfassung & -verschlagwortung für d.velop documents**
 Architektur-Dokument · Gliederung nach **arc42** · Diagramme in **C4 (Mermaid)**
 Bezug: [SPEC.md](SPEC.md) · Blockplanung: [PROJEKTPLAN.md](PROJEKTPLAN.md) · Entscheidungen: § 9 (ADRs)
-**Version 0.3 · Stand: 2026-11-10** · **Status:** lebendes Dokument, versioniert pro Block (Änderungshistorie am Ende)
+**Version 0.3 · Stand: 2026-11-11** · **Status:** lebendes Dokument, versioniert pro Block (Änderungshistorie am Ende)
 
 ---
 
@@ -184,6 +184,7 @@ Der Kern hängt ausschliesslich von diesen Ports ab. Jeder Adapter muss die **Co
 | `PendingEmbeddingDeletePort` | validation (`port`)                           | Ablehnung/TTL: `PENDING` löschen; TTL-Löschung überspringt `FINALIZED_INDEX_PENDING` (ADR-015)                                                       |
 | `PendingEmbeddingCheckPort`  | validation (`port`)                           | Vorprüfung vor dem DMS-Write: Tenant und Ablauf des `PENDING`-Embeddings (§ 6.2, ADR-015)                                                            |
 | `DmsWritePort`               | validation (`port`)                           | einziger DMS-Schreibpfad (nur nach Freigabe, C-2)                                                                                                    |
+| `DmsStoreValidationPort`     | validation (`port`)                           | `POST .../storevalidate`: Eigenschaften gegen die Objektdefinition prüfen, **nur lesend**, getrennt von `DmsWritePort` (C-3, ADR-016)                |
 | `DmsChunkUploadPort`         | ingest (`port`)                               | Original als Chunk ins DMS (write-only)                                                                                                              |
 | `DmsRepositoryPort`          | ingest (`port`)                               | DMS-Repositories lesen (`GET /repo/repositories`)                                                                                                    |
 | `DocumentBlobPort`           | ingest (`port`)                               | transiente Roh-/Preview-Bytes (TTL, ADR-008); Löschen je Prozess nach Freigabe/Ablehnung                                                             |
@@ -209,9 +210,9 @@ Der Kern hängt ausschliesslich von diesen Ports ab. Jeder Adapter muss die **Co
 | `ExtractionResultPort`       | extraction | Attributvorschläge je Prozess                                                                                          |
 | `FinalizationStatePort`      | validation | Saga-Zustand (`DMS_WRITE_STARTED`/`FINALIZED_INDEX_PENDING`/`COMPLETED`/`INDEX_FAILED`) + DMS-IDs je Prozess (ADR-015) |
 
-**Mandant in den Ports (§ 8.6):** Jeder Outbound-Port, der prozessbezogene Daten liest oder schreibt (`ProcessEventPort`, `ProcessDocumentPort`, `ProcessRepositoryPort`, `RetrievalResultPort`, `DocumentTypeCandidatesPort`, `ExtractionResultPort`, `DocumentBlobPort`, `FinalizationStatePort`, `PendingEmbeddingCheckPort`, `CorpusPromotionPort`, `PendingEmbeddingDeletePort`), nimmt `tenantId` als ersten Parameter, und der Postgres-Adapter filtert danach (`WHERE ... AND tenant_id = ?`). Ausgenommen sind die mandantenübergreifenden Systemjobs (TTL-Cleanup, Promotion-Retry per `findByStatus`) und die in-memory Staging-Ports (nur auf der Instanz des Prozesses, ADR-006).
+**Mandant in den Ports (§ 8.6):** Jeder Outbound-Port, der prozessbezogene Daten liest oder schreibt (`ProcessEventPort`, `ProcessDocumentPort`, `ProcessRepositoryPort`, `RetrievalResultPort`, `DocumentTypeCandidatesPort`, `ExtractionResultPort`, `DocumentBlobPort`, `FinalizationStatePort`, `PendingEmbeddingCheckPort`, `CorpusPromotionPort`, `PendingEmbeddingDeletePort`), nimmt `tenantId` als ersten Parameter, und der Postgres-Adapter filtert danach (`WHERE ... AND tenant_id = ?`). Ausgenommen sind die mandantenübergreifenden Systemjobs (TTL-Cleanup, Promotion-Retry per `findByStatus`) und die in-memory Staging-Ports (nur auf der Instanz des Prozesses, ADR-006). `DmsStoreValidationPort` nimmt `tenantId` ebenfalls als ersten Parameter, filtert aber nichts in der Datenbank; die Mandanten- und Existenzprüfung liegt in `ValidateAttributesService` (gefilterte Ports bzw. `ProcessEventPort.exists`, ADR-016).
 
-**Neutrales Datenformat im Kern (Auszug):** `DocumentRef`, `ExtractedText`, `DocumentContent`, `EmbeddingVector(modelId, dim, values)`, `ExtractionRequest`, `ExtractionResponse`, `ExtractedAttribute(propertyId, value, values, confidence, sourceExcerpt)`, `ModelInfo(provider, modelId)`, `LlmTool(name, description, inputSchema, handler)` (ADR-014), `LlmCapabilities(structuredOutput: NATIVE|NONE, inputs: TEXT|IMAGES)`.
+**Neutrales Datenformat im Kern (Auszug):** `DocumentRef`, `ExtractedText`, `DocumentContent`, `EmbeddingVector(modelId, dim, values)`, `ExtractionRequest`, `ExtractionResponse`, `ExtractedAttribute(propertyId, value, values, confidence, sourceExcerpt, origin, changedByDms, correctedAfterValidation)` (`confidence` 0–1, `null` bei `origin = DMS`), `ValidationOutcome(status: VALID|INVALID|NOT_CHECKED, error)`, `ValidationReport(valid, attributes, error)`, `StoreValidationError(propertyId, dmsCode, message)` (ADR-016), `ModelInfo(provider, modelId)`, `LlmTool(name, description, inputSchema, handler)` (ADR-014), `LlmCapabilities(structuredOutput: NATIVE|NONE, inputs: TEXT|IMAGES)`.
 
 ### 5.3 Adapterwahl per Konfiguration
 
@@ -248,17 +249,17 @@ docextract:
 
 ### 5.4 Fachmodule
 
-| Modul            | Verantwortung                                                                                                                                                      | Inbound-Port                                                           | Wichtigste Outbound-Ports                                                                                                                                                                                                    |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **ingest**       | Upload, Limits, Ablage der Roh-Bytes, DMS-Chunk-Upload, Vorschau-Streaming (FR-1); steuert die Pipeline content → retrieval → extraction (`IngestDocumentService`) | `IngestDocument`, `StreamPreview`                                      | `DocumentBlobPort`, `PreviewRenderPort`, `DmsChunkUploadPort`, `DmsRepositoryPort`                                                                                                                                           |
-| **content**      | Textextraktion der ersten _N_ Wörter (FR-2) und Dokumentrepräsentation für FR-4; nichts wird persistiert                                                           | `ExtractText`, `ProvideContent`                                        | `TextExtractionPort`, `DocumentContentPort`                                                                                                                                                                                  |
-| **retrieval**    | Ein Embedding je Dokument, Staging als `PENDING`, Top-5-Suche mit Pre-Filter (FR-3)                                                                                | `FindSimilar`                                                          | `EmbeddingPort`, `PendingEmbeddingPort`, `VectorSearchPort`, `DmsObjectDefinitionPort`, `DmsObjectMetadataPort`, `ValueListPort`, `AuthContextPort`                                                                          |
-| **extraction**   | KI-Attributvorschläge mit objdef, Top-5-Metadaten, Wertelisten; Schema-Validierung, Retry (FR-4)                                                                   | `ExtractAttributes`                                                    | `LlmPort`, `ValueListPort`, `DocumentTypeCandidatesPort` (objdef/Top-5-Metadaten), `RetrievalResultPort` (alle aus retrieval), `ContentStagingPort` (aus content), `ProcessEventPort`, `ProcessRepositoryPort` (aus process) |
-| **validation**   | Freigabe, DMS-Rückschreiben, Promotion `PENDING → APPROVED`, separater Vorlagen-Consent (FR-5)                                                                     | `Confirm`, `Reject`, `RetryCorpusPromotion`, `TtlPurger` (TTL-Cleanup) | `DmsWritePort`, `CorpusPromotionPort`, `PendingEmbeddingDeletePort`, `PendingEmbeddingCheckPort`, `FinalizationStatePort`, `DocumentBlobPort` (aus ingest)                                                                   |
-| **agentgateway** | MCP-Tool, nutzt dieselben Application-Services (FR-6); nur lesend, Mandantenfilter + `exists` und Audit je Tool-Call (§ 6.3)                                       | `McpTool`                                                              | `GetExtractionResult` (aus extraction), `GetSimilarDocuments` (aus retrieval), `ProcessDocumentPort` (aus process), `AuthContextPort` (aus security), `AuditPort` (aus audit)                                                |
-| **process**      | Fortschritt/SSE (`PROCESS_STEP`, LISTEN/NOTIFY), Lease/Heartbeat, Recovery; keine Orchestrierung der Pipeline (liegt in ingest)                                    | `SubscribeProgress`                                                    | `ProcessEventPort`, `ProcessDocumentPort`, `ProcessRepositoryPort`                                                                                                                                                           |
-| **audit**        | Append-only Protokoll, Token/Kosten (C-4, NfA-7)                                                                                                                   | —                                                                      | `AuditPort`                                                                                                                                                                                                                  |
-| **security**     | Signierte Header → `tenant_id`/Basis-URI, IdP-Validierung, Agent-Gruppe (`SecurityConfig`), Aufrufer mit Actor-Hash                                                | `AuthContextPort`                                                      | —                                                                                                                                                                                                                            |
+| Modul            | Verantwortung                                                                                                                                                                   | Inbound-Port                                                                                 | Wichtigste Outbound-Ports                                                                                                                                                                                                                                                                                            |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **ingest**       | Upload, Limits, Ablage der Roh-Bytes, DMS-Chunk-Upload, Vorschau-Streaming (FR-1); steuert die Pipeline content → retrieval → extraction (`IngestDocumentService`)              | `IngestDocument`, `StreamPreview`                                                            | `DocumentBlobPort`, `PreviewRenderPort`, `DmsChunkUploadPort`, `DmsRepositoryPort`                                                                                                                                                                                                                                   |
+| **content**      | Textextraktion der ersten _N_ Wörter (FR-2) und Dokumentrepräsentation für FR-4; nichts wird persistiert                                                                        | `ExtractText`, `ProvideContent`                                                              | `TextExtractionPort`, `DocumentContentPort`                                                                                                                                                                                                                                                                          |
+| **retrieval**    | Ein Embedding je Dokument, Staging als `PENDING`, Top-5-Suche mit Pre-Filter (FR-3)                                                                                             | `FindSimilar`                                                                                | `EmbeddingPort`, `PendingEmbeddingPort`, `VectorSearchPort`, `DmsObjectDefinitionPort`, `DmsObjectMetadataPort`, `ValueListPort`, `AuthContextPort`                                                                                                                                                                  |
+| **extraction**   | KI-Attributvorschläge mit objdef, Top-5-Metadaten, Wertelisten; Schema-Validierung, Retry (FR-4); Korrektur-Loop mit DMS-Prüfung, Confidence-Abwertung und Endprüfung (ADR-016) | `ExtractAttributes`                                                                          | `LlmPort`, `ValueListPort`, `DocumentTypeCandidatesPort` (objdef/Top-5-Metadaten), `RetrievalResultPort` (alle aus retrieval), `ContentStagingPort` (aus content), `ProcessEventPort`, `ProcessRepositoryPort` (aus process), `ValidateAttributes` (aus validation, nur über `application`/`port`)                   |
+| **validation**   | Freigabe, DMS-Rückschreiben, Promotion `PENDING → APPROVED`, separater Vorlagen-Consent (FR-5); lesende DMS-Prüfung `storevalidate` mit Herkunft der Werte (ADR-016)            | `Confirm`, `Reject`, `RetryCorpusPromotion`, `TtlPurger` (TTL-Cleanup), `ValidateAttributes` | `DmsWritePort`, `DmsStoreValidationPort`, `CorpusPromotionPort`, `PendingEmbeddingDeletePort`, `PendingEmbeddingCheckPort`, `FinalizationStatePort`, `DocumentBlobPort` (aus ingest), `DocumentTypeCandidatesPort` (aus retrieval), `ProcessDocumentPort`, `ProcessRepositoryPort`, `ProcessEventPort` (aus process) |
+| **agentgateway** | MCP-Tool, nutzt dieselben Application-Services (FR-6); nur lesend, Mandantenfilter + `exists` und Audit je Tool-Call (§ 6.3)                                                    | `McpTool`                                                                                    | `GetExtractionResult` (aus extraction), `GetSimilarDocuments` (aus retrieval), `ProcessDocumentPort` (aus process), `AuthContextPort` (aus security), `AuditPort` (aus audit)                                                                                                                                        |
+| **process**      | Fortschritt/SSE (`PROCESS_STEP`, LISTEN/NOTIFY), Lease/Heartbeat, Recovery; keine Orchestrierung der Pipeline (liegt in ingest)                                                 | `SubscribeProgress`                                                                          | `ProcessEventPort`, `ProcessDocumentPort`, `ProcessRepositoryPort`                                                                                                                                                                                                                                                   |
+| **audit**        | Append-only Protokoll, Token/Kosten (C-4, NfA-7)                                                                                                                                | —                                                                                            | `AuditPort`                                                                                                                                                                                                                                                                                                          |
+| **security**     | Signierte Header → `tenant_id`/Basis-URI, IdP-Validierung, Agent-Gruppe (`SecurityConfig`), Aufrufer mit Actor-Hash                                                             | `AuthContextPort`                                                                            | —                                                                                                                                                                                                                                                                                                                    |
 
 ### 5.5 Paketstruktur
 
@@ -285,14 +286,14 @@ ch.adeon.apps.docextract
 │  └─ adapter.out   # openai-compatible | springai.* | pgvector | dms (DmsObjectDefinitionAdapter, DmsObjectMetadataAdapter, DmsValueListWebhookAdapter)
 ├─ extraction
 │  ├─ domain        # AttributeSchema, Confidence, ModelInfo
-│  ├─ application   # ExtractAttributesService (Schema-Validierung, Retry), GetExtractionResultService; ExtractionResult, ExtractedAttribute(sourceExcerpt)
+│  ├─ application   # ExtractAttributesService (Schema-Validierung, Retry, Korrektur-Loop, Endprüfung), GetExtractionResultService; ValueListLookupTool, AttributeValidationTool, ToolCallBudget (gemeinsames Tool-Limit); ExtractionResult, ValidationOutcome, ExtractedAttribute(sourceExcerpt, origin, changedByDms, correctedAfterValidation)
 │  ├─ port          # LlmPort (ValueListPort wird aus retrieval.port mitgenutzt)
 │  └─ adapter.out   # openai-compatible | springai.*
 ├─ validation
 │  ├─ domain        # Finalization, FinalizationStatus, PendingEmbeddingCheck
-│  ├─ application   # ConfirmAndWriteBackService (Freigabe, Saga, Promotion-Retry), RejectSuggestionService, TtlCleanupService (Embeddings + Blobs), ProcessStepRetentionService (`process_step`, § 8.6), FinalizationStatePort; ConfirmationCommand, ConfirmationResult
-│  ├─ port          # DmsWritePort, CorpusPromotionPort, PendingEmbeddingDeletePort, PendingEmbeddingCheckPort
-│  └─ adapter       # in.rest, in.scheduler (FinalizationRecoveryScheduler), out.dms, out.postgres
+│  ├─ application   # ConfirmAndWriteBackService (Freigabe, Saga, Promotion-Retry), RejectSuggestionService, TtlCleanupService (Embeddings + Blobs), ProcessStepRetentionService (`process_step`, § 8.6), FinalizationStatePort; ConfirmationCommand, ConfirmationResult; ValidateAttributes + ValidateAttributesService (DMS-Prüfung, ADR-016), ValidationReport, ValidatedAttribute, CandidateAttribute, AttributeOrigin
+│  ├─ port          # DmsWritePort, DmsStoreValidationPort, CorpusPromotionPort, PendingEmbeddingDeletePort, PendingEmbeddingCheckPort; StoreValidationRequest, StoreValidationResult, StoreValidationError, PropertyValue
+│  └─ adapter       # in.rest (ValidationController: confirm, reject, check), in.scheduler (FinalizationRecoveryScheduler), out.dms (DmsWriteAdapter, DmsStoreValidationAdapter, DmsPropertyPayloadMapper, StoreValidateResponseParser), out.postgres
 ├─ agentgateway
 │  ├─ application   # McpTool (Inbound-Port), AgentGatewayService (Validierung, Mandantenfilter + exists, Audit); ProcessSuggestions, SimilarDocument
 │  └─ adapter.in.mcp # McpToolAdapter (Tool-Spezifikationen, Spring AI MCP Server), McpServerConfig
@@ -335,6 +336,8 @@ flowchart LR
     retrieval -- "DocumentHashStagingPort" --> ingest
     extraction -- "ContentStagingPort" --> content
     extraction -- "DocumentTypeCandidatesPort, RetrievalResultPort, ValueListPort" --> retrieval
+    extraction -- "ValidateAttributes, StoreValidationError" --> validation
+    validation -- "DocumentTypeCandidatesPort, DmsPropertyDefinition" --> retrieval
     validation -- "DocumentBlobPort" --> ingest
     validation -. "Tabelle embedding via eigene Ports: CorpusPromotionPort, PendingEmbeddingDeletePort, PendingEmbeddingCheckPort" .-> retrieval
 
@@ -342,7 +345,7 @@ flowchart LR
     content -- "ProcessEventPort" --> process
     retrieval -- "ProcessEventPort, ProcessRepositoryPort" --> process
     extraction -- "ProcessEventPort, ProcessRepositoryPort" --> process
-    validation -- "ProcessDocumentPort, ProcessRepositoryPort" --> process
+    validation -- "ProcessDocumentPort, ProcessRepositoryPort, ProcessEventPort" --> process
 
     ingest -- "AuditPort" --> audit
     extraction -- "AuditPort" --> audit
@@ -360,6 +363,8 @@ flowchart LR
 
 - **validation → retrieval (Korpus-Promotion):** _Änderungsgrund:_ Freigaberegeln (FR-5, C-2, Consent) ändern sich unabhängig von Suchverfahren und Embedding-Modell (FR-3, ADR-012). _Kopplung:_ Es gibt keine Java-Abhängigkeit; `validation` besitzt die schmalen Ports `CorpusPromotionPort`, `PendingEmbeddingDeletePort` und `PendingEmbeddingCheckPort`, deren Postgres-Adapter direkt auf die `retrieval`-Tabelle `embedding` (`status`, `tenant_id`, `process_id`, `expires_at`) zugreifen. Die Kopplung liegt damit im Schema, und nur `validation` darf `APPROVED` setzen (C-3). _Resilienz:_ Schlägt die Promotion nach dem DMS-Write fehl, bleibt der Prozess in `FINALIZED_INDEX_PENDING` und wird vom Recovery-Job nachgeholt; bis dahin ist das Embedding `PENDING` und für das Retrieval unsichtbar (ADR-015).
 - **extraction → retrieval (Kandidaten, Referenzen, Wertelisten):** _Änderungsgrund:_ Prompt, Schema und LLM (FR-4, C-5) ändern sich unabhängig von Ähnlichkeitssuche und DMS-Metadatenabruf. _Kopplung:_ In-process über `DocumentTypeCandidatesPort` und `RetrievalResultPort` (je `processId` in Postgres gestagt) sowie `ValueListPort`; die Vertragstypen (`DmsDocumentMetadata`, `DmsPropertyDefinition`, `RetrievalResult`, …) liegen in `retrieval.port`. _Resilienz:_ Die Übergabe läuft über gestagte Daten statt über einen Aufruf von `FindSimilar`; findet das Retrieval keine Treffer, liefert es objdef-Kandidaten als Fallback. Scheitert das Retrieval, startet `IngestDocumentService` die Extraktion nicht (`RETRIEVED`/`FAILED`); Wertelisten-Abrufe sind best-effort, ein nicht bestätigter Wert wird „unbekannt" statt geraten.
+
+- **extraction → validation (DMS-Prüfung):** _Änderungsgrund:_ Die DMS-Prüfung hat denselben Änderungsgrund wie der DMS-Write (Objektdefinition, Property-Format, Hooks des DMS), nicht den der Extraktion (ADR-016). _Kopplung:_ In-process über `ValidateAttributes` (`validation.application`); die Vertragstypen (`ValidationReport`, `ValidatedAttribute`, `AttributeOrigin`, `StoreValidationError`) liegen in `validation.application` bzw. `validation.port`. Die Kante ist zyklenfrei: `validation` kennt `extraction` nicht, sondern bezieht Kandidaten und Allowlist aus `retrieval` (`DocumentTypeCandidatesPort`). `ArchUnit` hält sie über `other_modules_access_only_application_or_port`. _Resilienz:_ Fällt das DMS aus, liefert das Tool `validation_unavailable`, die Endprüfung ergibt `NOT_CHECKED`, und die Extraktion endet trotzdem erfolgreich.
 
 **Verteilung:** Die Module werden nicht auf getrennte Services verteilt, weil keine Qualitätsanforderung es verlangt (ADR-001); die Grenzen werden per ArchUnit gehalten, damit ein späterer Split möglich bleibt.
 
@@ -390,6 +395,7 @@ sequenceDiagram
     participant CNT as content (TextExtractionPort / DocumentContentPort)
     participant RET as retrieval (EmbeddingPort / PendingEmbeddingPort / VectorSearchPort / DMS-Leseports)
     participant EXT as extraction (LlmPort / ValueListPort)
+    participant VAL as validation (ValidateAttributes / DmsStoreValidationPort)
     participant AUD as audit
 
     SB->>FE: Dokument hochladen
@@ -430,13 +436,26 @@ sequenceDiagram
     opt vorgeschlagener Wert nicht in bekannter Werteliste (leer/gekappt oder abhängig)
         EXT->>DMS: Werteliste nachladen (ValueListPort, searchTerm + bereits ermittelte Eigenschaften, lesend)
     end
+    loop LLM-Tool-Call validate_attributes (Allowlist, max. 5 DMS-Prüfungen, gemeinsames Tool-Limit, ADR-016)
+        EXT->>VAL: ValidateAttributes (nur lesend, auch bei leeren Pflichtfeldern)
+        VAL->>DMS: storevalidate (lesend, es entsteht kein Dokument)
+        DMS-->>VAL: 200 (normalisierte Eigenschaften) oder 400 (ein Fehler)
+        VAL-->>EXT: übernommene Eigenschaften oder Fehler (validation_unavailable bei Ausfall)
+        EXT->>AUD: Tool-Call (nur Hash der Argumente, Ergebnis)
+    end
     EXT->>EXT: Server-seitige Schema-Validierung (+ Retry)
+    EXT->>EXT: nach DMS-Fehler korrigierte Felder abwerten und markieren (Confidence-Cap)
+    EXT->>VAL: Endprüfung der finalen Werte (ValidateAttributes)
+    VAL->>DMS: storevalidate (lesend)
+    EXT->>EXT: bei gültig Eigenschaften übernehmen (Hook-Werte, Normalisierung), validation = VALID | INVALID | NOT_CHECKED
     EXT->>AUD: Tenant, Anbieter, Modell-ID, SHA-256 des Prompts, Token
     API-->>FE: extracted → Validierungs-UI
     FE-->>SB: Vorschläge mit Konfidenz, Quellen, Modellinfo
 ```
 
 **Nachladen von Wertelisten (dynamisch/abhängig):** Das LLM kann während der Extraktion das lesende Tool `lookup_value_list` aufrufen; DocExtract führt es aus (ADR-014, C-3). Danach prüft die Application-Schicht (`ExtractAttributesService`) jeden Vorschlag zusätzlich serverseitig gegen die Werteliste. Bleibt ein Wert ohne Treffer, wird er als „unbekannt" zurückgegeben (E-5).
+
+**DMS-Prüfung und Korrektur-Loop (ADR-016):** Neben `lookup_value_list` bietet die Extraktion das lesende Tool `validate_attributes` an, sobald der Dokumenttyp gewählt ist, auch bei leeren Pflichtfeldern (Hooks im DMS können sie setzen). Es gibt keine lokale Pflichtfeldprüfung; das DMS (`storevalidate`) entscheidet und meldet je Aufruf genau einen Fehler. Das LLM korrigiert gezielt und prüft erneut, höchstens `docextract.extraction.max-validation-rounds` (Default 5) Mal; `docextract.extraction.max-tool-calls` gilt für beide Tools gemeinsam. Der Service wertet Felder, die nach einem DMS-Fehler geändert wurden, serverseitig ab (`docextract.extraction.corrected-confidence-cap`, Default 0.5 auf der Skala 0–1) und markiert sie mit `correctedAfterValidation`. Die Endprüfung läuft immer; bei `VALID` werden die Eigenschaften aus der Antwort übernommen (Herkunft `origin`, `changedByDms`), bei `INVALID` oder `NOT_CHECKED` bleiben die Vorschläge bestehen.
 
 ### 6.2 Freigabe und Korpus-Promotion (C-2, C-7)
 
@@ -452,6 +471,15 @@ sequenceDiagram
     participant AUD as audit
 
     SB->>FE: bestätigt / korrigiert (+ optional Vorlagen-Consent)
+    opt Benutzer:in prüft vorab im DMS (ADR-016)
+        SB->>FE: „Im DMS prüfen"
+        FE->>VAL: POST /api/v1/validation/check (processId, documentTypeId, aktuelle Werte)
+        VAL->>DMS: storevalidate (lesend, kein Dokument, keine Location)
+        DMS-->>VAL: 200 (Eigenschaften) oder 400 (ein Fehler)
+        VAL->>AUD: validation.check.valid / invalid / unavailable (nur Hash der Argumente, Kanal UI)
+        VAL-->>FE: ValidationReport (valid + attributes oder error)
+        FE-->>SB: Werte übernommen und DMS-Änderungen markiert, bzw. Fehler am Feld
+    end
     FE->>VAL: POST /api/v1/validation/confirm (processId im Body)
     VAL->>VDB: PENDING prüfen (vorhanden, gültig, gleicher Tenant)
     VAL->>AUD: writeback-started (vor Marker und DMS-Write, fail closed)
@@ -465,6 +493,7 @@ sequenceDiagram
 **Konsistenz (Saga):** Zuerst DMS-Finalisierung, dann Promotion. Schlägt die Promotion fehl, bleibt der Prozess in `FINALIZED_INDEX_PENDING`; ein idempotenter Retry promotet erneut. Der TTL-Cleanup überspringt diesen Zustand. Entscheid, Preis und Störfälle: ADR-015.
 **Ablehnung/Abbruch/TTL-Ablauf:** `PENDING`-Embedding und Blobs werden gelöscht (`POST /api/v1/validation/reject`, `processId` im Body). Nach dem DMS-Write ist keine Ablehnung mehr möglich (`409`).
 **Vorlage:** Nur mit separatem, explizitem Consent (FR-5), herkunftsmarkiert.
+**DMS-Prüfung vor der Freigabe (ADR-016):** Der Check ist ein Angebot, keine Sperre: `confirm` ruft `storevalidate` nicht automatisch auf und bleibt in jedem Prüfstatus möglich (C-2). Die Prüfung ist rein lesend und läuft über dieselbe `ValidateAttributes` wie das LLM-Tool; für die Agent-Gruppe ist `/api/v1/validation/check` wie alle REST-Endpunkte `403` (§ 8.6).
 
 ### 6.3 Agent-Pfad (MCP)
 
@@ -490,14 +519,14 @@ Die SSE-Verbindung kann auf einer beliebigen Instanz landen. Jede Stufe schreibt
 
 ### 6.5 Fehlerpfade (NfA-3)
 
-| Fehler                                                   | Verhalten                                                                                              | Endzustand                              |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------- |
-| Limit überschritten                                      | Abweisung vor Verarbeitung: Dateigrösse (Limits und Multipart-Limit) `413`, gleicher `type` `limit-exceeded`. Seitenzahl-Limit: OFFEN (FR-1), nicht implementiert | `413` ProblemDetail               |
-| Leerer/zu kurzer Text (z. B. Scan ohne Textlayer)        | Retrieval übersprungen, Hinweis im UI; FR-4 nur, wenn Repräsentation dies erlaubt (z. B. Seitenbilder) | `failed` oder Vorschlag ohne Referenzen |
-| Adapter-Absturz/Timeout (Vorschau, Text, LLM, Embedding) | Timeout je Adapter, begrenzter Retry                                                                   | `failed` + Audit                        |
-| Ungültiges LLM-JSON                                      | Retry gemäss Konfiguration, dann Abbruch                                                               | `failed` + Audit                        |
-| Externer Anbieter nicht erreichbar                       | wie Timeout; kein automatischer Wechsel auf einen anderen Anbieter                                     | `failed` + Audit                        |
-| Instanzausfall                                           | Lease läuft ab → Recovery wiederholt aus ORIGINAL-Blob (solange TTL gültig)                            | definiert beendet oder neu gestartet    |
+| Fehler                                                   | Verhalten                                                                                                                                                         | Endzustand                              |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| Limit überschritten                                      | Abweisung vor Verarbeitung: Dateigrösse (Limits und Multipart-Limit) `413`, gleicher `type` `limit-exceeded`. Seitenzahl-Limit: OFFEN (FR-1), nicht implementiert | `413` ProblemDetail                     |
+| Leerer/zu kurzer Text (z. B. Scan ohne Textlayer)        | Retrieval übersprungen, Hinweis im UI; FR-4 nur, wenn Repräsentation dies erlaubt (z. B. Seitenbilder)                                                            | `failed` oder Vorschlag ohne Referenzen |
+| Adapter-Absturz/Timeout (Vorschau, Text, LLM, Embedding) | Timeout je Adapter, begrenzter Retry                                                                                                                              | `failed` + Audit                        |
+| Ungültiges LLM-JSON                                      | Retry gemäss Konfiguration, dann Abbruch                                                                                                                          | `failed` + Audit                        |
+| Externer Anbieter nicht erreichbar                       | wie Timeout; kein automatischer Wechsel auf einen anderen Anbieter                                                                                                | `failed` + Audit                        |
+| Instanzausfall                                           | Lease läuft ab → Recovery wiederholt aus ORIGINAL-Blob (solange TTL gültig)                                                                                       | definiert beendet oder neu gestartet    |
 
 ---
 
@@ -539,18 +568,18 @@ flowchart TB
 - **Fehlerbehandlung:** zentraler `@ControllerAdvice` (`GlobalExceptionHandler`, `shared.adapter.web`, erbt von `ResponseEntityExceptionHandler`); Timeout und definierter Abbruch je Stufe und Adapter. Die Fehlerklassen liegen frameworkfrei in `shared.error` (Basis `DocextractException` mit `ProblemCode`, PII-freiem `detail` und optionaler `processId`); Controller fangen keine Fehler lokal ab.
   - **Fehlerform:** `application/problem+json` mit `type` = `urn:docextract:problem:<code>`, `title`, `status`, `detail` (nie Attributwerte, Dateinamen oder Upstream-Inhalte, C-4) und optional `processId`. Das MCP-Tool nutzt dieselben `code`s (§ 6.3).
 
-    | `code` (`type`-Suffix) | Status | Auslöser |
-    | --- | --- | --- |
-    | `invalid-request` | 400 | `UploadRejectedException` (leer, Medientyp), fehlende/ungültige Parameter, nicht lesbarer Body, übrige Framework-4xx |
-    | `unauthorized` / `forbidden` | 401 / 403 | `SecurityConfig`, `DvelopAuthenticationFilter` |
-    | `not-found` | 404 | `ProcessNotFoundException`, `BlobNotFoundException`; unbekannt und fremder Mandant/Nutzer sind nicht unterscheidbar (NfA-4), daher keine eigene Tenant-Mismatch-Klasse |
-    | `conflict-state` | 409 | `AlreadyFinalizedException`, `PossiblyAlreadyFinalizedException` |
-    | `process-expired` | 410 | `ProcessExpiredException` |
-    | `limit-exceeded` | 413 | `LimitExceededException`: Dateigrösse und Multipart-Limit (Seitenzahl-Limit: OFFEN, nicht implementiert) |
-    | `invalid-attributes` | 422 | `InvalidAttributesException` (DMS lehnt Attribute ab; `detail` fest, DMS-Grund nur im Log) |
-    | `range-not-satisfiable` | 416 | `RangeNotSatisfiableException`, Header `Content-Range: bytes */<Länge>` |
-    | `adapter-unavailable` | 502 | `AdapterUnavailableException` (`DmsRepository-`, `DmsChunkUpload-`, `PreviewRendering-`, `DmsWriteFailed-`, `DmsObjectDefinition-`, `DmsObjectMetadata-`, `ValueListWebhookException`), `detail` fest |
-    | `internal-error` | 500 | `ProcessingFailedException` (`ExtractionException`, `RetrievalException`, `ContentException`) und jeder unerwartete Fehler, `detail` fest |
+    | `code` (`type`-Suffix)       | Status    | Auslöser                                                                                                                                                                                              |
+    | ---------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | `invalid-request`            | 400       | `UploadRejectedException` (leer, Medientyp), fehlende/ungültige Parameter, nicht lesbarer Body, übrige Framework-4xx                                                                                  |
+    | `unauthorized` / `forbidden` | 401 / 403 | `SecurityConfig`, `DvelopAuthenticationFilter`                                                                                                                                                        |
+    | `not-found`                  | 404       | `ProcessNotFoundException`, `BlobNotFoundException`; unbekannt und fremder Mandant/Nutzer sind nicht unterscheidbar (NfA-4), daher keine eigene Tenant-Mismatch-Klasse                                |
+    | `conflict-state`             | 409       | `AlreadyFinalizedException`, `PossiblyAlreadyFinalizedException`                                                                                                                                      |
+    | `process-expired`            | 410       | `ProcessExpiredException`                                                                                                                                                                             |
+    | `limit-exceeded`             | 413       | `LimitExceededException`: Dateigrösse und Multipart-Limit (Seitenzahl-Limit: OFFEN, nicht implementiert)                                                                                              |
+    | `invalid-attributes`         | 422       | `InvalidAttributesException` (DMS lehnt Attribute ab; `detail` fest, DMS-Grund nur im Log)                                                                                                            |
+    | `range-not-satisfiable`      | 416       | `RangeNotSatisfiableException`, Header `Content-Range: bytes */<Länge>`                                                                                                                               |
+    | `adapter-unavailable`        | 502       | `AdapterUnavailableException` (`DmsRepository-`, `DmsChunkUpload-`, `PreviewRendering-`, `DmsWriteFailed-`, `DmsObjectDefinition-`, `DmsObjectMetadata-`, `ValueListWebhookException`), `detail` fest |
+    | `internal-error`             | 500       | `ProcessingFailedException` (`ExtractionException`, `RetrievalException`, `ContentException`) und jeder unerwartete Fehler, `detail` fest                                                             |
 
   - **Preview-Range:** Eine einzelne Range `bytes=start[-end]` liefert `206`. Syntaktisch ungültige, mehrfache und Suffix-Ranges (`bytes=-N`) werden ignoriert (`200`, voller Inhalt); beginnt die Range hinter dem Dokumentende → `416`.
   - **Ausnahme SPA:** `NoResourceFoundException` unter `/ui/` wird nicht in ein ProblemDetail gewandelt, sondern per `sendError(404)` an `SpaFallbackErrorController` übergeben.
@@ -709,11 +738,11 @@ Der Filter setzt `RequestTenant(id, baseUri)` in den Security-Kontext; `SessionA
 
 **Agent und Mensch getrennt (`docextract.agent.group-id`, Env `DOCEXTRACT_AGENT_GROUP_ID`).** Der Agent ist ein technischer d.velop-User in einer d.velop-Gruppe; deren Mitglieder erhalten die Authority `ROLE_GROUP_<id>`. `SecurityConfig` lässt `/api/v1/mcp/**` jedem authentifizierten Aufrufer offen, alle anderen `/api/**` sind für Mitglieder der Agent-Gruppe `403`. Ist MCP aktiv (`docextract.adapters.mcp.enabled`) und die Property leer, bricht der Start ab; `none` heißt bewusst keine Agent-Gruppe (Dev-Profil), dann ist niemand Agent. `AuthContext.agent()` trägt das Flag in die Dienste.
 
-**Audit.** `AuditPort` schreibt insert-only in `audit_entry` (V17, Trigger verweigert `UPDATE`/`DELETE`): `tenant_id`, `channel` (`MCP|UI|SYSTEM`), `actor_kind` (`HUMAN|AGENT`), `actor_hash` (HMAC-SHA256 über Mandant und User-ID mit `docextract.audit.actor-key`, Env `DOCEXTRACT_AUDIT_ACTOR_KEY`; immer Pflicht (sonst Startabbruch), mindestens 32 Zeichen und verschieden vom App-Secret; nur das Profil `dev` hat einen Dev-Schlüssel mit `WARN`), `event_type`, `args_hash`, `token_count`, `provider`, `model_id` (beide nur bei LLM-Aufrufen). Geschrieben werden MCP-Tool-Calls (auch Fehlerfälle, `mcp.tool.<name>.<ergebnis>`), `ingest.completed`, `validation.writeback-started` (vor Marker und DMS-Write, fail closed), `validation.writeback` (nach dem DMS-Write und dem gespeicherten Saga-Zustand), `validation.writeback-rejected`, `validation.reject` (Kanal `UI`) sowie Systemereignisse mit Mandant (`validation.promotion*`, LLM-Aufrufe `extraction.classify`/`extraction.suggest-attributes` mit Anbieter und Modell, Tool-Aufrufe `extraction.tool.lookup_value_list`). `tenant_id` ist nur beim TTL-Cleanup (`validation.ttl-cleanup`) `NULL`; `actor_kind`/`actor_hash` sind bei allen Systemereignissen `NULL`. Ein Audit-Fehler lässt die Anfrage scheitern (fail closed), außer nach dem DMS-Write: dort steht der Saga-Zustand schon, ein Fehler bei `validation.writeback` (und `validation.writeback-rejected`) wird nur als `ERROR` geloggt und die Antwort bleibt `200`; so führt ein Audit-Ausfall nie zu einem zweiten, abgelehnten DMS-Write.
+**Audit.** `AuditPort` schreibt insert-only in `audit_entry` (V17, Trigger verweigert `UPDATE`/`DELETE`): `tenant_id`, `channel` (`MCP|UI|SYSTEM`), `actor_kind` (`HUMAN|AGENT`), `actor_hash` (HMAC-SHA256 über Mandant und User-ID mit `docextract.audit.actor-key`, Env `DOCEXTRACT_AUDIT_ACTOR_KEY`; immer Pflicht (sonst Startabbruch), mindestens 32 Zeichen und verschieden vom App-Secret; nur das Profil `dev` hat einen Dev-Schlüssel mit `WARN`), `event_type`, `args_hash`, `token_count`, `provider`, `model_id` (beide nur bei LLM-Aufrufen). Geschrieben werden MCP-Tool-Calls (auch Fehlerfälle, `mcp.tool.<name>.<ergebnis>`), `ingest.completed`, `validation.writeback-started` (vor Marker und DMS-Write, fail closed), `validation.writeback` (nach dem DMS-Write und dem gespeicherten Saga-Zustand), `validation.writeback-rejected`, `validation.reject` (Kanal `UI`), `validation.check.<valid|invalid|unavailable>` (Kanal `UI`, ADR-016; nur Hash der Argumente und Ergebnis, nie Werte, Dateiname oder DMS-Meldung; fail closed: ohne Audit-Eintrag erhält der Aufrufer kein Ergebnis) sowie Systemereignisse mit Mandant (`validation.promotion*`, LLM-Aufrufe `extraction.classify`/`extraction.suggest-attributes` mit Anbieter und Modell, Tool-Aufrufe `extraction.tool.lookup_value_list` und `extraction.tool.validate_attributes.<valid|invalid|unavailable|rejected|failed>`; bei `validate_attributes` steht das Ergebnis im Namen wie bei `mcp.tool.<name>.<ergebnis>`, `rejected` = Limit oder ungültige Argumente, kein DMS-Aufruf). `tenant_id` ist nur beim TTL-Cleanup (`validation.ttl-cleanup`) `NULL`; `actor_kind`/`actor_hash` sind bei allen Systemereignissen `NULL`. Ein Audit-Fehler lässt die Anfrage scheitern (fail closed), außer nach dem DMS-Write: dort steht der Saga-Zustand schon, ein Fehler bei `validation.writeback` (und `validation.writeback-rejected`) wird nur als `ERROR` geloggt und die Antwort bleibt `200`; so führt ein Audit-Ausfall nie zu einem zweiten, abgelehnten DMS-Write.
 
 | #   | Regel                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Durchgesetzt in                                                                                                                                                                                                                                                                                                                                                                        | Test                                                                                                                                                                                 |
 | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1   | **Autorisierung.** Der Agent authentisiert sich mit dem API-Key eines technischen d.velop-Users ohne DMS-Rechte als `Authorization: Bearer` (§ 6.3); ohne gültiges Token `401`. Mitglieder der Agent-Gruppe dürfen nur `/api/v1/mcp/**`; confirm, reject, extraction-result, SSE u. a. sind für sie `403`. Der Mandant kommt wie oben aus dem Einzelmandant-Default oder den signierten Headern.                                                                        | `DvelopAuthenticationFilter`, `SecurityConfig`, `SessionAuthContextAdapter`                                                                                                                                                                                                                                                                                                            | `McpEndpointSecurityTest` (401, Agent 403 auf REST, Agent/Mensch auf MCP mit Audit), `TenantResolutionTest`, `TenantSignatureTest`                                                   |
+| 1   | **Autorisierung.** Der Agent authentisiert sich mit dem API-Key eines technischen d.velop-Users ohne DMS-Rechte als `Authorization: Bearer` (§ 6.3); ohne gültiges Token `401`. Mitglieder der Agent-Gruppe dürfen nur `/api/v1/mcp/**`; confirm, reject, check (`/api/v1/validation/check`, ADR-016), extraction-result, SSE u. a. sind für sie `403`. Der Mandant kommt wie oben aus dem Einzelmandant-Default oder den signierten Headern.                           | `DvelopAuthenticationFilter`, `SecurityConfig`, `SessionAuthContextAdapter`                                                                                                                                                                                                                                                                                                            | `McpEndpointSecurityTest` (401, Agent 403 auf REST inkl. `/validation/check`, Agent/Mensch auf MCP mit Audit), `TenantResolutionTest`, `TenantSignatureTest`                         |
 | 2   | **Eingabeprüfung.** Tool-Argumente: genau `{ processId }`, kleingeschriebene UUID. Existenz und Ownership ohne Guard: die Lese-Services fragen den mandantengefilterten Port; nur bei leerem Ergebnis prüft `ProcessEventPort.exists(tenantId, processId)` (Zeile in `process_step`), sonst `ProcessNotFoundException` → `404` bzw. `not-found` (MCP). Gilt für similar-documents, document-type-candidates, extraction-result, retry, reject und SSE (vor dem Stream). | `AgentGatewayService` (Format), `GetSimilarDocumentsService`, `GetDocumentTypeCandidatesService`, `GetExtractionResultService`, `ExtractAttributesService.retry`, `RejectSuggestionService`, `ProcessEventsController`; Port-Filter in `PgProcessDocumentAdapter`, `PgRetrievalResultAdapter`, `PgExtractionResultAdapter`, `PgDocumentTypeCandidatesAdapter`, `PgProcessEventAdapter` | `AgentGatewayServiceTest`, `McpToolAdapterTest`, `TenantScopedEndpointsTest` (je Endpunkt), `PgTenantFilterAdapterTest`, `PgProcessEventAdapterTest`, `PgRetrievalResultAdapterTest` |
 | 3   | **Schreibende Aktionen nur auf dem eigenen Mandanten.** Confirm, Reject, Promotion und Blob-Löschung wirken nur auf Zeilen des Aufrufer-Mandanten.                                                                                                                                                                                                                                                                                                                      | `ConfirmAndWriteBackService`, `RejectSuggestionService`, `PgCorpusPromotionAdapter`, `PgPendingEmbeddingDeleteAdapter`, `PgFinalizationStateAdapter`, `PgDocumentBlobAdapter`                                                                                                                                                                                                          | `ConfirmAndWriteBackServiceTest`, `RejectSuggestionServiceTest`, `PgPendingEmbeddingDeleteAdapterTest`, `PgDocumentBlobAdapterTest`                                                  |
 
@@ -733,23 +762,23 @@ Gilt für **Coding-Agents** (Copilot im Repo) und den **MCP-Agenten** (Laufzeit)
 
 **Berechtigungen**
 
-| Agent        | Darf                                                                                                                                                                                      | Darf nie                                                                                                                                                                                                                                                                      |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| MCP-Agent    | Nur `/api/v1/mcp/**` mit den lesenden Tools `get_process_suggestions` und `find_similar_documents` (§ 6.3), nur eigener Mandant, nur Prozesse des Mandanten; jeder Call wird auditiert    | Upload, Confirm, Reject, Retry, SSE, `extraction-result` (für die Agent-Gruppe `403`); DMS-Write; `APPROVED` setzen; Quelltext-Auszug oder Eigenschaftswerte ähnlicher Dokumente erhalten; fremde Mandanten sehen (`not-found`); DMS-Rechte haben (technischer User ohne DMS-Rechte) |
-| Coding-Agent | Code, Tests und Doku im Repo ändern (Hexagonal, ArchUnit grün), `mvn -o clean verify` ausführen, Änderungen im Entwicklungstagebuch festhalten (`CONTEXT.md` § 7)                         | Guardrails C-2/C-3/C-4/NfA-4 abschwächen; Secrets (`DOCEXTRACT_TENANT_APP_SECRET`, `DOCEXTRACT_AUDIT_ACTOR_KEY`, API-Keys) oder Roh-PII in Code, Tests, Logs oder Audit schreiben; Produkt-/Framework-Typen in `domain`/`application`/`port`; Architekturentscheide ohne ADR ändern |
+| Agent        | Darf                                                                                                                                                                                   | Darf nie                                                                                                                                                                                                                                                                                                          |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| MCP-Agent    | Nur `/api/v1/mcp/**` mit den lesenden Tools `get_process_suggestions` und `find_similar_documents` (§ 6.3), nur eigener Mandant, nur Prozesse des Mandanten; jeder Call wird auditiert | Upload, Confirm, Reject, Retry, Check (`/validation/check`), SSE, `extraction-result` (für die Agent-Gruppe `403`); DMS-Write; `APPROVED` setzen; Quelltext-Auszug oder Eigenschaftswerte ähnlicher Dokumente erhalten; fremde Mandanten sehen (`not-found`); DMS-Rechte haben (technischer User ohne DMS-Rechte) |
+| Coding-Agent | Code, Tests und Doku im Repo ändern (Hexagonal, ArchUnit grün), `mvn -o clean verify` ausführen, Änderungen im Entwicklungstagebuch festhalten (`CONTEXT.md` § 7)                      | Guardrails C-2/C-3/C-4/NfA-4 abschwächen; Secrets (`DOCEXTRACT_TENANT_APP_SECRET`, `DOCEXTRACT_AUDIT_ACTOR_KEY`, API-Keys) oder Roh-PII in Code, Tests, Logs oder Audit schreiben; Produkt-/Framework-Typen in `domain`/`application`/`port`; Architekturentscheide ohne ADR ändern                               |
 
 OFFEN: Ob und wie die Rechte des Coding-Agents technisch begrenzt werden (Terminal-/Netzwerk-Zugriff, Pfadsperren, CODEOWNERS). Weder SPEC noch ARCHITECTURE legen das fest; es gibt aktuell kein `CODEOWNERS`.
 
 **Freigaben (menschliche Entscheidung nötig)**
 
-| Aktion                                   | Freigabe durch / Mechanismus                                                                                                                                  | Stand                                                                                      |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| DMS-Write (Rückschreiben)                | Explizite Benutzerbestätigung (`confirm`, UI-Kanal); kein LLM-/MCP-Pfad löst Writes aus (C-2, ADR-003, ADR-015)                                              | umgesetzt (`ConfirmAndWriteBackService`)                                                   |
-| Promotion `PENDING → APPROVED`           | Nur im Consent-geschützten Validierungspfad nach `confirm` (C-3, C-7, ADR-015)                                                                                | umgesetzt (`PgCorpusPromotionAdapter`)                                                     |
-| Vorlagen-Consent / Self-Learning         | Eigener Consent, Quarantäne, Rollback (SPEC, § 11)                                                                                                            | nicht umgesetzt (§ 8.6 „Offen“); bis dahin darf kein Agent Vorlagen aufnehmen              |
-| Modellwechsel (C-5)                      | Auditierte Konfigurationsänderung + Regressionslauf gegen das Eval-Set; Embedding-Modell zusätzlich Re-Indexierung                                           | Regel in SPEC C-5, § 8.5                                                                   |
-| Migrationen (`db/migration/V*.sql`)      | Review durch den Menschen; bestehende Migrationen nicht ändern, neue Version anlegen. `V17` (insert-only Audit) nie aufweichen                               | Vorgehen, kein technischer Mechanismus                                                     |
-| Änderungen an Guardrail-Code             | Review durch den Menschen: `SecurityConfig`, `DvelopAuthenticationFilter`, `SessionAuthContextAdapter`, `AgentGatewayService`, `ConfirmAndWriteBackService`, `RejectSuggestionService`, `PgAuditAdapter`, `PgCorpusPromotionAdapter`, `HexagonalArchitectureTest`, § 8.6-Tests | Vorgehen, kein technischer Mechanismus                                                     |
+| Aktion                              | Freigabe durch / Mechanismus                                                                                                                                                                                                                                                                                                                                                                                  | Stand                                                                         |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| DMS-Write (Rückschreiben)           | Explizite Benutzerbestätigung (`confirm`, UI-Kanal); kein LLM-/MCP-Pfad löst Writes aus (C-2, ADR-003, ADR-015)                                                                                                                                                                                                                                                                                               | umgesetzt (`ConfirmAndWriteBackService`)                                      |
+| Promotion `PENDING → APPROVED`      | Nur im Consent-geschützten Validierungspfad nach `confirm` (C-3, C-7, ADR-015)                                                                                                                                                                                                                                                                                                                                | umgesetzt (`PgCorpusPromotionAdapter`)                                        |
+| Vorlagen-Consent / Self-Learning    | Eigener Consent, Quarantäne, Rollback (SPEC, § 11)                                                                                                                                                                                                                                                                                                                                                            | nicht umgesetzt (§ 8.6 „Offen“); bis dahin darf kein Agent Vorlagen aufnehmen |
+| Modellwechsel (C-5)                 | Auditierte Konfigurationsänderung + Regressionslauf gegen das Eval-Set; Embedding-Modell zusätzlich Re-Indexierung                                                                                                                                                                                                                                                                                            | Regel in SPEC C-5, § 8.5                                                      |
+| Migrationen (`db/migration/V*.sql`) | Review durch den Menschen; bestehende Migrationen nicht ändern, neue Version anlegen. `V17` (insert-only Audit) nie aufweichen                                                                                                                                                                                                                                                                                | Vorgehen, kein technischer Mechanismus                                        |
+| Änderungen an Guardrail-Code        | Review durch den Menschen: `SecurityConfig`, `DvelopAuthenticationFilter`, `SessionAuthContextAdapter`, `AgentGatewayService`, `ConfirmAndWriteBackService`, `RejectSuggestionService`, `ValidateAttributesService`, `DmsWriteAdapter`, `DmsStoreValidationAdapter`, `ValueListLookupTool`, `AttributeValidationTool`, `PgAuditAdapter`, `PgCorpusPromotionAdapter`, `HexagonalArchitectureTest`, § 8.6-Tests | Vorgehen, kein technischer Mechanismus                                        |
 
 OFFEN: Wie die Freigabe für Migrationen und Guardrail-Code durchgesetzt wird (Branch Protection, Pflicht-Review, CODEOWNERS); SPEC/ARCHITECTURE nennen nur das Prinzip „Mensch entscheidet“.
 
@@ -895,6 +924,185 @@ ADR-001 bis ADR-003 wurden **bewusst nicht an die KI delegiert** (Krit. 18). Arc
   - _Orchestrierung (`ConfirmAndWriteBackService`):_ gewählt. Ein Service kennt die Reihenfolge, der Zustand ist explizit gespeichert, und das Verhalten ist mit gemockten Ports testbar. Das passt zu ADR-001 (in-process, kein Netz-Hop) und zu ADR-004 (Postgres als einzige gemeinsame Basis).
 - **Konsequenz:** Synchron genügt hier: Ein Mensch wartet auf genau eine Bestätigung, es gibt keinen Fan-out und keine weiteren Konsumenten (Block 3, Artefakt 5). `FINALIZED_INDEX_PENDING` ist ein persistierter Zustand, den jeder TTL-Purger für prozessbezogene Quarantänedaten respektieren muss. Bei einem späteren Modul-Split (ADR-001) wird die Promotion zu einem Remote-Call; dann braucht es Outbox und idempotenten Empfänger statt der gemeinsamen DB.
 
+### ADR-016 — DMS-Validierung über `storevalidate` (LLM-Tool-Loop + manueller Check)
+
+- **Status:** akzeptiert
+- **Kontext:** Abgelehnte Attribute fallen heute erst bei der Finalisierung auf (`DmsWritePort.writeAttributes` → 422 `invalid-attributes`). Zu diesem Zeitpunkt sind das Audit `validation.writeback-started` und der Marker `DMS_WRITE_STARTED` schon geschrieben (ADR-015). d.velop bietet mit `POST {dmsBaseUrl}/r/{repositoryId}/storevalidate` eine **rein lesende** Prüfung der Eigenschaften gegen die Objektdefinition. Es entsteht kein Dokument, und die Location wird nicht belegt. Dabei laufen auch die Hooks von d.velop documents, die z. B. Pflichtfelder automatisch setzen. Das LLM soll seine Vorschläge damit selbst prüfen und korrigieren. Benutzer:innen sollen ihre Eingabe vor der Freigabe manuell prüfen können.
+
+- **Entscheidung:**
+  1. **Ein Use Case, zwei Eingänge.** `validation.application.ValidateAttributes` (Service `ValidateAttributesService`) ist der einzige Weg zu `storevalidate`. Der neue, schmale Port `validation.port.DmsStoreValidationPort` ist nur lesend und von `DmsWritePort` getrennt (C-3). Beide Eingänge nutzen denselben Service:
+     - **REST:** `POST /api/v1/validation/check` (processId, documentTypeId und attributes im Body) für das Frontend.
+     - **LLM-Tool:** `validate_attributes` in `extraction.application.AttributeValidationTool`, neben `lookup_value_list` (ADR-014).
+
+  2. **Request-Format (verifiziert):**
+
+     ```http
+     POST {dmsBaseUrl}/r/{repositoryId}/storevalidate
+     Authorization: <Credential des Aufrufers>
+     Content-Type: text/plain
+
+     {
+       "type": 1,
+       "objectDefinitionId": "DKOR",
+       "systemProperties": { "property_filename": "jstore-sidecar.pdf", "property_filetype": "pdf" },
+       "remarks": {},
+       "multivalueExtendedProperties": { "28": { "1": "test a", "2": "test b" } },
+       "extendedProperties": { "22": "test", "23": "test", "25": "2026-11-10", "27": "Finanzen" }
+     }
+     ```
+
+     | Payload-Feld                                               | Quelle in DocExtract                                                                                                                         |
+     | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+     | `type`                                                     | fix `1` (Dokument), serverseitig gesetzt                                                                                                     |
+     | `objectDefinitionId`                                       | gewählter Dokumenttyp (`documentTypeId`), muss in objdef existieren                                                                          |
+     | `systemProperties.property_filename` / `property_filetype` | Dateiname je Prozess über `ProcessDocumentPort`; Dateityp = Endung ohne Punkt                                                                |
+     | `extendedProperties`                                       | einwertige Attribute: `propertyId` (= objdef `propertyFields[x].id`) → Wert als String                                                       |
+     | `multivalueExtendedProperties`                             | mehrwertige Attribute: `propertyId` → `{ "1": v1, "2": v2, … }`, 1-basierte Indizes als Strings, Reihenfolge erhalten, leere Werte weglassen |
+     | `remarks`                                                  | immer `{}`                                                                                                                                   |
+
+     **Wertformate:**
+
+     | Datentyp          | Format                                                                             | Beispiel                    |
+     | ----------------- | ---------------------------------------------------------------------------------- | --------------------------- |
+     | DATE              | `yyyy-MM-dd`                                                                       | `2026-11-10`                |
+     | DATETIME          | `yyyy-MM-dd'T'HH:mm:ssxxx` (numerischer Offset, nie `Z`, keine Sekundenbruchteile) | `2026-11-11T08:02:09+00:00` |
+     | NUMERIC, CURRENCY | Dezimalpunkt, kein Tausendertrennzeichen; Komma wird vor dem Senden normalisiert   | `12.00`                     |
+     | STRING            | unverändert                                                                        | `Finanzen`                  |
+
+     **Weitere Regeln:**
+     - Eigenschaften mit „unbekannt“ oder leerem Wert werden **nicht** gesendet. Die Hooks im DMS können sie setzen.
+     - Der Body wird über Jackson als gültiges JSON serialisiert.
+     - `Content-Type: text/plain` wird bewusst gesetzt, weil d.velop es so verlangt.
+
+     **Gemeinsamer Mapper:** `DmsWriteAdapter` spricht dasselbe Property-Format. Das Mapping wird deshalb in einen gemeinsamen `DmsPropertyPayloadMapper` (`validation.adapter.out.dms`) herausgelöst, den `DmsWriteAdapter` und `DmsStoreValidationAdapter` nutzen. Damit prüft `storevalidate` genau das Payload, das später geschrieben wird. Das Verhalten des Writes bleibt unverändert. Der Mapper kann zusätzlich in Gegenrichtung lesen (Response → Attribute, Entscheidung 6).
+
+  3. **Response von `storevalidate` (verifiziert):**
+     - **200 = gültig.** Der Body enthält das vom DMS normalisierte und durch Hooks ergänzte Payload:
+       ```json
+       { "objectDefinitionId": "DREC",
+         "systemProperties": { "property_filename": "…", "property_state": "Be", … },
+         "remarks": { "1": "", … },
+         "extendedProperties": { "11": "dawd", "4": "2026-11-11", "13": "12.00", "14": "", "15": "In Prüfung" },
+         "multivalueExtendedProperties": {} }
+       ```
+       Die Eigenschaften daraus werden übernommen (Entscheidung 6).
+     - **400 = ungültig**, mit **genau einem** Fehler je Aufruf:
+
+       ```json
+       {
+         "message": "Für mindestens ein Pflichtfeld wurde kein Wert eingegeben. [0010019]  (Rechnungsdatum)",
+         "propertyFieldId": "4"
+       }
+       ```
+
+       - `propertyFieldId` ist `propertyFields[x].id` aus objdef. Er wird direkt als `propertyId` übernommen. Fehlt er oder liegt er nicht in der Allowlist, wird `propertyId = null` gesetzt.
+       - **DMS-Fehlercodes sind dynamisch**, z. B. abhängig von Wertelisten, Regex oder Konfiguration, und werden **nicht** auf eigene Codes abgebildet. Der Code in eckigen Klammern (Regex `\[(\d+)\]`) wird nur als `dmsCode` durchgereicht. Massgeblich für Mensch und LLM ist `message`.
+       - Ein 400 mit nicht lesbarem Body wird als Fehler ohne `propertyId`, `dmsCode` und `message` gemeldet.
+
+     - **401, 403, andere 4xx, 5xx, Timeout und Netzfehler** gelten nicht als Validierungsergebnis. Sie führen zu `AdapterUnavailableException` (502), beim LLM-Tool zu `validation_unavailable`. Der Lese-Timeout ist `docextract.validation.dms-timeout` (Default `PT10S`).
+
+  4. **Keine lokale Pflichtfeldprüfung.** Pflichtfelder werden vor dem Aufruf **nicht** geprüft, weil Hooks in d.velop documents sie automatisch setzen können. Das Tool `validate_attributes` steht dem LLM zur Verfügung, sobald der Dokumenttyp gewählt ist, auch wenn Pflichtfelder leer sind. Ob ein Pflichtfeld wirklich fehlt, entscheidet allein das DMS (400 mit seiner `message`).
+
+  5. **Ergebnisform `ValidationReport`:**
+
+     ```json
+     {
+       "valid": true,
+       "attributes": [
+         {
+           "propertyId": "4",
+           "value": "2026-11-11",
+           "origin": "DMS",
+           "changedByDms": true
+         }
+       ],
+       "error": null
+     }
+     ```
+
+     ```json
+     {
+       "valid": false,
+       "attributes": null,
+       "error": { "propertyId": "4", "dmsCode": "0010019", "message": "…" }
+     }
+     ```
+
+     - **valid = true:** `attributes` enthält die übernommenen Eigenschaften aus der 200-Antwort (Entscheidung 6).
+     - **valid = false:** `attributes` ist `null`, `error` enthält den einen DMS-Fehler.
+     - **REST `/validation/check`:** immer 200 mit `ValidationReport`. Das Frontend übernimmt bei `valid = true` die zurückgegebenen Eigenschaften in das Formular und hebt die Felder mit `changedByDms = true` hervor. 404/410 entstehen wie bei confirm über die Mandanten-Ports und `exists`.
+     - **Datenschutz:** `message` und die Werte aus der Antwort gehen **nur** an den berechtigten Aufrufer (UI bzw. LLM im laufenden Kontext) und werden nie geloggt oder auditiert (§ 8.1, C-4). Ins Log kommen nur `dmsCode`, `propertyId` und `valid`. Der Dateiname darf ans DMS gesendet werden, aber nie ins Log oder Audit.
+
+  6. **Übernahme der Eigenschaften aus der 200-Antwort.** Ist die Validierung gültig, werden die Eigenschaften aus dem Antwortbody übernommen. Sie sind die Werte, die das DMS tatsächlich speichern würde, inklusive Normalisierung (z. B. `12` → `12.00`) und Hook-Werten.
+     - **Was übernommen wird:**
+       - nur `extendedProperties` und `multivalueExtendedProperties`;
+       - nur Eigenschaften aus der Allowlist (beschreibbare Nicht-System-Eigenschaften des Dokumenttyps).
+       - **Nicht übernommen:** `systemProperties`, `remarks`, `docNumber`, `colorCode`, unbekannte propertyIds.
+     - **Leere Werte** (`""`) gelten als nicht gesetzt und bleiben „unbekannt“. Ein Vorschlag des LLM wird dadurch nie gelöscht, wenn das DMS leer antwortet.
+     - **Herkunft je Attribut:**
+       - `origin = LLM`, `changedByDms = false`: Der Wert ist inhaltlich unverändert (der Vergleich erfolgt nach der Normalisierung aus Entscheidung 2). Die `confidence` bleibt erhalten.
+       - `origin = LLM`, `changedByDms = true`: Das DMS hat den Wert verändert. Die `confidence` bleibt, das UI zeigt die Änderung.
+       - `origin = DMS`: Der Wert stammt nicht aus dem Dokument, sondern aus einem Hook oder einer Vorbelegung. Er hat keine `confidence` (`null`) und keine Belegstelle.
+     - **Bewusste Abweichung von E-5:** Werte mit `origin = DMS` sind nicht geraten, sondern stammen aus der DMS-Konfiguration. Sie sind als solche gekennzeichnet und werden von Menschen freigegeben (C-2). SPEC E-5 erhält einen Verweis auf ADR-016.
+     - **Wert-Rückweg:** Übernommene Werte werden im DMS-Format gespeichert und beim späteren Write unverändert durch denselben Mapper gesendet.
+
+  7. **Korrektur-Loop und Confidence.**
+     - Meldet `storevalidate` einen Fehler, erhält das LLM `propertyId`, `dmsCode` und `message`. Es darf korrigieren (auch über `lookup_value_list`) und erneut validieren. Den Wert für ein fehlendes Pflichtfeld darf es nur setzen, wenn er im Dokument belegt ist. Andernfalls lässt es das Feld leer und beendet den Loop (kein Raten).
+     - Grenzen:
+       - höchstens `docextract.extraction.max-validation-rounds` DMS-Prüfungen (Default 5, weil das DMS nur einen Fehler je Aufruf meldet);
+       - zusätzlich das gemeinsame Limit `max-tool-calls` für beide Tools.
+     - Bei `valid = true` erhält das LLM die übernommenen Eigenschaften als Tool-Ergebnis, damit es auf dem Stand des DMS weiterarbeitet.
+     - **Confidence-Abwertung (serverseitig, nicht dem LLM überlassen):** Der Service merkt sich je Tool-Aufruf, welche Eigenschaften das DMS mit welchem Wert abgelehnt hat. Ist ein Feld im finalen Ergebnis gegenüber einem abgelehnten Wert geändert, gilt es als _nach Validierungsfehler korrigiert_:
+       - Seine `confidence` wird auf `docextract.extraction.corrected-confidence-cap` gedeckelt (Default 0.5 auf der bestehenden Confidence-Skala), also `min(confidence, cap)`.
+       - Das Attribut erhält das Flag `correctedAfterValidation = true`.
+       - Felder, die das DMS ohne propertyId abgelehnt hat, werden nicht abgewertet.
+     - **Endprüfung:** Nach dem Loop prüft `ExtractAttributesService` die finalen Werte noch einmal selbst über `ValidateAttributes`, unabhängig davon, ob das LLM das Tool aufgerufen hat.
+       - Bei `valid` werden die Eigenschaften gemäss Entscheidung 6 übernommen.
+       - Das Ergebnis wird als `validation` im `ExtractionResult` gespeichert: Status `VALID | INVALID | NOT_CHECKED` und Fehler.
+       - Ist es `INVALID` oder `NOT_CHECKED`, bleiben die Vorschläge bestehen. Es gibt keinen Abbruch.
+
+  8. **Confirm nicht geändert.** `ConfirmAndWriteBackService` ruft `storevalidate` **nicht** automatisch auf. Die Freigabe bleibt menschlich (C-2). Die Prüfung ist ein Angebot und keine Sperre.
+
+- **Guardrails** (wie ADR-014):
+  - Allowlist auf die beschreibbaren Nicht-System-Eigenschaften des gewählten Dokumenttyps, sowohl für den Request als auch für die Übernahme aus der Response.
+  - Repository, Objektdefinition, `type`, Systemeigenschaften und Credential setzt der Server.
+  - Tool-Ergebnisse, insbesondere DMS-`message` und übernommene Werte, gelten als Daten, nicht als Instruktion.
+  - Audit je Aufruf: `extraction.tool.validate_attributes` (Kanal SYSTEM, mit Mandant) bzw. `validation.check` (Kanal UI), jeweils nur mit SHA-256 der Argumente und dem Ergebnis `valid`/`invalid`/`unavailable`. Umsetzung: das Ergebnis steht als Suffix im Ereignisnamen (`validation.check.valid`, `extraction.tool.validate_attributes.invalid`, Konvention wie `mcp.tool.<name>.<ergebnis>`), weil `audit_entry` keine Ergebnis-Spalte hat. Das Ereignis wird nach dem Aufruf geschrieben; schlägt das Audit fehl, erhält der Aufrufer kein Ergebnis (fail closed).
+  - Für die Agent-Gruppe gilt 403 auf `/api/v1/validation/check` über die bestehende `SecurityConfig`; kein MCP-Tool.
+
+- **Begründung:** `storevalidate` ist die verbindliche Prüfinstanz des Ziel-DMS und führt dessen Hooks aus. Eine eigene Pflichtfeldprüfung würde Felder als fehlend melden, die das DMS selbst setzt. Die Übernahme der Antwort liefert genau die Werte, die das DMS speichern würde. Dank gemeinsamem Mapper prüft `storevalidate` das spätere Write-Payload. Der Use Case liegt in `validation`, weil er den gleichen Änderungsgrund wie der DMS-Write hat. Die neue Kante `extraction → validation.application` ist zyklenfrei.
+
+- **Preis:**
+  - Zusätzliche DMS-Aufrufe je Extraktion (≤ max-validation-rounds + 1) und dadurch mehr Latenz (NfA-2).
+  - Mehr LLM-Runden bedeuten mehr Token (NfA-7).
+  - Neue Modulkante extraction → validation.
+  - `ExtractionResult` und Attribute erhalten neue Felder (`validation`, `origin`, `changedByDms`, `correctedAfterValidation`; Migration).
+  - Werte mit `origin = DMS` haben keine Belegstelle im Dokument.
+
+- **Störfall:**
+  - _`storevalidate` nicht erreichbar oder Timeout:_ Das Tool liefert dem LLM `error: validation_unavailable`. Die Endprüfung ergibt `NOT_CHECKED`, die Extraktion endet trotzdem erfolgreich. Über REST gibt es 502.
+  - _LLM bricht im Loop nicht ab:_ Die Runden- und Tool-Call-Limits greifen, das zuletzt gültige JSON wird übernommen, die Endprüfung läuft.
+  - _Pflichtfeld weder im Dokument noch durch Hook gesetzt:_ Das DMS meldet 400. Das LLM lässt das Feld leer, der Status ist `INVALID`. Benutzer:innen ergänzen den Wert im UI.
+  - _200-Antwort nicht lesbar:_ Sie wird als `valid` ohne Übernahme behandelt; die gesendeten Werte bleiben, und es wird eine Warnung ohne Werte geloggt.
+
+- **Alternativen:**
+  - _Lokale Pflichtfeldprüfung vor dem DMS-Aufruf:_ verworfen, weil Hooks Pflichtfelder setzen können.
+  - _Response nur als Status auswerten, Werte nicht übernehmen:_ verworfen, weil Hook-Werte und Normalisierung dann im UI fehlen würden.
+  - _Statische Tabelle der DMS-Fehlercodes:_ verworfen, weil die Codes dynamisch sind.
+  - _Prüfung nur im Service ohne LLM-Tool:_ verworfen, weil das LLM dann nicht selbst korrigieren kann.
+  - _Automatischer Check im Confirm:_ verworfen, siehe Entscheidung 8.
+
+- **Konsequenz:** Als zweites lesendes Tool erfüllt dies die Ergänzungspflicht aus ADR-014. Nachzuführen: SPEC C-2 und E-5 (Verweis auf ADR-016), ARCHITECTURE § 5.2, § 5.4, § 5.5, § 5.6, § 6.1, § 6.2, § 8.6 (Audit-Ereignisse), § 8.7, `openapi.yaml`.
+
+- **Geklärt:**
+  - DMS-Fehlercodes sind dynamisch: Sie werden durchgereicht, nicht abgebildet.
+  - NUMERIC und CURRENCY werden mit Dezimalpunkt gesendet; DATE als `yyyy-MM-dd`; DATETIME als `yyyy-MM-dd'T'HH:mm:ssxxx`.
+  - Der Dateiname (`property_filename`) darf ans DMS gesendet werden, aber nie ins Log oder Audit.
+  - `DmsWriteAdapter` spricht dasselbe Format, deshalb gibt es einen gemeinsamen Mapper.
+  - Nach einem Validierungsfehler korrigierte Felder werden in der Confidence abgewertet.
+  - Pflichtfelder werden nicht lokal geprüft; bei gültiger Validierung werden die Eigenschaften aus der Antwort übernommen.
+  - Standart Zeitzone für extrahierte DATETIME-Werte ohne Zeitzonenangabe: `Europe/Zurich` (konfigurierbar: `docextract.validation.default-zone`)
+
 ---
 
 ## 10. Test-, Sicherheits- und Betriebsstrategie
@@ -958,8 +1166,10 @@ T-1 Prompt Injection → untrusted data + Schema-Validierung + lesende Tools nur
 
 ## Änderungshistorie
 
-| Version | Block | Stand      | Inhalt (Beleg: `git log -- doc/ARCHITECTURE.md`)                                                                                                                                                                                                                                                                    |
-| ------- | ----- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| v0.1    | 1     | 2026-09-02 | Erste Fassung (arc42/C4, ADR-001…003, Ports & Adapter) · `39e1c5f`, ausgebaut bis `9f66b89` (2026-09-04) und `4073571` (2026-09-10)                                                                                                                                                                                 |
-| v0.2    | 2     | 2026-10-24 | ADR-013 (CSR-Entscheid) und Frontend-Bezug · `44cccb8` (erste Version mit ADR-013, PR #9 `b1b5a19`). Eine explizite Versionsmarkierung gab es damals nicht; die Zuordnung ist rückwirkend aus dem Git-Log                                                                                                              |
+| Version | Block | Stand      | Inhalt (Beleg: `git log -- doc/ARCHITECTURE.md`)                                                                                                                                                                                                                                                     |
+| ------- | ----- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| v0.1    | 1     | 2026-09-02 | Erste Fassung (arc42/C4, ADR-001…003, Ports & Adapter) · `39e1c5f`, ausgebaut bis `9f66b89` (2026-09-04) und `4073571` (2026-09-10)                                                                                                                                                                  |
+| v0.2    | 2     | 2026-10-24 | ADR-013 (CSR-Entscheid) und Frontend-Bezug · `44cccb8` (erste Version mit ADR-013, PR #9 `b1b5a19`). Eine explizite Versionsmarkierung gab es damals nicht; die Zuordnung ist rückwirkend aus dem Git-Log                                                                                            |
 | v0.3    | 3     | 2026-11-10 | ADR-014 (`f04a67a`), ADR-015 (`9719b25`, `bdc1eba`), § 5.6 Modulschnitt (`74097d5`), § 8.6 Sicherheitskonzept Agent/MCP (`50b25f9`), OpenAPI-Vertrag (`fc48bb5`), MCP-Tools § 6.3 (`4c634dc`), einheitliche Fehlerform ProblemDetail für REST und MCP (`d2bb60b`), neu § 8.7 Leitplanken für Agenten |
+
+| v0.3 | 3 | 2026-11-11 | Nachtrag: ADR-016 (DMS-Validierung über `storevalidate`, Status vorgeschlagen), umgesetzt; § 5.2, § 5.4, § 5.5, § 5.6 (Naht extraction → validation), § 6.1 (Korrektur-Loop), § 6.2 (manueller Check), § 8.6 (Audit-Ereignisse), § 8.7 · noch nicht committet |

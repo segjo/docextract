@@ -3,6 +3,7 @@ package ch.adeon.apps.docextract.extraction.adapter.out.postgres;
 import ch.adeon.apps.docextract.extraction.application.ExtractedAttribute;
 import ch.adeon.apps.docextract.extraction.application.ExtractionResult;
 import ch.adeon.apps.docextract.extraction.application.ExtractionResultPort;
+import ch.adeon.apps.docextract.extraction.application.ValidationOutcome;
 import ch.adeon.apps.docextract.shared.cleanup.TtlPurger;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -45,17 +46,19 @@ public class PgExtractionResultAdapter implements ExtractionResultPort, TtlPurge
         processId,
         tenantId);
     String json = objectMapper.writeValueAsString(result.attributes());
+    String validation = objectMapper.writeValueAsString(result.validation());
     Timestamp expiresAt = Timestamp.from(Instant.now().plus(ttl));
     jdbcTemplate.update(
         """
         INSERT INTO extraction_result
-            (tenant_id, process_id, document_type_id, attributes, expires_at)
-        VALUES (?, ?, ?, ?::jsonb, ?)
+            (tenant_id, process_id, document_type_id, attributes, validation, expires_at)
+        VALUES (?, ?, ?, ?::jsonb, ?::jsonb, ?)
         """,
         tenantId,
         processId,
         result.documentTypeId(),
         json,
+        validation,
         expiresAt);
   }
 
@@ -63,7 +66,7 @@ public class PgExtractionResultAdapter implements ExtractionResultPort, TtlPurge
   public Optional<ExtractionResult> find(String tenantId, String processId) {
     List<ExtractionResult> rows =
         jdbcTemplate.query(
-            "SELECT document_type_id, attributes FROM extraction_result"
+            "SELECT document_type_id, attributes, validation FROM extraction_result"
                 + " WHERE process_id = ? AND tenant_id = ? AND expires_at > now()",
             (ResultSet rs, int rowNum) -> mapRow(rs),
             processId,
@@ -76,7 +79,13 @@ public class PgExtractionResultAdapter implements ExtractionResultPort, TtlPurge
         objectMapper.getTypeFactory().constructCollectionType(List.class, ExtractedAttribute.class);
     List<ExtractedAttribute> attributes =
         objectMapper.readValue(rs.getString("attributes"), listType);
-    return new ExtractionResult(rs.getString("document_type_id"), attributes);
+    // Rows from before ADR-016 have no validation: ExtractionResult reads null as NOT_CHECKED.
+    String validationJson = rs.getString("validation");
+    ValidationOutcome validation =
+        validationJson == null
+            ? null
+            : objectMapper.readValue(validationJson, ValidationOutcome.class);
+    return new ExtractionResult(rs.getString("document_type_id"), attributes, validation);
   }
 
   @Override

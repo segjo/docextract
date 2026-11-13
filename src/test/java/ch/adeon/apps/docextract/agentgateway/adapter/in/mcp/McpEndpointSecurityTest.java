@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -32,6 +33,8 @@ import ch.adeon.apps.docextract.shared.hash.Hmac;
 import ch.adeon.apps.docextract.validation.adapter.in.rest.ValidationController;
 import ch.adeon.apps.docextract.validation.application.ConfirmAndWriteBack;
 import ch.adeon.apps.docextract.validation.application.RejectSuggestion;
+import ch.adeon.apps.docextract.validation.application.ValidateAttributes;
+import ch.adeon.apps.docextract.validation.application.ValidationReport;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -47,6 +50,7 @@ import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+
 /**
  * Real HTTP stack (Tomcat, SecurityConfig, Spring AI MCP server) without database: the agent group
  * ({@code agents}) may only use the MCP endpoint, every other member may use REST and MCP, and the
@@ -125,6 +129,43 @@ class McpEndpointSecurityTest {
 
     assertThat(response.statusCode()).isEqualTo(403);
     verifyNoInteractions(context.getBean(ConfirmAndWriteBack.class));
+  }
+
+  @Test
+  void agent_is_forbidden_to_check_attributes_and_never_reaches_the_service() throws Exception {
+    HttpResponse<String> response =
+        send(
+            post(
+                    "/validation/check",
+                    "{\"processId\":\"" + PROCESS_ID + "\",\"documentTypeId\":\"AGENT-ATTEMPT\"}")
+                .header("Authorization", AGENT_TOKEN)
+                .build());
+
+    assertThat(response.statusCode()).isEqualTo(403);
+    verify(context.getBean(ValidateAttributes.class), never())
+        .validate(any(), any(), eq("AGENT-ATTEMPT"), any(), any());
+  }
+
+  @Test
+  void human_may_check_attributes_over_rest_and_the_audit_says_ui() throws Exception {
+    HttpResponse<String> response =
+        send(
+            post(
+                    "/validation/check",
+                    "{\"processId\":\""
+                        + PROCESS_ID
+                        + "\",\"documentTypeId\":\"DREC\",\"attributes\":[]}")
+                .header("Authorization", HUMAN_TOKEN)
+                .build());
+
+    assertThat(response.statusCode()).isEqualTo(200);
+    assertThat(response.body()).contains("\"valid\":true");
+    verify(context.getBean(AuditPort.class))
+        .append(
+            argThat(event ->
+                event.eventType().equals("validation.check.valid")
+                    && event.channel() == AuditChannel.UI
+                    && event.actorKind() == ActorKind.HUMAN));
   }
 
   @Test
@@ -404,6 +445,14 @@ class McpEndpointSecurityTest {
     @Bean
     RejectSuggestion rejectSuggestion() {
       return mock(RejectSuggestion.class);
+    }
+
+    @Bean
+    ValidateAttributes validateAttributes() {
+      ValidateAttributes port = mock(ValidateAttributes.class);
+      when(port.validate(any(), any(), any(), any(), any()))
+          .thenReturn(ValidationReport.valid(List.of()));
+      return port;
     }
   }
 }

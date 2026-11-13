@@ -2,7 +2,7 @@ import { ExtractionResult } from '../models/extraction.model';
 import { ImportInfo, IngestedDocument } from '../models/ingest.model';
 import { ProcessEvent } from '../models/process.model';
 import { DmsDocumentMetadata, DmsValueList, RetrievalResult } from '../models/retrieval.model';
-import { ConfirmationResult } from '../models/validation.model';
+import { ConfirmationResult, ValidationReport } from '../models/validation.model';
 
 /** Canned responses for `mockApiInterceptor`/`ProcessEventsApi` (mock build configuration only). */
 
@@ -108,6 +108,24 @@ const supplierProperty = {
   hasMoreValues: false,
 };
 
+const statusProperty = {
+  id: 'property_status',
+  name: 'Bearbeitungsstatus',
+  dataType: 'ALPHANUMERIC' as const,
+  mandatory: false,
+  hasValueList: false,
+  isDynamicValueList: false,
+  isHidden: false,
+  isModifiable: true,
+  isSystemProperty: false,
+  isMultiAttribute: false,
+  isDocumentTypeProperty: true,
+  maxRowCount: 1,
+  maxLength: 40,
+  valueList: [],
+  hasMoreValues: false,
+};
+
 const contractTitleProperty = {
   id: 'property_contract_title',
   name: 'Vertragstitel',
@@ -151,7 +169,7 @@ export function mockDocumentTypeCandidates(): DmsDocumentMetadata[] {
       documentType: {
         id: 'doctype_invoice',
         name: 'Rechnung',
-        properties: [invoiceNumberProperty, invoiceDateProperty, supplierProperty],
+        properties: [invoiceNumberProperty, invoiceDateProperty, supplierProperty, statusProperty],
         score: 1.74,
       },
       contentLanguage: 'de',
@@ -225,10 +243,15 @@ export function mockExtractionResult(): ExtractionResult {
         propertyId: 'property_supplier',
         value: 'Muster AG',
         values: null,
-        confidence: 0.72,
+        // Corrected after a DMS error: confidence capped (ADR-016).
+        confidence: 0.5,
         sourceExcerpt: 'Muster AG, Musterstrasse 1',
+        origin: 'LLM',
+        changedByDms: false,
+        correctedAfterValidation: true,
       },
     ],
+    validation: { status: 'NOT_CHECKED', error: null },
   };
 }
 
@@ -268,5 +291,54 @@ export function mockConfirmationResult(): ConfirmationResult {
     documentId: 'mock-document-1',
     writtenBack: true,
     indexStatus: 'COMPLETED',
+  };
+}
+
+/**
+ * Mimics `storevalidate` (ADR-016): without an invoice date the DMS reports its one error; else
+ * the values come back (invoice number normalised) plus a status set by a DMS hook.
+ */
+export function mockValidationReport(request: {
+  attributes: { propertyId: string; value: string | null; values: string[] | null }[];
+}): ValidationReport {
+  const byId = new Map(request.attributes.map((attribute) => [attribute.propertyId, attribute]));
+  if (!byId.get('property_invoice_date')?.value?.trim()) {
+    return {
+      valid: false,
+      attributes: null,
+      error: {
+        propertyId: 'property_invoice_date',
+        dmsCode: '0010019',
+        message:
+          'Für mindestens ein Pflichtfeld wurde kein Wert eingegeben. [0010019]  (Rechnungsdatum)',
+      },
+    };
+  }
+  const attributes = request.attributes.map((attribute) => {
+    const normalized =
+      attribute.propertyId === 'property_invoice_number' && attribute.value
+        ? attribute.value.trim().toUpperCase()
+        : attribute.value;
+    return {
+      propertyId: attribute.propertyId,
+      value: normalized,
+      values: attribute.values,
+      origin: 'LLM' as const,
+      changedByDms: normalized !== attribute.value,
+    };
+  });
+  return {
+    valid: true,
+    attributes: [
+      ...attributes,
+      {
+        propertyId: 'property_status',
+        value: 'In Prüfung',
+        values: null,
+        origin: 'DMS' as const,
+        changedByDms: true,
+      },
+    ],
+    error: null,
   };
 }
